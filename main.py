@@ -15,6 +15,7 @@ import openai
 import jsonschema
 from jsonschema import validate, ValidationError
 import pandas as pd
+import os
 
 tqdm.pandas()
 
@@ -45,24 +46,36 @@ def setup_logging():
 def load_esci_dataset(
     n_examples: Optional[int] = None,
     split: str = "train",
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> List[Dict[str, Any]]:
     """
-    Load and filter the ESCI dataset from HuggingFace.
+    Load and filter the ESCI dataset from HuggingFace or from cached JSON file.
 
     Args:
         n_examples: Optional limit on number of examples to process (for testing)
+        split: Dataset split to load ("train", "test", etc.)
 
     Returns:
-        a list of tuples of (
-            query,
-            positive_product,
-            hard_negative_product,
-            easy_negative_product,
-        )
+        List of processed examples with query and product information
     """
+    import os
+
+    # Define the JSON file path (include n_examples in filename if specified)
+    if n_examples:
+        json_filepath = f"dataset/{split}_{n_examples}.jsonl"
+    else:
+        json_filepath = f"dataset/{split}.jsonl"
+
+    # Check if JSON file exists
+    if os.path.exists(json_filepath):
+        logger.info(f"Loading dataset from cached file: {json_filepath}")
+        return load_dataset_jsonl(json_filepath)
+
+    logger.info(f"JSON file {json_filepath} not found. Loading from HuggingFace...")
 
     # Load the ESCI dataset from HuggingFace
-    dataset = load_dataset("tasksource/esci")[split].select(range(n_examples))
+    dataset = load_dataset("tasksource/esci")[split]
+    if n_examples:
+        dataset = dataset.select(range(n_examples))
 
     # Convert to df
     df = pd.DataFrame(dataset)
@@ -82,7 +95,7 @@ def load_esci_dataset(
     subs_df["exact_id"] = subs_df["exact_id"].astype(int)
 
     logger.info(
-        f"Reduced train dataset from {len(df)} to {len(subs_df)} ({len(subs_df) / len(df) * 100:.2f}%)"
+        f"Reduced {split} dataset from {len(df)} to {len(subs_df)} ({len(subs_df) / len(df) * 100:.2f}%)"
     )
 
     # now that we have the index of the exact product, we can return the list of tuples
@@ -102,6 +115,11 @@ def load_esci_dataset(
                 "easy_neg_product": easy_neg_product,
             }
         )
+
+    # Save the processed dataset to JSON for future use
+    logger.info(f"Saving processed {split} dataset to {json_filepath}")
+    save_dataset_jsonl(ds_list, json_filepath)
+
     return ds_list
 
 
@@ -320,6 +338,32 @@ def create_example_record(
     pass
 
 
+def load_dataset_jsonl(filepath: str) -> List[Dict[str, Any]]:
+    """
+    Load dataset from a JSONL file.
+
+    Args:
+        filepath: Path to the JSONL file
+
+    Returns:
+        List of example records
+    """
+    import os
+
+    if not os.path.exists(filepath):
+        logger.warning(f"Dataset file {filepath} does not exist")
+        return []
+
+    dataset = []
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():  # Skip empty lines
+                dataset.append(json.loads(line.strip()))
+
+    logger.info(f"Loaded {len(dataset)} examples from {filepath}")
+    return dataset
+
+
 def save_dataset_jsonl(dataset: List[Dict[str, Any]], filepath: str):
     """
     Save the final dataset to a JSONL file.
@@ -328,7 +372,15 @@ def save_dataset_jsonl(dataset: List[Dict[str, Any]], filepath: str):
         dataset: List of example records
         filepath: Output file path
     """
-    pass
+
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        for example in dataset:
+            f.write(json.dumps(example, ensure_ascii=False) + "\n")
+
+    logger.info(f"Dataset saved to {filepath} with {len(dataset)} examples")
 
 
 def add_train_test_split(
@@ -457,9 +509,9 @@ def main():
     logger.info(
         "Data loading and filtering complete. Exiting before feature extraction."
     )
-    # return train_ds + test_ds
+    # return train_ds
 
-    for i, example in enumerate((train_ds + test_ds) or []):
+    for i, example in enumerate(train_ds or []):
         query = example["query"]
 
         if i % 100 == 0:
@@ -502,9 +554,7 @@ def main():
                 hard_negative_product = sub_irr_product
 
                 # Select easy negative
-                easy_negative_product = select_easy_negative(
-                    train_ds + test_ds, positive_product
-                )
+                easy_negative_product = select_easy_negative(train_ds, positive_product)
 
                 # Calculate edit distance
                 edit_distance = calculate_edit_distance(
