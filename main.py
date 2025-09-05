@@ -7,21 +7,28 @@ when queries contain multiple logical operators (and, or, not) using the ESCI da
 """
 
 import logging
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Callable
 import json
 from datasets import load_dataset
 from tqdm import tqdm
 import openai
-import jsonschema
 from jsonschema import validate, ValidationError
 import pandas as pd
 import os
+import argparse
+from utils.sat import generate_random_sat_fn
+
+import random
+from random import randint
+import numpy as np
 
 tqdm.pandas()
-
+random.seed(42)
+np.random.seed(42)
 
 # Configuration
-N_FEATURES = 4
+N_FEATURES = 5
+MAX_QUERY_LEN = 5
 ESCI_DATASET_URL = "https://huggingface.co/datasets/tasksource/esci"
 MODEL_ID = "gpt-5-mini"
 
@@ -79,6 +86,7 @@ def load_esci_dataset(
 
     # Convert to df
     df = pd.DataFrame(dataset)
+    logger.info(f"Loaded {len(df)} examples from {split} dataset")
     subs_df = df[
         df["esci_label"].progress_apply(lambda x: x in ["Substitute", "Irrelevant"])
     ]
@@ -123,28 +131,48 @@ def load_esci_dataset(
     return ds_list
 
 
-def filter_esci_labels(dataset: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def retry_with_fallback(
+    messages: List[Dict[str, str]],
+    validation_func: Callable[[str], bool],
+    max_retries: int = 5,
+    fallback_value: Any = None,
+) -> Any:
     """
-    Filter dataset to remove Complement labels, keep Exact, Substitute, Irrelevant.
+    Generic retry logic with fallback value for OpenAI API calls.
 
     Args:
-        dataset: Raw ESCI dataset
+        messages: List of messages to send to OpenAI API
+        validation_func: Function that validates the LLM response content
+        max_retries: Maximum number of retry attempts
+        fallback_value: Value to return if all retries fail
 
     Returns:
-        Filtered dataset without Complement labels
+        Result of OpenAI API call or fallback_value if all retries fail
     """
-    if not dataset:
-        return []
+    for attempt in range(max_retries):
+        response = openai.chat.completions.create(
+            model=MODEL_ID,
+            messages=messages,
+            response_format={"type": "json_object"},
+        )
 
-    valid_labels = {"Exact", "Substitute", "Irrelevant"}
-    filtered_data = [
-        example for example in dataset if example.get("esci_label") in valid_labels
-    ]
+        # Validate the response content
+        if validation_func(response.choices[0].message.content):
+            logger.info(
+                f"Successfully completed OpenAI API call on attempt {attempt + 1}"
+            )
+            return response
+        else:
+            logger.warning(f"Invalid response on attempt {attempt + 1}, retrying...")
 
-    return filtered_data
+        if attempt == max_retries - 1:
+            logger.error(f"Failed to get valid response after {max_retries} attempts")
+            return fallback_value
+
+    return fallback_value
 
 
-def extract_features_from_query(query: str) -> Dict[str, Any]:
+def infer_item_and_features(query: str) -> Dict[str, Any]:
     """
     Extract features from the query using LLM with JSON schema validation and retry logic.
 
@@ -165,42 +193,140 @@ def extract_features_from_query(query: str) -> Dict[str, Any]:
         "additionalProperties": False,
     }
 
-    extraction_prompt = "Query: {query}\n\nWhat are the item and features(s) (if any) mentioned in this query? The item is the product. Features describe the product. For example, 'white shirt' is the item and 'white' is the feature. Return ONLY JSON: {{'item': 'extracted_item', 'features': ['extracted_feature1', 'extracted_feature2', ...]}}"
+    prompt = "Query: {query}\n\nWhat are the item and features(s) (if any) mentioned in this query? The item is the product. Features describe the product. For example, 'white shirt' is the item and 'white' is the feature. Return ONLY JSON: {{'item': 'extracted_item', 'features': ['extracted_feature1', 'extracted_feature2', ...]}}"
 
-    max_retries = 5
+    messages = [{"role": "user", "content": prompt.format(query=query)}]
 
-    for attempt in range(max_retries):
+    def validate_response(content: str) -> bool:
+        """Validate that the response is valid JSON and matches the schema."""
         try:
-            response = openai.chat.completions.create(
-                model=MODEL_ID,
-                messages=[
-                    {"role": "user", "content": extraction_prompt.format(query=query)}
-                ],
-                response_format={"type": "json_object"},
-            )
-
-            # Parse JSON response
-            parsed_response = json.loads(response.choices[0].message.content)
-
-            # Validate against schema
+            parsed_response = json.loads(content)
             validate(instance=parsed_response, schema=schema)
+            return True
+        except (json.JSONDecodeError, ValidationError):
+            return False
 
-            logger.info(
-                f"Successfully extracted features from query on attempt {attempt + 1}"
-            )
-            return parsed_response
+    response = retry_with_fallback(
+        messages=messages,
+        validation_func=validate_response,
+        max_retries=5,
+        fallback_value=None,
+    )
 
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning(f"JSON validation failed on attempt {attempt + 1}: {str(e)}")
-            if attempt == max_retries - 1:
-                logger.error(
-                    f"Failed to extract valid features after {max_retries} attempts"
-                )
-                # Return a fallback structure
-                return {"item": query, "features": []}
+    if response is None:
+        return {"item": query, "features": []}
 
-    # This should never be reached, but just in case
-    return {"item": query, "features": []}
+    # Parse the validated response
+    parsed_response = json.loads(response.choices[0].message.content)
+    return parsed_response
+
+
+def get_common_and_differentiating_features(
+    positive_product: Dict[str, Any], substitute_irrelevant_product: Dict[str, Any]
+) -> Tuple[List[str], List[str]]:
+    """
+    Get the common and differentiating features between the positive and substitute/irrelevant products.
+    """
+    similar_prompt = "Product A: {positive_product}\nProduct B: {substitute_irrelevant_product}\n\nList up to {N_FEATURES} features common to both products, {N_FEATURES} features unique to product A, and {N_FEATURES} Features unique to product B, and {N_FEATURES} features that do not apply to either product. Features should be objective and no more than 5 words. Return ONLY JSON: {{'common_features': ['feature1', 'feature2', ...], 'unique_features_a': ['feature1', 'feature2', ...], 'unique_features_b': ['feature1', 'feature2', ...], 'neither_features': ['feature1', 'feature2', ...]}}"
+    messages = [
+        {
+            "role": "user",
+            "content": similar_prompt.format(
+                positive_product=positive_product,
+                substitute_irrelevant_product=substitute_irrelevant_product,
+                N_FEATURES=N_FEATURES,
+            ),
+        }
+    ]
+    schema = {
+        "type": "object",
+        "properties": {
+            "common_features": {"type": "array", "items": {"type": "string"}},
+            "unique_features_a": {"type": "array", "items": {"type": "string"}},
+            "unique_features_b": {"type": "array", "items": {"type": "string"}},
+            "neither_features": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "common_features",
+            "unique_features_a",
+            "unique_features_b",
+            "neither_features",
+        ],
+        "additionalProperties": False,
+    }
+
+    def validate_response(content: str) -> bool:
+        """Validate that the response is valid JSON and matches the schema."""
+        try:
+            parsed_response = json.loads(content)
+            validate(instance=parsed_response, schema=schema)
+            return True
+        except (json.JSONDecodeError, ValidationError):
+            return False
+
+    response = retry_with_fallback(
+        messages=messages,
+        validation_func=validate_response,
+        max_retries=5,
+        fallback_value=None,
+    )
+    parsed_response = json.loads(response.choices[0].message.content)
+    return (
+        parsed_response["common_features"],
+        parsed_response["unique_features_a"],
+        parsed_response["unique_features_b"],
+        parsed_response["neither_features"],
+    )
+
+
+def generate_example(
+    common_features: List[str],
+    unique_pos_features: List[str],
+    unique_neg_features: List[str],
+    neither_features: List[str],
+) -> Dict[str, Any]:
+    """
+    Generate a query fn based on a subset of features such that exactly one product satisfies the query function.
+    """
+
+    pos_bin_features = (
+        [True] * N_FEATURES
+        + [True] * N_FEATURES
+        + [False] * N_FEATURES
+        + [False] * N_FEATURES
+    )
+    neg_bin_features = (
+        [True] * N_FEATURES
+        + [False] * N_FEATURES
+        + [True] * N_FEATURES
+        + [False] * N_FEATURES
+    )
+    i = 0
+    while True:
+        # common, pos, neg, neither
+        query_len = randint(1, MAX_QUERY_LEN)
+        features_indices = random.sample(list(range(len(pos_bin_features))), query_len)
+        pos_features = [pos_bin_features[i] for i in features_indices]
+        neg_features = [neg_bin_features[i] for i in features_indices]
+        query_fn, source_code = generate_random_sat_fn(query_len)
+        if query_fn(*pos_features) != query_fn(*neg_features):
+            if query_fn(*pos_features):
+                return {
+                    "query_fn": query_fn,
+                    "source_code": source_code,
+                    "pos_features": pos_features,
+                    "neg_features": neg_features,
+                }
+            else:
+                return {
+                    "query_fn": query_fn,
+                    "source_code": source_code,
+                    "pos_features": neg_features,
+                    "neg_features": pos_features,
+                }
+        i += 1
+        if i > 1000:
+            raise ValueError("Failed to generate a query fn")
 
 
 def generate_features_from_products(
@@ -240,24 +366,6 @@ def determine_feature_applicability(
     pass
 
 
-def generate_random_boolean_expression(features: List[str]) -> str:
-    """
-    Generate a random boolean SAT-style expression using all features exactly once.
-
-    Grammar allows:
-    - f_1...f_n used only once each
-    - Parentheses must be properly closed
-    - And, Or, Not, () operators
-
-    Args:
-        features: List of feature names
-
-    Returns:
-        Boolean expression as string
-    """
-    pass
-
-
 def boolean_expression_to_natural_language(expression: str, features: List[str]) -> str:
     """
     Convert boolean expression to natural language description.
@@ -268,22 +376,6 @@ def boolean_expression_to_natural_language(expression: str, features: List[str])
 
     Returns:
         Natural language query description
-    """
-    pass
-
-
-def evaluate_boolean_expression(
-    expression: str, feature_values: Dict[str, bool]
-) -> bool:
-    """
-    Evaluate a boolean expression given feature values.
-
-    Args:
-        expression: Boolean expression string
-        feature_values: Dict mapping feature names to boolean values
-
-    Returns:
-        Result of evaluating the expression
     """
     pass
 
@@ -412,22 +504,6 @@ def generate_summary_statistics(dataset: List[Dict[str, Any]]) -> Dict[str, Any]
     pass
 
 
-def generate_example_samples(
-    dataset: List[Dict[str, Any]], n_samples: int = 5
-) -> List[Dict[str, Any]]:
-    """
-    Generate sample examples for the report.
-
-    Args:
-        dataset: Final processed dataset
-        n_samples: Number of examples to sample
-
-    Returns:
-        List of sample examples
-    """
-    pass
-
-
 def create_report(dataset: List[Dict[str, Any]], output_path: str):
     """
     Generate a comprehensive report with statistics and examples.
@@ -439,66 +515,31 @@ def create_report(dataset: List[Dict[str, Any]], output_path: str):
     pass
 
 
-def setup_openai_client():
-    """
-    Setup OpenAI client for GPT-5 API.
-
-    Returns:
-        Configured OpenAI client object
-    """
-    pass
-
-
-def parallel_openai_call(prompts: List[str]) -> List[str]:
-    """
-    Make parallel calls to GPT-5 for efficiency.
-
-    Args:
-        prompts: List of prompts to process
-
-    Returns:
-        List of responses
-    """
-    pass
-
-
-def process_esci_dataset(
-    n_examples: Optional[int] = None,
-    output_file: str = "logical_recall_dataset.jsonl",
-    report_file: str = "dataset_report.md",
-) -> List[Dict[str, Any]]:
-    """
-    Main processing function that orchestrates the entire pipeline.
-
-    Args:
-        n_examples: Optional limit on examples to process (for testing)
-        output_file: Output JSONL file path
-        report_file: Output report file path
-
-    Returns:
-        Final processed dataset
-    """
-    pass
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Logical Operators in First Stage Recall - Process ESCI dataset"
+    )
+    parser.add_argument(
+        "--n-examples",
+        type=int,
+        default=None,
+        help="Number of examples to process (default: None for all examples)",
+    )
+    return parser.parse_args()
 
 
 def main():
     """Main entry point."""
+    # Parse command line arguments
+    args = parse_arguments()
+
     # Step 0: Setup and Configuration
     logger = setup_logging()
-    logger.info("Starting Logical Recall Pipeline")
-
-    # TODO: Parse command line arguments (n_examples, output paths, etc.)
-    # TODO: Set random seeds for reproducibility
-    openai_client = setup_openai_client()
-    logger.info("OpenAI GPT-5 client initialized")
+    logger.info(f"Starting Logical Recall Pipeline with n_examples={args.n_examples}")
 
     # Step 1: Data Loading and Preprocessing
-    logger.info("Loading and filtering ESCI dataset...")
-    train_ds = load_esci_dataset(n_examples=10000, split="train")  # Limit for testing
-    logger.info(f"Loaded and filtered {len(train_ds)} train examples")
-
-    # TODO: Group examples by query_id to find Exact + Substitute/Irrelevant pairs
-    # TODO: Validate that we have proper pairs for training data generation
+    train_ds = load_esci_dataset(n_examples=args.n_examples, split="train")
 
     final_examples = []
 
@@ -518,12 +559,35 @@ def main():
             logger.info(f"Processing example {i}...")
 
         # Step 2: Feature Extraction Pipeline
-        query_extraction_result = extract_features_from_query(query)
+        query_extraction_result = infer_item_and_features(query)
         query_features = query_extraction_result["features"]
         query_item = query_extraction_result["item"]
 
-        # Find exact and substitute/irrelevant products for this query
-        # TODO: Implement proper grouping logic
+        # Get 10 common features and 10 differentiating features
+        (
+            common_pos_features,
+            unique_pos_features,
+            unique_neg_features,
+            neither_features,
+        ) = get_common_and_differentiating_features(
+            example["positive_product"], example["hard_neg_product"]
+        )
+        example = generate_example(
+            common_pos_features,
+            unique_pos_features,
+            unique_neg_features,
+            neither_features,
+        )
+
+        raise NotImplementedError("Not implemented")
+        n_features = randint(1, 5)
+        n_uncommon_features = randint(1, n_features)
+        n_common_features = n_features - n_uncommon_features
+        common_features = random.sample(common_features, n_common_features)
+        uncommon_features = random.sample(
+            unique_pos_features + unique_neg_features, n_uncommon_features
+        )
+
         exact_product = example  # Placeholder
         sub_irr_product = example  # Placeholder
 
@@ -581,11 +645,21 @@ def main():
 
     # Step 6: Output Generation
     logger.info("Saving dataset and generating report...")
-    save_dataset_jsonl(final_dataset, "logical_recall_dataset.jsonl")
-    logger.info("Dataset saved to logical_recall_dataset.jsonl")
+    output_file = "logical_recall_dataset"
+    if args.n_examples:
+        output_file += f"_{args.n_examples}"
+    output_file += ".jsonl"
 
-    create_report(final_dataset, "dataset_report.md")
-    logger.info("Report saved to dataset_report.md")
+    save_dataset_jsonl(final_dataset, output_file)
+    logger.info(f"Dataset saved to {output_file}")
+
+    report_file = "dataset_report"
+    if args.n_examples:
+        report_file += f"_{args.n_examples}"
+    report_file += ".md"
+
+    create_report(final_dataset, report_file)
+    logger.info(f"Report saved to {report_file}")
 
     # Step 7: Cleanup and Logging
     dataset_size = len(final_dataset) if final_dataset else 0
