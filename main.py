@@ -16,13 +16,15 @@ from jsonschema import validate, ValidationError
 import pandas as pd
 import os
 import argparse
-from utils.sat import generate_random_sat_fn
-from utils.retry import retry_with_fallback
-
 import random
 from random import randint
 import numpy as np
 import re
+from copy import deepcopy
+
+from utils.sat import generate_random_sat_fn
+from utils.retry import retry_with_fallback, print_cost_report
+
 
 tqdm.pandas()
 random.seed(42)
@@ -32,7 +34,8 @@ np.random.seed(42)
 N_FEATURES = 5
 MAX_QUERY_LEN = 5
 ESCI_DATASET_URL = "https://huggingface.co/datasets/tasksource/esci"
-MODEL_ID = "gpt-5-mini"
+# MODEL_ID = "gpt-5-mini"
+MODEL_ID = "gpt-5-nano"
 
 # Global logger
 logger = logging.getLogger(__name__)
@@ -45,6 +48,9 @@ def setup_logging():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.FileHandler("recall_pipeline.log"), logging.StreamHandler()],
     )
+
+    # Disable httpx logs to reduce noise
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     # Use the global logger
     logger.info("Logging initialized for Logical Recall Pipeline")
@@ -241,6 +247,7 @@ def get_common_and_differentiating_features(
         parsed_response["neither_features"],
     )
 
+
 def fn_seq_to_nl(seq: List[str], features: List[str]) -> str:
     """
     Convert a sequence of tokens to a natural language description.
@@ -255,7 +262,6 @@ def fn_seq_to_nl(seq: List[str], features: List[str]) -> str:
             output.append(token)
     return " ".join(output)
 
-        
 
 def generate_example(
     common_features: List[str],
@@ -266,19 +272,21 @@ def generate_example(
     """
     Generate a query fn based on a subset of features such that exactly one product satisfies the query function.
     """
-    all_features = common_features + unique_pos_features + unique_neg_features + neither_features
+    all_features = (
+        common_features + unique_pos_features + unique_neg_features + neither_features
+    )
 
     pos_bin_features = (
-        [True] * N_FEATURES
-        + [True] * N_FEATURES
-        + [False] * N_FEATURES
-        + [False] * N_FEATURES
+        [True] * len(common_features)
+        + [True] * len(unique_pos_features)
+        + [False] * len(unique_neg_features)
+        + [False] * len(neither_features)
     )
     neg_bin_features = (
-        [True] * N_FEATURES
-        + [False] * N_FEATURES
-        + [True] * N_FEATURES
-        + [False] * N_FEATURES
+        [True] * len(common_features)
+        + [False] * len(unique_pos_features)
+        + [True] * len(unique_neg_features)
+        + [False] * len(neither_features)
     )
     i = 0
     while True:
@@ -290,131 +298,60 @@ def generate_example(
         query_fn, source_code, seq = generate_random_sat_fn(query_len)
 
         # calculate nl stuff
-        
+
         if query_fn(*pos_features) != query_fn(*neg_features):
             nl_features = [all_features[i] for i in features_indices]
             nl_query = fn_seq_to_nl(seq, nl_features)
+            pos_edit_distance = calculate_edit_distance(query_fn, pos_features)
+            neg_edit_distance = calculate_edit_distance(query_fn, neg_features)
+            assert pos_edit_distance == 0 or neg_edit_distance == 0
+            assert pos_edit_distance != neg_edit_distance
 
-            if query_fn(*pos_features):
-                return {
-                    "query_fn": query_fn,
-                    "source_code": source_code,
-                    "pos_features": pos_features,
-                    "neg_features": neg_features,
-                    "nl_query": nl_query,
-                }
-            else:
-                return {
-                    "query_fn": query_fn,
-                    "source_code": source_code,
-                    "pos_features": neg_features,
-                    "neg_features": pos_features,
-                    "nl_query": nl_query,
-                }
+            return {
+                "query_fn": query_fn,
+                "source_code": source_code,
+                "pos_features": (
+                    pos_features if pos_edit_distance == 0 else neg_features
+                ),
+                "neg_features": (
+                    neg_features if pos_edit_distance == 0 else pos_features
+                ),
+                "nl_query": nl_query,
+                "pos_edit_distance": pos_edit_distance,
+                "neg_edit_distance": neg_edit_distance,
+            }
+
         i += 1
         if i > 1000:
             raise ValueError("Failed to generate a query fn")
 
 
-def generate_features_from_products(
-    query: str,
-    exact_product: Dict[str, Any],
-    substitute_irrelevant_product: Dict[str, Any],
-    query_features: List[str],
-) -> List[str]:
-    """
-    Generate 1-4 features that differentiate Exact from Substitute/Irrelevant products.
-
-    Args:
-        query: Original query
-        exact_product: Product with esci_label='Exact'
-        substitute_irrelevant_product: Product with esci_label in ['Substitute', 'Irrelevant']
-        query_features: Features already identified in the query
-
-    Returns:
-        List of differentiating features (total features = query_features + generated)
-    """
-    pass
-
-
-def determine_feature_applicability(
-    product: Dict[str, Any], features: List[str]
-) -> Dict[str, bool]:
-    """
-    Determine which features apply to a given product using LLM.
-
-    Args:
-        product: Product data
-        features: List of features to evaluate
-
-    Returns:
-        Dict mapping feature name to boolean indicating if it applies
-    """
-    pass
-
-
-def boolean_expression_to_natural_language(expression: str, features: List[str]) -> str:
-    """
-    Convert boolean expression to natural language description.
-
-    Args:
-        expression: Boolean expression string
-        features: List of feature names
-
-    Returns:
-        Natural language query description
-    """
-    pass
-
-
-def calculate_edit_distance(
-    query_expression: str, product_features: Dict[str, bool]
-) -> int:
+def calculate_edit_distance(query_fn: Callable, product_features: List[bool]) -> int:
     """
     Calculate minimum number of feature edits needed for product to satisfy query.
 
     Args:
-        query_expression: Boolean query expression
-        product_features: Dict of feature name to boolean values for product
+        query_fn: Boolean query function
+        product_features: array of boolean values representing whether the product has the feature
 
     Returns:
         Minimum edit distance (integer)
     """
-    pass
-
-
-def select_easy_negative(
-    dataset: List[Dict[str, Any]], positive_product: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Select an easy negative product randomly from the dataset.
-
-    Args:
-        dataset: Full dataset to choose from
-        positive_product: The positive product to avoid selecting
-
-    Returns:
-        Randomly selected easy negative product
-    """
-    pass
-
-
-def create_example_record(
-    query: str,
-    query_expression: str,
-    positive_product: Dict[str, Any],
-    hard_negative_product: Dict[str, Any],
-    easy_negative_product: Dict[str, Any],
-    features: List[str],
-    edit_distance: int,
-) -> Dict[str, Any]:
-    """
-    Create a complete example record for the dataset.
-
-    Returns:
-        Dict containing query, products, features, distance, etc.
-    """
-    pass
+    n_features = len(product_features)
+    closest_feature_set = None
+    min_edit_distance = float("inf")
+    # calculate all possible feature combinations
+    for i in range(2**n_features):
+        feature_set = [bool(i & (1 << j)) for j in range(n_features)]
+        if query_fn(*feature_set):
+            distance = sum(
+                1 for j in range(n_features) if feature_set[j] != product_features[j]
+            )
+            if distance < min_edit_distance:
+                min_edit_distance = distance
+                closest_feature_set = feature_set
+    assert min_edit_distance != float("inf")
+    return min_edit_distance
 
 
 def load_dataset_jsonl(filepath: str) -> List[Dict[str, Any]]:
@@ -457,49 +394,11 @@ def save_dataset_jsonl(dataset: List[Dict[str, Any]], filepath: str):
 
     with open(filepath, "w", encoding="utf-8") as f:
         for example in dataset:
-            f.write(json.dumps(example, ensure_ascii=False) + "\n")
+            _example = deepcopy(example)
+            _example.pop("query_fn")
+            f.write(json.dumps(_example, ensure_ascii=False) + "\n")
 
     logger.info(f"Dataset saved to {filepath} with {len(dataset)} examples")
-
-
-def add_train_test_split(
-    dataset: List[Dict[str, Any]], train_ratio: float = 0.8
-) -> List[Dict[str, Any]]:
-    """
-    Add train/test split column to dataset.
-
-    Args:
-        dataset: List of example records
-        train_ratio: Fraction of examples for training
-
-    Returns:
-        Dataset with split column added
-    """
-    pass
-
-
-def generate_summary_statistics(dataset: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Generate summary statistics for the dataset.
-
-    Args:
-        dataset: Final processed dataset
-
-    Returns:
-        Dict containing various statistics
-    """
-    pass
-
-
-def create_report(dataset: List[Dict[str, Any]], output_path: str):
-    """
-    Generate a comprehensive report with statistics and examples.
-
-    Args:
-        dataset: Final processed dataset
-        output_path: Path to save the report
-    """
-    pass
 
 
 def parse_arguments():
@@ -538,8 +437,9 @@ def main():
         "Data loading and filtering complete. Exiting before feature extraction."
     )
     # return train_ds
+    examples = []
 
-    for i, example in enumerate(train_ds or []):
+    for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
         query = example["query"]
 
         if i % 100 == 0:
@@ -551,7 +451,7 @@ def main():
         query_item = query_extraction_result["item"]
 
         (
-            common_pos_features,
+            common_features,
             unique_pos_features,
             unique_neg_features,
             neither_features,
@@ -559,43 +459,41 @@ def main():
             example["positive_product"], example["hard_neg_product"]
         )
         example = generate_example(
-            common_pos_features,
+            common_features,
             unique_pos_features,
             unique_neg_features,
             neither_features,
         )
+        example["item"] = query_item
+        example["features"] = query_features
+        example["common_features"] = common_features
+        example["unique_pos_features"] = unique_pos_features
+        example["unique_neg_features"] = unique_neg_features
+        example["neither_features"] = neither_features
+        examples.append(example)
 
-        raise NotImplementedError("Not implemented")
+    # Print cost report after processing
+    # print_cost_report()
 
-    # Add train/test split
-    logger.info(f"Generated {len(final_examples)} valid examples")
-    final_dataset = add_train_test_split(final_examples)
-    logger.info("Train/test split added to dataset")
+    # raise NotImplementedError("Not implemented")
 
     # Step 6: Output Generation
-    logger.info("Saving dataset and generating report...")
-    output_file = "logical_recall_dataset"
-    if args.n_examples:
-        output_file += f"_{args.n_examples}"
-    output_file += ".jsonl"
+    logger.info("Saving dataset...")
+    output_file = f"dataset/feature-distance-dataset_{MODEL_ID}_{args.n_examples}.jsonl"
 
-    save_dataset_jsonl(final_dataset, output_file)
+    save_dataset_jsonl(examples, output_file)
     logger.info(f"Dataset saved to {output_file}")
 
-    report_file = "dataset_report"
-    if args.n_examples:
-        report_file += f"_{args.n_examples}"
-    report_file += ".md"
-
-    create_report(final_dataset, report_file)
-    logger.info(f"Report saved to {report_file}")
-
     # Step 7: Cleanup and Logging
-    dataset_size = len(final_dataset) if final_dataset else 0
+    dataset_size = len(examples) if examples else 0
     logger.info(f"Dataset creation completed. Generated {dataset_size} examples.")
+
+    # Print API cost report
+    print_cost_report()
+
     # TODO: Clean up temporary files and resources
 
-    return final_dataset
+    return examples
 
 
 if __name__ == "__main__":

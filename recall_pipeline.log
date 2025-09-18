@@ -1,0 +1,631 @@
+2025-09-04 11:59:14,280 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 11:59:14,280 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 11:59:14,280 - __main__ - INFO - VLLM client initialized
+2025-09-04 11:59:14,280 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 11:59:14,280 - __main__ - INFO - Loaded 0 raw examples
+2025-09-04 11:59:14,280 - __main__ - INFO - Filtered to 0 examples after removing Complement labels
+2025-09-04 11:59:14,280 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 11:59:14,280 - __main__ - INFO - Generated 0 valid examples
+2025-09-04 11:59:14,281 - __main__ - INFO - Train/test split added to dataset
+2025-09-04 11:59:14,281 - __main__ - INFO - Saving dataset and generating report...
+2025-09-04 11:59:14,281 - __main__ - INFO - Dataset saved to logical_recall_dataset.jsonl
+2025-09-04 11:59:14,281 - __main__ - INFO - Report saved to dataset_report.md
+2025-09-04 11:59:22,626 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 11:59:22,626 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 11:59:22,626 - __main__ - INFO - VLLM client initialized
+2025-09-04 11:59:22,627 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 11:59:22,627 - __main__ - INFO - Loaded 0 raw examples
+2025-09-04 11:59:22,627 - __main__ - INFO - Filtered to 0 examples after removing Complement labels
+2025-09-04 11:59:22,627 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 11:59:22,627 - __main__ - INFO - Generated 0 valid examples
+2025-09-04 11:59:22,627 - __main__ - INFO - Train/test split added to dataset
+2025-09-04 11:59:22,627 - __main__ - INFO - Saving dataset and generating report...
+2025-09-04 11:59:22,627 - __main__ - INFO - Dataset saved to logical_recall_dataset.jsonl
+2025-09-04 11:59:22,627 - __main__ - INFO - Report saved to dataset_report.md
+2025-09-04 11:59:22,627 - __main__ - INFO - Dataset creation completed. Generated 0 examples.
+2025-09-04 11:59:38,700 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 11:59:38,701 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 11:59:38,701 - __main__ - INFO - VLLM client initialized
+2025-09-04 11:59:38,701 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 11:59:38,701 - __main__ - INFO - Loaded 2 raw examples
+2025-09-04 11:59:38,701 - __main__ - INFO - Filtered to 0 examples after removing Complement labels
+2025-09-04 11:59:38,701 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 11:59:38,701 - __main__ - INFO - Generated 0 valid examples
+2025-09-04 11:59:38,701 - __main__ - INFO - Train/test split added to dataset
+2025-09-04 11:59:38,701 - __main__ - INFO - Saving dataset and generating report...
+2025-09-04 11:59:38,701 - __main__ - INFO - Dataset saved to logical_recall_dataset.jsonl
+2025-09-04 11:59:38,701 - __main__ - INFO - Report saved to dataset_report.md
+2025-09-04 11:59:38,701 - __main__ - INFO - Dataset creation completed. Generated 0 examples.
+2025-09-04 11:59:49,355 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 11:59:49,356 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 11:59:49,356 - __main__ - INFO - VLLM client initialized
+2025-09-04 11:59:49,356 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 11:59:49,356 - __main__ - INFO - Loaded 2 raw examples
+2025-09-04 11:59:49,356 - __main__ - INFO - Filtered to 2 examples after removing Complement labels
+2025-09-04 11:59:49,356 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 11:59:49,356 - __main__ - INFO - Processing example 0...
+2025-09-04 12:00:08,546 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:00:08,546 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:00:08,546 - __main__ - INFO - VLLM client initialized
+2025-09-04 12:00:08,546 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 12:00:08,546 - __main__ - INFO - Loaded 2 raw examples
+2025-09-04 12:00:08,546 - __main__ - INFO - Filtered to 2 examples after removing Complement labels
+2025-09-04 12:00:08,546 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 12:00:08,546 - __main__ - INFO - Processing example 0...
+2025-09-04 12:00:08,546 - __main__ - INFO - Generated 0 valid examples
+2025-09-04 12:00:08,546 - __main__ - INFO - Train/test split added to dataset
+2025-09-04 12:00:08,546 - __main__ - INFO - Saving dataset and generating report...
+2025-09-04 12:00:08,546 - __main__ - INFO - Dataset saved to logical_recall_dataset.jsonl
+2025-09-04 12:00:08,546 - __main__ - INFO - Report saved to dataset_report.md
+2025-09-04 12:00:08,546 - __main__ - INFO - Dataset creation completed. Generated 0 examples.
+2025-09-04 12:05:40,198 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:05:40,198 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:05:40,198 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:05:40,198 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 12:06:18,209 - __main__ - INFO - Loaded 28 raw examples
+2025-09-04 12:06:28,727 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:06:28,727 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:06:28,727 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:06:28,727 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 12:09:05,095 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:09:05,096 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:09:05,096 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:09:05,096 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 12:11:49,476 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:11:49,476 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:11:49,476 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:11:49,476 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 12:13:50,062 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:13:50,062 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:13:50,063 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:13:50,063 - __main__ - INFO - Loading ESCI dataset...
+2025-09-04 12:18:52,873 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:18:52,874 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:18:52,874 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:18:52,874 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:18:54,992 - __main__ - INFO - Loaded and filtered 10 train examples
+2025-09-04 12:24:17,533 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:24:17,533 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:24:17,534 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:24:17,534 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:24:19,550 - __main__ - INFO - Loaded and filtered 10 train examples
+2025-09-04 12:24:19,550 - __main__ - INFO - Loaded and filtered 10 test examples
+2025-09-04 12:24:19,550 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 12:24:19,550 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 12:24:19,551 - __main__ - INFO - Processing example 0...
+2025-09-04 12:24:29,342 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 12:24:29,387 - __main__ - INFO - Successfully extracted features from query on attempt 1
+2025-09-04 12:29:49,062 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:29:49,062 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:29:49,063 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:29:49,063 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:44:56,265 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:44:56,265 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:44:56,265 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:44:56,266 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:45:35,234 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:45:35,234 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:45:35,234 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:45:35,235 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:45:46,448 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:45:46,449 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:45:46,449 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:45:46,449 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:48:29,422 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:48:29,422 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:48:29,423 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:48:29,423 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:50:15,233 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:50:15,234 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:50:15,234 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:50:15,234 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:52:37,571 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:52:37,572 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:52:37,572 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:52:37,572 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:52:50,568 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 12:54:09,685 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 12:54:09,686 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 12:54:09,686 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 12:54:09,686 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 12:54:22,841 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 13:51:29,565 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 13:51:29,566 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 13:51:29,566 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 13:51:29,566 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 13:53:15,143 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 13:53:15,144 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 13:53:15,144 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 13:53:15,144 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 13:54:10,201 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 13:54:10,201 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 13:54:10,201 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 13:54:10,202 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 13:54:22,806 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 13:55:29,229 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 13:55:29,229 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 13:55:29,230 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 13:55:29,230 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 13:55:41,851 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 13:57:33,500 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 13:57:33,501 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 13:57:33,501 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 13:57:33,501 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 13:57:46,042 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 13:58:53,183 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 13:58:53,184 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 13:58:53,184 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 13:58:53,184 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 13:59:05,781 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 14:05:23,424 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 14:05:23,424 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 14:05:23,424 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 14:05:23,425 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 14:05:23,425 - __main__ - INFO - JSON file dataset/train_10000.jsonl not found. Loading from HuggingFace...
+2025-09-04 14:05:36,117 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 14:05:44,157 - __main__ - INFO - Saving processed train dataset to dataset/train_10000.jsonl
+2025-09-04 14:06:43,986 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 14:06:43,987 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 14:06:43,987 - __main__ - INFO - OpenAI GPT-5 client initialized
+2025-09-04 14:06:43,987 - __main__ - INFO - Loading and filtering ESCI dataset...
+2025-09-04 14:06:43,987 - __main__ - INFO - JSON file dataset/train_10000.jsonl not found. Loading from HuggingFace...
+2025-09-04 14:06:56,708 - __main__ - INFO - Reduced train dataset from 10000 to 2490 (24.90%)
+2025-09-04 14:07:04,819 - __main__ - INFO - Saving processed train dataset to dataset/train_10000.jsonl
+2025-09-04 14:07:04,971 - __main__ - INFO - Dataset saved to dataset/train_10000.jsonl with 2490 examples
+2025-09-04 14:07:33,471 - __main__ - INFO - Loaded and filtered 2490 train examples
+2025-09-04 14:07:33,472 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 14:07:33,472 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 14:07:33,472 - __main__ - INFO - Processing example 0...
+2025-09-04 14:07:42,149 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 14:07:42,192 - __main__ - INFO - Successfully extracted features from query on attempt 1
+2025-09-04 14:11:07,865 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 14:11:07,866 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 14:11:07,866 - __main__ - INFO - JSON file dataset/train.jsonl not found. Loading from HuggingFace...
+2025-09-04 14:21:16,213 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 14:21:16,214 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 14:21:16,214 - __main__ - INFO - JSON file dataset/train.jsonl not found. Loading from HuggingFace...
+2025-09-04 14:22:29,414 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 14:22:29,414 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 14:22:29,414 - __main__ - INFO - JSON file dataset/train.jsonl not found. Loading from HuggingFace...
+2025-09-04 14:25:45,480 - __main__ - INFO - Loaded 2027874 examples from train dataset
+2025-09-04 17:35:54,082 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 17:35:54,083 - __main__ - INFO - Starting Logical Recall Pipeline
+2025-09-04 17:35:54,083 - __main__ - INFO - JSON file dataset/train.jsonl not found. Loading from HuggingFace...
+2025-09-04 17:38:26,970 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 17:38:26,970 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-04 17:38:26,971 - __main__ - INFO - JSON file dataset/train_1000.jsonl not found. Loading from HuggingFace...
+2025-09-04 17:38:29,024 - __main__ - INFO - Loaded 1000 examples from train dataset
+2025-09-04 17:38:29,767 - __main__ - INFO - Reduced train dataset from 1000 to 192 (19.20%)
+2025-09-04 17:38:30,346 - __main__ - INFO - Saving processed train dataset to dataset/train_1000.jsonl
+2025-09-04 17:38:30,359 - __main__ - INFO - Dataset saved to dataset/train_1000.jsonl with 192 examples
+2025-09-04 17:38:30,361 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 17:38:30,361 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 17:38:30,361 - __main__ - INFO - Processing example 0...
+2025-09-04 17:38:38,270 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 17:38:38,313 - __main__ - INFO - Successfully extracted features from query on attempt 1
+2025-09-04 18:44:55,838 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 18:44:55,838 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-04 18:44:55,839 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-04 18:44:55,846 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-04 18:44:55,847 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 18:44:55,847 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 18:44:55,847 - __main__ - INFO - Processing example 0...
+2025-09-04 18:45:02,639 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:45:02,761 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:53:25,660 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 18:53:25,661 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-04 18:53:25,661 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-04 18:53:25,669 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-04 18:53:25,669 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 18:53:25,670 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 18:53:25,670 - __main__ - INFO - Processing example 0...
+2025-09-04 18:53:34,514 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:53:34,653 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:54:02,126 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 18:54:02,126 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-04 18:54:02,127 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-04 18:54:02,135 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-04 18:54:02,135 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 18:54:02,135 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 18:54:02,135 - __main__ - INFO - Processing example 0...
+2025-09-04 18:54:11,860 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:54:11,959 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:54:27,307 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:54:27,320 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:55:23,209 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 18:55:23,209 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-04 18:55:23,210 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-04 18:55:23,218 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-04 18:55:23,218 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 18:55:23,218 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 18:55:23,218 - __main__ - INFO - Processing example 0...
+2025-09-04 18:55:32,970 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:55:33,099 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:55:54,750 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:55:54,763 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:58:21,720 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-04 18:58:21,720 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-04 18:58:21,720 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-04 18:58:21,728 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-04 18:58:21,728 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-04 18:58:21,729 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-04 18:58:21,729 - __main__ - INFO - Processing example 0...
+2025-09-04 18:58:30,937 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:58:31,041 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-04 18:58:53,802 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-04 18:58:53,815 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-05 10:46:29,806 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-05 10:46:29,807 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-05 10:46:29,807 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-05 10:46:29,815 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-05 10:46:29,815 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-05 10:46:29,815 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-05 10:46:29,816 - __main__ - INFO - Processing example 0...
+2025-09-05 15:13:10,404 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-05 15:13:10,405 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-05 15:13:10,405 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-05 15:13:10,413 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-05 15:13:10,413 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-05 15:13:10,413 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-05 15:13:10,413 - __main__ - INFO - Processing example 0...
+2025-09-05 15:13:21,623 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-05 15:13:21,744 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-05 15:14:01,602 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-05 15:14:01,602 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-05 15:14:01,603 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-05 15:14:01,611 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-05 15:14:01,611 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-05 15:14:01,611 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-05 15:14:01,612 - __main__ - INFO - Processing example 0...
+2025-09-05 15:14:08,607 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-05 15:14:08,709 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-05 15:15:52,162 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-05 15:15:52,163 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-05 15:15:52,163 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-05 15:15:52,171 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-05 15:15:52,171 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-05 15:15:52,171 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-05 15:15:52,171 - __main__ - INFO - Processing example 0...
+2025-09-05 15:16:03,528 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-05 15:16:03,664 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-05 15:16:20,537 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-05 15:16:33,949 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-05 15:17:43,947 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-05 15:17:43,948 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-05 15:17:43,948 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-05 15:17:43,956 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-05 15:17:43,957 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-05 15:17:43,957 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-05 15:17:43,957 - __main__ - INFO - Processing example 0...
+2025-09-05 15:17:52,730 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-05 15:17:52,946 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-05 15:18:01,635 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-05 15:18:01,651 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-17 16:41:33,675 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 16:41:33,675 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 16:41:33,676 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 16:41:33,684 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 16:41:33,684 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 16:41:33,684 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 16:41:33,684 - __main__ - INFO - Processing example 0...
+2025-09-17 16:41:47,136 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 16:41:47,351 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-17 16:42:02,377 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 16:42:04,525 - __main__ - INFO - Successfully completed OpenAI API call on attempt 1
+2025-09-17 16:49:34,352 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 16:49:34,353 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 16:49:34,353 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 16:49:34,361 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 16:49:34,361 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 16:49:34,362 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 16:49:34,362 - __main__ - INFO - Processing example 0...
+2025-09-17 16:49:52,317 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 16:49:52,360 - utils.retry - INFO - Success on attempt 1
+2025-09-17 16:51:09,988 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 16:51:09,989 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 16:51:09,989 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 16:51:09,997 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 16:51:09,998 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 16:51:09,998 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 16:51:09,998 - __main__ - INFO - Processing example 0...
+2025-09-17 16:51:25,932 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 16:51:50,534 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 16:51:50,534 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 16:51:50,535 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 16:51:50,543 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 16:51:50,544 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 16:51:50,544 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 16:51:50,544 - __main__ - INFO - Processing example 0...
+2025-09-17 16:57:00,810 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 16:57:00,811 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 16:57:00,811 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 16:57:00,819 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 16:57:00,819 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 16:57:00,819 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 16:57:00,820 - __main__ - INFO - Processing example 0...
+2025-09-17 16:59:26,056 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 16:59:26,057 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 16:59:26,057 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 16:59:26,066 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 16:59:26,066 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 16:59:26,066 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 16:59:26,066 - __main__ - INFO - Processing example 0...
+2025-09-17 17:03:42,603 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:03:42,604 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:03:42,604 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:03:42,613 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:03:42,613 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:03:42,613 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:03:42,613 - __main__ - INFO - Processing example 0...
+2025-09-17 17:20:58,919 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:20:58,920 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:20:58,920 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:20:58,928 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:20:58,928 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:20:58,928 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:20:58,928 - __main__ - INFO - Processing example 0...
+2025-09-17 17:22:14,104 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:22:14,105 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:22:14,106 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:22:14,114 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:22:14,114 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:22:14,114 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:22:14,114 - __main__ - INFO - Processing example 0...
+2025-09-17 17:22:55,774 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:22:55,774 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:22:55,775 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:22:55,783 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:22:55,783 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:22:55,783 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:22:55,783 - __main__ - INFO - Processing example 0...
+2025-09-17 17:33:14,953 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:33:14,954 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:33:14,954 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:33:14,962 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:33:14,962 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:33:14,962 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:33:14,962 - __main__ - INFO - Processing example 0...
+2025-09-17 17:34:45,526 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:34:45,526 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:34:45,527 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:34:45,535 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:34:45,535 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:34:45,536 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:34:45,536 - __main__ - INFO - Processing example 0...
+2025-09-17 17:37:06,100 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:37:06,101 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:37:06,101 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:37:06,110 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:37:06,111 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:37:06,111 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:37:06,111 - __main__ - INFO - Processing example 0...
+2025-09-17 17:37:31,751 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:37:31,752 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:37:31,752 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:37:31,761 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:37:31,761 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:37:31,761 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:37:31,761 - __main__ - INFO - Processing example 0...
+2025-09-17 17:45:49,556 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:45:49,556 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:45:49,557 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:45:49,565 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:45:49,565 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:45:49,565 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:45:49,565 - __main__ - INFO - Processing example 0...
+2025-09-17 17:46:01,251 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:46:01,252 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:46:01,252 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:46:01,261 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:46:01,261 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:46:01,261 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:46:01,261 - __main__ - INFO - Processing example 0...
+2025-09-17 17:46:07,455 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:46:14,786 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:46:14,787 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-17 17:46:14,787 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-17 17:46:14,796 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-17 17:46:14,796 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:46:14,796 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:46:14,803 - __main__ - INFO - Processing example 0...
+2025-09-17 17:46:33,643 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:46:44,127 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:46:53,318 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:48:56,655 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:48:56,656 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 17:48:56,656 - __main__ - INFO - JSON file dataset/train_100.jsonl not found. Loading from HuggingFace...
+2025-09-17 17:48:58,796 - __main__ - INFO - Loaded 100 examples from train dataset
+2025-09-17 17:48:58,858 - __main__ - INFO - Reduced train dataset from 100 to 14 (14.00%)
+2025-09-17 17:48:58,903 - __main__ - INFO - Saving processed train dataset to dataset/train_100.jsonl
+2025-09-17 17:48:58,905 - __main__ - INFO - Dataset saved to dataset/train_100.jsonl with 14 examples
+2025-09-17 17:48:58,906 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:48:58,906 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:48:58,907 - __main__ - INFO - Processing example 0...
+2025-09-17 17:49:20,384 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:49:30,065 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:49:35,857 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:49:47,954 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:50:06,875 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:50:27,378 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:50:43,284 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:51:03,465 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:51:27,637 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-17 17:52:00,834 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 17:52:00,835 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 17:52:00,835 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 17:52:00,836 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 17:52:00,836 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 17:52:00,836 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 17:52:00,842 - __main__ - INFO - Processing example 0...
+2025-09-17 22:09:28,897 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:09:28,897 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 22:09:28,898 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 22:09:28,898 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 22:09:28,898 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:09:28,899 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:09:28,903 - __main__ - INFO - Processing example 0...
+2025-09-17 22:17:10,565 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:17:10,566 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 22:17:10,566 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 22:17:10,567 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 22:17:10,567 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:17:10,567 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:17:10,572 - __main__ - INFO - Processing example 0...
+2025-09-17 22:24:15,258 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:24:15,259 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 22:24:15,259 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 22:24:15,260 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 22:24:15,260 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:24:15,260 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:24:18,553 - __main__ - INFO - Processing example 0...
+2025-09-17 22:30:43,789 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:30:43,789 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 22:30:43,790 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 22:30:43,790 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 22:30:43,790 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:30:43,791 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:30:43,796 - __main__ - INFO - Processing example 0...
+2025-09-17 22:39:35,206 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:39:35,206 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=50
+2025-09-17 22:39:35,207 - __main__ - INFO - JSON file dataset/train_50.jsonl not found. Loading from HuggingFace...
+2025-09-17 22:39:36,684 - __main__ - INFO - Loaded 50 examples from train dataset
+2025-09-17 22:39:36,703 - __main__ - INFO - Reduced train dataset from 50 to 11 (22.00%)
+2025-09-17 22:39:36,723 - __main__ - INFO - Saving processed train dataset to dataset/train_50.jsonl
+2025-09-17 22:39:36,724 - __main__ - INFO - Dataset saved to dataset/train_50.jsonl with 11 examples
+2025-09-17 22:39:36,725 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:39:36,725 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:39:36,725 - __main__ - INFO - Processing example 0...
+2025-09-17 22:40:25,364 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:40:25,364 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=20
+2025-09-17 22:40:25,364 - __main__ - INFO - JSON file dataset/train_20.jsonl not found. Loading from HuggingFace...
+2025-09-17 22:40:26,627 - __main__ - INFO - Loaded 20 examples from train dataset
+2025-09-17 22:40:26,640 - __main__ - INFO - Reduced train dataset from 20 to 3 (15.00%)
+2025-09-17 22:40:26,647 - __main__ - INFO - Saving processed train dataset to dataset/train_20.jsonl
+2025-09-17 22:40:26,647 - __main__ - INFO - Dataset saved to dataset/train_20.jsonl with 3 examples
+2025-09-17 22:40:26,648 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:40:26,648 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:40:26,649 - __main__ - INFO - Processing example 0...
+2025-09-17 22:42:30,615 - utils.retry - INFO - API Cost Summary: 6 calls, $0.0090 total cost
+2025-09-17 22:44:51,533 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:44:51,534 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=20
+2025-09-17 22:44:51,534 - __main__ - INFO - Loading dataset from cached file: dataset/train_20.jsonl
+2025-09-17 22:44:51,534 - __main__ - INFO - Loaded 3 examples from dataset/train_20.jsonl
+2025-09-17 22:44:51,534 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:44:51,534 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:44:51,536 - __main__ - INFO - Processing example 0...
+2025-09-17 22:46:53,666 - utils.retry - INFO - API Cost Summary: 6 calls, $0.0090 total cost
+2025-09-17 22:54:46,008 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:54:46,009 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 22:54:46,009 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 22:54:46,010 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 22:54:46,010 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:54:46,010 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:54:46,017 - __main__ - INFO - Processing example 0...
+2025-09-17 22:55:15,333 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-17 22:55:15,334 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-17 22:55:15,334 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-17 22:55:15,335 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-17 22:55:15,335 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-17 22:55:15,335 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-17 22:55:15,340 - __main__ - INFO - Processing example 0...
+2025-09-18 10:26:15,864 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 10:26:15,865 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=100
+2025-09-18 10:26:15,865 - __main__ - INFO - Loading dataset from cached file: dataset/train_100.jsonl
+2025-09-18 10:26:15,866 - __main__ - INFO - Loaded 14 examples from dataset/train_100.jsonl
+2025-09-18 10:26:15,866 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 10:26:15,866 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 10:26:15,871 - __main__ - INFO - Processing example 0...
+2025-09-18 10:27:19,119 - utils.retry - INFO - API Cost Summary: 28 calls, $0.0017 total cost
+2025-09-18 11:47:49,957 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 11:47:49,957 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 11:47:49,958 - __main__ - INFO - JSON file dataset/train_1000.jsonl not found. Loading from HuggingFace...
+2025-09-18 11:47:52,307 - __main__ - INFO - Loaded 1000 examples from train dataset
+2025-09-18 11:47:53,034 - __main__ - INFO - Reduced train dataset from 1000 to 192 (19.20%)
+2025-09-18 11:47:53,619 - __main__ - INFO - Saving processed train dataset to dataset/train_1000.jsonl
+2025-09-18 11:47:53,633 - __main__ - INFO - Dataset saved to dataset/train_1000.jsonl with 192 examples
+2025-09-18 11:47:53,635 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 11:47:53,635 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 11:47:53,636 - __main__ - INFO - Processing example 0...
+2025-09-18 11:55:26,085 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 11:55:26,086 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 11:55:26,086 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-18 11:55:26,094 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-18 11:55:26,095 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 11:55:26,095 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 11:55:26,099 - __main__ - INFO - Processing example 0...
+2025-09-18 11:56:30,685 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 11:56:30,686 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 11:56:30,686 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-18 11:56:30,694 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-18 11:56:30,694 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 11:56:30,694 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 11:56:30,699 - __main__ - INFO - Processing example 0...
+2025-09-18 11:57:25,860 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 11:57:25,861 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 11:57:25,861 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-18 11:57:25,869 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-18 11:57:25,869 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 11:57:25,869 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 11:57:25,903 - __main__ - INFO - Processing example 0...
+2025-09-18 12:00:54,206 - openai._base_client - INFO - Retrying request to /chat/completions in 0.442935 seconds
+2025-09-18 12:01:53,030 - __main__ - INFO - Processing example 100...
+2025-09-18 12:04:56,237 - utils.retry - WARNING - Invalid response on attempt 1, retrying...
+2025-09-18 12:04:56,245 - utils.retry - WARNING - Invalid response on attempt 2, retrying...
+2025-09-18 12:04:56,252 - utils.retry - WARNING - Invalid response on attempt 3, retrying...
+2025-09-18 12:04:56,260 - utils.retry - WARNING - Invalid response on attempt 4, retrying...
+2025-09-18 12:04:56,267 - utils.retry - WARNING - Invalid response on attempt 5, retrying...
+2025-09-18 12:04:56,267 - utils.retry - ERROR - Failed after 5 attempts
+2025-09-18 12:06:07,171 - utils.retry - INFO - API Cost Summary: 196 calls, $0.0206 total cost
+2025-09-18 12:06:07,171 - __main__ - INFO - Saving dataset...
+2025-09-18 13:18:22,635 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 13:18:22,636 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 13:18:22,636 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-18 13:18:22,644 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-18 13:18:22,645 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 13:18:22,645 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 13:18:22,649 - __main__ - INFO - Processing example 0...
+2025-09-18 13:18:24,963 - __main__ - INFO - Processing example 100...
+2025-09-18 13:18:26,409 - utils.retry - WARNING - Invalid response on attempt 1, retrying...
+2025-09-18 13:18:26,417 - utils.retry - WARNING - Invalid response on attempt 2, retrying...
+2025-09-18 13:18:26,425 - utils.retry - WARNING - Invalid response on attempt 3, retrying...
+2025-09-18 13:18:26,433 - utils.retry - WARNING - Invalid response on attempt 4, retrying...
+2025-09-18 13:18:26,441 - utils.retry - WARNING - Invalid response on attempt 5, retrying...
+2025-09-18 13:18:26,441 - utils.retry - ERROR - Failed after 5 attempts
+2025-09-18 13:18:27,131 - utils.retry - INFO - API Cost Summary: 0 calls, $0.0000 total cost
+2025-09-18 13:18:27,131 - __main__ - INFO - Saving dataset...
+2025-09-18 13:53:35,271 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 13:53:35,271 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 13:53:35,272 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-18 13:53:35,280 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-18 13:53:35,280 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 13:53:35,280 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 13:53:35,286 - __main__ - INFO - Processing example 0...
+2025-09-18 13:53:37,600 - __main__ - INFO - Processing example 100...
+2025-09-18 13:53:39,040 - utils.retry - WARNING - Invalid response on attempt 1, retrying...
+2025-09-18 13:53:39,048 - utils.retry - WARNING - Invalid response on attempt 2, retrying...
+2025-09-18 13:53:39,056 - utils.retry - WARNING - Invalid response on attempt 3, retrying...
+2025-09-18 13:53:39,064 - utils.retry - WARNING - Invalid response on attempt 4, retrying...
+2025-09-18 13:53:39,071 - utils.retry - WARNING - Invalid response on attempt 5, retrying...
+2025-09-18 13:53:39,071 - utils.retry - ERROR - Failed after 5 attempts
+2025-09-18 13:53:39,753 - utils.retry - INFO - API Cost Summary: 0 calls, $0.0000 total cost
+2025-09-18 13:53:39,753 - __main__ - INFO - Saving dataset...
+2025-09-18 13:54:05,343 - __main__ - INFO - Logging initialized for Logical Recall Pipeline
+2025-09-18 13:54:05,344 - __main__ - INFO - Starting Logical Recall Pipeline with n_examples=1000
+2025-09-18 13:54:05,344 - __main__ - INFO - Loading dataset from cached file: dataset/train_1000.jsonl
+2025-09-18 13:54:05,353 - __main__ - INFO - Loaded 192 examples from dataset/train_1000.jsonl
+2025-09-18 13:54:05,353 - __main__ - INFO - Starting feature extraction and query generation...
+2025-09-18 13:54:05,353 - __main__ - INFO - Data loading and filtering complete. Exiting before feature extraction.
+2025-09-18 13:54:05,358 - __main__ - INFO - Processing example 0...
+2025-09-18 13:54:07,985 - __main__ - INFO - Processing example 100...
+2025-09-18 13:54:09,478 - utils.retry - WARNING - Invalid response on attempt 1, retrying...
+2025-09-18 13:54:09,485 - utils.retry - WARNING - Invalid response on attempt 2, retrying...
+2025-09-18 13:54:09,493 - utils.retry - WARNING - Invalid response on attempt 3, retrying...
+2025-09-18 13:54:09,501 - utils.retry - WARNING - Invalid response on attempt 4, retrying...
+2025-09-18 13:54:09,509 - utils.retry - WARNING - Invalid response on attempt 5, retrying...
+2025-09-18 13:54:09,509 - utils.retry - ERROR - Failed after 5 attempts
+2025-09-18 13:54:10,196 - utils.retry - INFO - API Cost Summary: 0 calls, $0.0000 total cost
+2025-09-18 13:54:10,196 - __main__ - INFO - Saving dataset...
+2025-09-18 13:54:10,239 - __main__ - INFO - Dataset saved to dataset/feature-distance-dataset_gpt-5-nano_1000.jsonl with 192 examples
+2025-09-18 13:54:10,239 - __main__ - INFO - Dataset saved to dataset/feature-distance-dataset_gpt-5-nano_1000.jsonl
+2025-09-18 13:54:10,239 - __main__ - INFO - Dataset creation completed. Generated 192 examples.
+2025-09-18 13:54:10,239 - utils.retry - INFO - API Cost Summary: 0 calls, $0.0000 total cost
