@@ -14,10 +14,10 @@
             "subProcess": false,
             "args": [
                 "--n-examples",
-                "500",
+                "1000",
                 "--model-id",
                 // "meta-llama/Llama-3.1-8B-Instruct"
-                "gpt-5-nano"
+                "gemini-2.5-flash-lite"
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "2,3"
@@ -43,25 +43,21 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--dataset",
-                "${workspaceFolder}/dataset/feature-distance-dataset_gpt-5-nano_1000.jsonl",
-                "--model",
-                "all-MiniLM-L6-v2",
-                "--output",
-                "${workspaceFolder}/models/sbert-contrastive",
-                "--loss",
-                "cosine",
-                "--batch-size",
-                "16",
-                "--epochs",
-                "4",
-                "--warmup-steps",
-                "100",
-                "--eval-steps",
-                "500",
-                "--seed",
-                "42",
+
             ]
+        },
+        {
+            "name": "train_fork.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_fork.py",
+            "console": "integratedTerminal",
+            // "justMyCode": false,
+            "args": [
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1"
+            }
         }
     ]
 }

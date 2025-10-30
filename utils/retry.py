@@ -1,12 +1,14 @@
 import json
 import logging
 import os
-from typing import List, Dict, Callable, Any, Optional
+from typing import List, Dict, Callable, Any, Optional, Tuple
 from joblib import Memory
 import openai
 from dotenv import load_dotenv
 from vllm import LLM, SamplingParams
 from copy import deepcopy
+import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,12 +26,32 @@ MODEL_PRICING = {
     "gpt-5": {"input": 1.250, "output": 10.000},  # $1.25/$10.00 per 1M tokens
     "gpt-5-mini": {"input": 0.250, "output": 2.000},  # $0.25/$2.00 per 1M tokens
     "gpt-5-nano": {"input": 0.050, "output": 0.400},  # $0.05/$0.40 per 1M tokens
+    # Gemini 2.5 Pro - Standard pricing
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.00},  # $1.25/$10.00 per 1M tokens (prompts <= 200k)
+    # Gemini 2.5 Flash - Standard pricing  
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},  # $0.30/$2.50 per 1M tokens
+    "gemini-2.5-flash-lite": {"input": 0.075, "output": 0.30},  # $0.075/$0.30 per 1M tokens
+    # Gemini 2.0 Flash - Standard pricing
+    "gemini-2.0-flash": {"input": 0.075, "output": 0.30},  # $0.075/$0.30 per 1M tokens
+    "gemini-2.0-flash-lite": {"input": 0.0375, "output": 0.15},  # $0.0375/$0.15 per 1M tokens
+    "gemini-2.0-flash-exp": {"input": 0.075, "output": 0.30},  # $0.075/$0.30 per 1M tokens
+    # Gemini 1.5 Flash - Standard pricing
+    "gemini-1.5-flash": {"input": 0.075, "output": 0.30},  # $0.075/$0.30 per 1M tokens
+    "gemini-1.5-flash-8b": {"input": 0.0375, "output": 0.15},  # $0.0375/$0.15 per 1M tokens
+    # Gemini 1.5 Pro - Standard pricing
+    "gemini-1.5-pro": {"input": 1.25, "output": 5.00},  # $1.25/$5.00 per 1M tokens
+    "gemini-1.5-pro-128k": {"input": 1.25, "output": 5.00},  # $1.25/$5.00 per 1M tokens
 }
 
 
 def is_gpt_model(model_id: str) -> bool:
     """Check if the model is a GPT model (OpenAI)."""
-    return model_id.startswith("gpt-") or model_id in MODEL_PRICING
+    return model_id.startswith("gpt-")
+
+
+def is_gemini_model(model_id: str) -> bool:
+    """Check if the model is a Gemini model (Google)."""
+    return model_id.startswith("gemini-")
 
 
 def get_model_pricing(model_id: str) -> tuple:
@@ -75,13 +97,85 @@ def _vllm_api_call(messages: List[Dict[str, str]], model_id: str) -> str:
     return response_text
 
 
+def _track_api_cost(input_tokens: int, output_tokens: int, model_id: str, estimated: bool = False) -> None:
+    """Track API call costs and update global counters."""
+    global total_tokens_used, total_api_calls, total_cost
+    
+    total_api_calls += 1
+    total_tokens_used += input_tokens + output_tokens
+    
+    # Calculate cost using model-specific pricing (per million tokens)
+    input_price, output_price = get_model_pricing(model_id)
+    input_cost = (input_tokens / 1_000_000) * input_price
+    output_cost = (output_tokens / 1_000_000) * output_price
+    call_cost = input_cost + output_cost
+    total_cost += call_cost
+    
+    token_prefix = "~" if estimated else ""
+    logger.debug(
+        f"API call #{total_api_calls} ({model_id}): {token_prefix}{input_tokens} input + {token_prefix}{output_tokens} output tokens = ${call_cost:.4f}"
+    )
+
+
+def _gemini_api_call(messages: List[Dict[str, str]], model_id: str) -> Tuple[str, int, int]:
+    """Make an API call using Google Gemini API with JSON response format.
+    
+    Returns:
+        Tuple of (response_text, input_tokens, output_tokens)
+    """
+    # Configure the API key
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not found in environment variables")
+    
+    genai.configure(api_key=api_key)
+    
+    # Convert OpenAI format messages to Gemini format
+    # Gemini expects a single string or a list of content parts
+    if len(messages) == 1 and messages[0]["role"] == "user":
+        # Simple user message
+        prompt = messages[0]["content"]
+    else:
+        # Convert conversation format
+        prompt_parts = []
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            if role == "user":
+                prompt_parts.append(f"User: {content}")
+            elif role == "assistant":
+                prompt_parts.append(f"Assistant: {content}")
+            elif role == "system":
+                prompt_parts.append(f"System: {content}")
+        prompt = "\n".join(prompt_parts)
+    
+    # Generate content using Gemini with JSON response format
+    model = genai.GenerativeModel(model_id)
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.types.GenerationConfig(
+            temperature=0.0,
+            max_output_tokens=2048,
+            response_mime_type="application/json",
+        )
+    )
+    
+    logger.debug(f"Gemini call completed ({model_id})")
+    
+    # Extract token counts from response metadata
+    input_tokens = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
+    output_tokens = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+    
+    return response.text, input_tokens, output_tokens
+
+
 def _make_api_call(messages_json: str, model_id: str) -> str:
-    """Route to OpenAI or vLLM based on model type."""
+    """Route to OpenAI, Gemini, or vLLM based on model type."""
     global total_tokens_used, total_api_calls, total_cost
 
     messages = json.loads(messages_json)
 
-    # Check if this is a GPT model or a HuggingFace model
+    # Check if this is a GPT model
     if is_gpt_model(model_id):
         # Use OpenAI API
         response = openai.chat.completions.create(
@@ -92,25 +186,21 @@ def _make_api_call(messages_json: str, model_id: str) -> str:
         )
 
         # Track costs
-        total_api_calls += 1
         usage = response.usage
         if usage:
             input_tokens = usage.prompt_tokens
             output_tokens = usage.completion_tokens
-            total_tokens_used += input_tokens + output_tokens
-
-            # Calculate cost using model-specific pricing (per million tokens)
-            input_price, output_price = get_model_pricing(model_id)
-            input_cost = (input_tokens / 1_000_000) * input_price
-            output_cost = (output_tokens / 1_000_000) * output_price
-            call_cost = input_cost + output_cost
-            total_cost += call_cost
-
-            logger.debug(
-                f"API call #{total_api_calls} ({model_id}): {input_tokens} input + {output_tokens} output tokens = ${call_cost:.4f}"
-            )
+            _track_api_cost(input_tokens, output_tokens, model_id, estimated=False)
 
         return response.choices[0].message.content
+    elif is_gemini_model(model_id):
+        # Use Gemini API
+        response_text, input_tokens, output_tokens = _gemini_api_call(messages, model_id)
+        
+        # Track costs using actual token counts from Gemini response
+        _track_api_cost(input_tokens, output_tokens, model_id, estimated=False)
+        
+        return response_text
     else:
         # Use vLLM for HuggingFace models
         return _vllm_api_call(messages, model_id)
@@ -119,6 +209,7 @@ def _make_api_call(messages_json: str, model_id: str) -> str:
 @memory.cache
 def _cached_api_call(messages_json: str, model_id: str) -> str:
     """Raw OpenAI call, cached by joblib."""
+    logger.debug(f"Cached API call ({model_id})")
     return _make_api_call(messages_json, model_id)
 
 
@@ -154,6 +245,8 @@ def retry_with_fallback(
             logger.error(f"API call failed on attempt {attempt+1}: {e}")
             continue
 
+        logger.debug(f"Response on attempt {attempt+1}: type={type(content)}, content={repr(content[:200]) if content else 'None'}...")
+        
         if validation_func(content):
             return content
         else:

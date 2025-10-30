@@ -21,9 +21,11 @@ from random import randint
 import numpy as np
 import re
 from copy import deepcopy
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 from utils.sat import generate_random_sat_fn, generate_simple_sat_fn
-from utils.retry import retry_with_fallback, print_cost_report
+from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model
 
 
 tqdm.pandas()
@@ -38,6 +40,8 @@ MODEL_ID = "gpt-5-nano"
 
 # Global logger
 logger = logging.getLogger(__name__)
+
+
 
 
 def setup_logging():
@@ -142,7 +146,7 @@ def load_esci_dataset(
     return ds_list
 
 
-def infer_item_and_features(query: str) -> Dict[str, Any]:
+def infer_item_and_features(query: str) -> Optional[Dict[str, Any]]:
     """
     Extract features from the query using LLM with JSON schema validation and retry logic.
 
@@ -159,7 +163,7 @@ def infer_item_and_features(query: str) -> Dict[str, Any]:
             "item": {"type": "string"},
             "features": {"type": "array", "items": {"type": "string"}},
         },
-        "required": ["item", "features"],
+        "required": ["item"],
         "additionalProperties": False,
     }
 
@@ -185,7 +189,7 @@ def infer_item_and_features(query: str) -> Dict[str, Any]:
     )
 
     if response is None:
-        return {"item": query, "features": []}
+        return None #{"item": query, "features": []}
 
     # Parse the validated response
     parsed_response = json.loads(response)
@@ -194,7 +198,7 @@ def infer_item_and_features(query: str) -> Dict[str, Any]:
 
 def get_common_and_differentiating_features(
     positive_product: Dict[str, Any], substitute_irrelevant_product: Dict[str, Any]
-) -> Tuple[List[str], List[str]]:
+) -> Optional[Tuple[List[str], List[str], List[str], List[str]]]:
     """
     Get the common and differentiating features between the positive and substitute/irrelevant products.
     """
@@ -206,7 +210,7 @@ def get_common_and_differentiating_features(
                 positive_product=positive_product,
                 substitute_irrelevant_product=substitute_irrelevant_product,
                 N_FEATURES=N_FEATURES,
-                N_COMMON_FEATURES=N_FEATURES // 2,
+                N_COMMON_FEATURES=N_FEATURES,
             ),
         }
     ]
@@ -243,13 +247,20 @@ def get_common_and_differentiating_features(
         fallback_value=None,
         model_id=MODEL_ID,
     )
-    parsed_response = json.loads(response)
-    return (
-        parsed_response["common_features"],
-        parsed_response["unique_features_a"],
-        parsed_response["unique_features_b"],
-        parsed_response["neither_features"],
-    )
+    
+    if response is None:
+        return None, None, None, None
+        
+    try:
+        parsed_response = json.loads(response)
+        return (
+            parsed_response["common_features"],
+            parsed_response["unique_features_a"],
+            parsed_response["unique_features_b"],
+            parsed_response["neither_features"],
+        )
+    except json.JSONDecodeError:
+        return None, None, None, None
 
 
 def fn_seq_to_nl(seq: List[str], features: List[str]) -> str:
@@ -321,9 +332,10 @@ def generate_example(
     # common_features = [common_features[i] for i in features_indices]
     # query_fn, source_code, seq = generate_random_sat_fn(query_len)
     # query_fn, source_code, seq = generate_simple_sat_fn(pos_features=pos_features, neg_features=neg_features, common_features=common_features)
-    nl_query = f"I am looking for: \"{item}\" that has {', '.join(selected_pos_features + selected_common_features)} and does not have {', '.join(selected_neg_features + selected_neither_features)}"
+    nl_query = f"I am looking for: \"{item}\" that has: {', '.join(selected_pos_features + selected_common_features)}; and does not have: {', '.join(selected_neg_features + selected_neither_features)}"
 
     return {
+        "item": item,
         "nl_query": nl_query,
         "selected_pos_features": selected_pos_features,
         "selected_neg_features": selected_neg_features,
@@ -370,6 +382,63 @@ def generate_example(
         # i += 1
         # if i > 1000:
         #     raise ValueError("Failed to generate a query fn")
+
+
+def process_single_example(example: Dict[str, Any], max_distance: int, model_id: str) -> Dict[str, Any]:
+    """
+    Process a single example through the feature extraction and query generation pipeline.
+    
+    Args:
+        example: Single example from the dataset
+        max_distance: Maximum distance for query generation
+        model_id: Model ID to use for inference
+        
+    Returns:
+        Processed example with generated features and query
+    """
+    query = example["query"]
+    
+    # Step 2: Feature Extraction Pipeline
+    query_extraction_result = infer_item_and_features(query)
+    if query_extraction_result is None:
+        return None
+    query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
+    query_item = query_extraction_result["item"]
+
+    (
+        common_features,
+        unique_pos_features,
+        unique_neg_features,
+        neither_features,
+    ) = get_common_and_differentiating_features(
+        example["positive_product"], example["hard_neg_product"]
+    )
+    if common_features is None or unique_pos_features is None or unique_neg_features is None or neither_features is None:
+        return None
+    generated_example = generate_example(
+        item=query_item,
+        common_features=common_features,
+        unique_pos_features=unique_pos_features,
+        unique_neg_features=unique_neg_features,
+        neither_features=neither_features,
+        max_distance=max_distance,
+    )
+    
+    # Check there are no overlapping keys between example and generated_example
+    if set(example.keys()) & set(generated_example.keys()):
+        raise ValueError("Overlapping keys between example and generated_example")
+    
+    # Rename example["query"] to example["original_query"]
+    example["original_query"] = example.pop("query")
+    
+    example.update(generated_example)
+    return example
+
+
+def process_wrapper(args_tuple):
+    """Wrapper function for multiprocessing that can be pickled."""
+    example, max_distance, model_id = args_tuple
+    return process_single_example(example, max_distance, model_id)
 
 
 def calculate_edit_distance(query_fn: Callable, product_features: List[bool]) -> int:
@@ -554,48 +623,75 @@ def main():
     # Process each query group (simplified loop structure for now)
     logger.info("Starting feature extraction and query generation...")
 
-    # QUIT HERE - Data loading and filtering is complete, feature extraction not yet implemented
-    logger.info(
-        "Data loading and filtering complete. Exiting before feature extraction."
-    )
-    # return train_ds
-    examples = []
+    # Determine number of workers based on model type
+    if is_gemini_model(args.model_id):
+        num_workers = int(os.getenv("N_WORKERS", "1"))
+    else:
+        num_workers = 1
+    
+    logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {args.model_id})")
 
-    for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
-        query = example["query"]
+    if num_workers == 1:
+        # Sequential processing for non-Gemini models
+        logger.info("Using sequential processing")
+        examples = []
+        for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
+            query = example["query"]
 
-        if i % 100 == 0:
-            logger.info(f"Processing example {i}...")
+            if i % 100 == 0:
+                logger.info(f"Processing example {i}...")
 
-        # Step 2: Feature Extraction Pipeline
-        query_extraction_result = infer_item_and_features(query)
-        query_features = query_extraction_result["features"]
-        query_item = query_extraction_result["item"]
+            # Step 2: Feature Extraction Pipeline
+            query_extraction_result = infer_item_and_features(query)
+            query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
+            query_item = query_extraction_result["item"]
 
-        (
-            common_features,
-            unique_pos_features,
-            unique_neg_features,
-            neither_features,
-        ) = get_common_and_differentiating_features(
-            example["positive_product"], example["hard_neg_product"]
-        )
-        generated_example = generate_example(
-            item=query_item,
-            common_features=common_features,
-            unique_pos_features=unique_pos_features,
-            unique_neg_features=unique_neg_features,
-            neither_features=neither_features,
-            max_distance=args.max_distance,
-        )
-        # check there are no overlapping keys between example and generated_example
-        if set(example.keys()) & set(generated_example.keys()):
-            raise ValueError("Overlapping keys between example and generated_example")
-        # rename example["query"] to example["original_query"]
-        example["original_query"] = example.pop("query")
+            (
+                common_features,
+                unique_pos_features,
+                unique_neg_features,
+                neither_features,
+            ) = get_common_and_differentiating_features(
+                example["positive_product"], example["hard_neg_product"]
+            )
+            generated_example = generate_example(
+                item=query_item,
+                common_features=common_features,
+                unique_pos_features=unique_pos_features,
+                unique_neg_features=unique_neg_features,
+                neither_features=neither_features,
+                max_distance=args.max_distance,
+            )
+            # check there are no overlapping keys between example and generated_example
+            if set(example.keys()) & set(generated_example.keys()):
+                raise ValueError("Overlapping keys between example and generated_example")
+            # rename example["query"] to example["original_query"]
+            example["original_query"] = example.pop("query")
 
-        example.update(generated_example)
-        examples.append(example)
+            example.update(generated_example)
+            examples.append(example)
+    else:
+        # Parallel processing for Gemini models
+        logger.info(f"Using parallel processing with {num_workers} workers")
+        
+        # Process examples in parallel using simple Pool
+        logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
+        
+        # Prepare arguments for multiprocessing
+        args_list = [(example, args.max_distance, args.model_id) for example in train_ds]
+        
+        with Pool(processes=num_workers) as pool:
+            # Use map with chunksize for better performance
+            results = list(tqdm(
+                pool.imap(process_wrapper, args_list, chunksize=1),
+                total=len(args_list),
+                desc="Processing examples"
+            ))
+            examples = [result for result in results if result is not None]
+        
+        # Filter out None values (failed processing)
+        examples = [ex for ex in examples if ex is not None]
+        logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
 
     # Print cost report after processing
     # print_cost_report()
