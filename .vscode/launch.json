@@ -54,9 +54,12 @@
             "console": "integratedTerminal",
             // "justMyCode": false,
             "args": [
+                "--use-synthetic-data",
+                "--training-style",
+                "ours-mse"
             ],
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0,1"
+                "CUDA_VISIBLE_DEVICES": "0"
             }
         }
     ]
