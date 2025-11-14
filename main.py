@@ -75,21 +75,6 @@ def load_esci_dataset(
     Returns:
         List of processed examples with query and product information
     """
-    import os
-
-    # Define the JSON file path (include n_examples in filename if specified)
-    if n_examples:
-        json_filepath = f"dataset/{split}_{n_examples}.jsonl"
-    else:
-        json_filepath = f"dataset/{split}.jsonl"
-
-    # # Check if JSON file exists
-    # if os.path.exists(json_filepath):
-    #     logger.info(f"Loading dataset from cached file: {json_filepath}")
-    #     return load_dataset_jsonl(json_filepath)
-
-    logger.info(f"JSON file {json_filepath} not found. Loading from HuggingFace...")
-
     # Load the ESCI dataset from HuggingFace
     dataset = load_dataset("tasksource/esci")[split]
     if n_examples:
@@ -138,10 +123,6 @@ def load_esci_dataset(
                 "easy_neg_product": easy_neg_product,
             }
         )
-
-    # Save the processed dataset to JSON for future use
-    logger.info(f"Saving processed {split} dataset to {json_filepath}")
-    save_dataset_jsonl(ds_list, json_filepath)
 
     return ds_list
 
@@ -604,6 +585,9 @@ def parse_arguments():
 
 def main():
     """Main entry point."""
+    # ============================================================================
+    # SETUP AND CONFIGURATION
+    # ============================================================================
     # Parse command line arguments
     args = parse_arguments()
 
@@ -611,107 +595,155 @@ def main():
     global MODEL_ID
     MODEL_ID = args.model_id
 
-    # Step 0: Setup and Configuration
     logger = setup_logging()
     logger.info(f"Starting Logical Recall Pipeline with n_examples={args.n_examples}, model_id={args.model_id}")
 
-    # Step 1: Data Loading and Preprocessing
-    train_ds = load_esci_dataset(n_examples=args.n_examples, split="train")
-
-    final_examples = []
-
-    # Process each query group (simplified loop structure for now)
-    logger.info("Starting feature extraction and query generation...")
-
-    # Determine number of workers based on model type
-    if is_gemini_model(args.model_id):
-        num_workers = int(os.getenv("N_WORKERS", "1"))
-    else:
-        num_workers = 1
-    
-    logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {args.model_id})")
-
-    if num_workers == 1:
-        # Sequential processing for non-Gemini models
-        logger.info("Using sequential processing")
-        examples = []
-        for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
-            query = example["query"]
-
-            if i % 100 == 0:
-                logger.info(f"Processing example {i}...")
-
-            # Step 2: Feature Extraction Pipeline
-            query_extraction_result = infer_item_and_features(query)
-            query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
-            query_item = query_extraction_result["item"]
-
-            (
-                common_features,
-                unique_pos_features,
-                unique_neg_features,
-                neither_features,
-            ) = get_common_and_differentiating_features(
-                example["positive_product"], example["hard_neg_product"]
-            )
-            generated_example = generate_example(
-                item=query_item,
-                common_features=common_features,
-                unique_pos_features=unique_pos_features,
-                unique_neg_features=unique_neg_features,
-                neither_features=neither_features,
-                max_distance=args.max_distance,
-            )
-            # check there are no overlapping keys between example and generated_example
-            if set(example.keys()) & set(generated_example.keys()):
-                raise ValueError("Overlapping keys between example and generated_example")
-            # rename example["query"] to example["original_query"]
-            example["original_query"] = example.pop("query")
-
-            example.update(generated_example)
-            examples.append(example)
-    else:
-        # Parallel processing for Gemini models
-        logger.info(f"Using parallel processing with {num_workers} workers")
-        
-        # Process examples in parallel using simple Pool
-        logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
-        
-        # Prepare arguments for multiprocessing
-        args_list = [(example, args.max_distance, args.model_id) for example in train_ds]
-        
-        with Pool(processes=num_workers) as pool:
-            # Use map with chunksize for better performance
-            results = list(tqdm(
-                pool.imap(process_wrapper, args_list, chunksize=1),
-                total=len(args_list),
-                desc="Processing examples"
-            ))
-            examples = [result for result in results if result is not None]
-        
-        # Filter out None values (failed processing)
-        examples = [ex for ex in examples if ex is not None]
-        logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
-
-    # Print cost report after processing
-    # print_cost_report()
-
-    # raise NotImplementedError("Not implemented")
-
-    # Step 6: Output Generation
-    logger.info("Saving dataset...")
+    # ============================================================================
+    # CHECK FOR CACHED OUTPUT FILE (EARLY EXIT TO SAVE TIME)
+    # ============================================================================
     output_file = f"dataset/feature-distance-dataset_{args.model_id}_{args.n_examples}.jsonl"
+    if os.path.exists(output_file):
+        logger.info(f"JSONL file already exists: {output_file}. Loading from cache and skipping all processing.")
+        examples = load_dataset_jsonl(output_file)
+        logger.info(f"Loaded {len(examples)} examples from {output_file}")
+    else:
+        # ============================================================================
+        # DATA LOADING (only if not cached)
+        # ============================================================================
+        logger.info("Loading dataset from HuggingFace...")
+        train_ds = load_esci_dataset(n_examples=args.n_examples, split="train")
 
-    save_dataset_jsonl(examples, output_file)
-    logger.info(f"Dataset saved to {output_file}")
+        # ============================================================================
+        # FEATURE EXTRACTION AND QUERY GENERATION
+        # ============================================================================
+        logger.info("Starting feature extraction and query generation...")
 
-    # Step 6.5: Generate markdown summary
+        # Determine number of workers based on model type
+        if is_gemini_model(args.model_id):
+            num_workers = int(os.getenv("N_WORKERS", "1"))
+        else:
+            num_workers = 1
+        
+        logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {args.model_id})")
+
+        if num_workers == 1:
+            # Sequential processing for non-Gemini models
+            logger.info("Using sequential processing")
+            examples = []
+            for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
+                query = example["query"]
+
+                if i % 100 == 0:
+                    logger.info(f"Processing example {i}...")
+
+                # Step 2: Feature Extraction Pipeline
+                query_extraction_result = infer_item_and_features(query)
+                query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
+                query_item = query_extraction_result["item"]
+
+                (
+                    common_features,
+                    unique_pos_features,
+                    unique_neg_features,
+                    neither_features,
+                ) = get_common_and_differentiating_features(
+                    example["positive_product"], example["hard_neg_product"]
+                )
+                generated_example = generate_example(
+                    item=query_item,
+                    common_features=common_features,
+                    unique_pos_features=unique_pos_features,
+                    unique_neg_features=unique_neg_features,
+                    neither_features=neither_features,
+                    max_distance=args.max_distance,
+                )
+                # check there are no overlapping keys between example and generated_example
+                if set(example.keys()) & set(generated_example.keys()):
+                    raise ValueError("Overlapping keys between example and generated_example")
+                # rename example["query"] to example["original_query"]
+                example["original_query"] = example.pop("query")
+
+                example.update(generated_example)
+                examples.append(example)
+        else:
+            # Parallel processing for Gemini models
+            logger.info(f"Using parallel processing with {num_workers} workers")
+            
+            # Process examples in parallel using simple Pool
+            logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
+            
+            # Prepare arguments for multiprocessing
+            args_list = [(example, args.max_distance, args.model_id) for example in train_ds]
+            
+            with Pool(processes=num_workers) as pool:
+                # Use map with chunksize for better performance
+                results = list(tqdm(
+                    pool.imap(process_wrapper, args_list, chunksize=1),
+                    total=len(args_list),
+                    desc="Processing examples"
+                ))
+                examples = [result for result in results if result is not None]
+            
+            # Filter out None values (failed processing)
+            examples = [ex for ex in examples if ex is not None]
+            logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
+
+        # ============================================================================
+        # SAVE PROCESSED DATASET TO CACHE
+        # ============================================================================
+        logger.info("Saving dataset...")
+        save_dataset_jsonl(examples, output_file)
+        logger.info(f"Dataset saved to {output_file}")
+
+    # ============================================================================
+    # GENERATE MARKDOWN SUMMARY
+    # ============================================================================
     logger.info("Generating dataset summary...")
     summary_file = f"dataset/feature-distance-dataset_{args.model_id}_{args.n_examples}_summary.md"
     generate_dataset_summary_md(examples, summary_file, n_examples=10)
     logger.info(f"Dataset summary saved to {summary_file}")
 
-    # Step 7: Cleanup and Logging
+    # ============================================================================
+    # PROCESS AND SAVE AS HUGGINGFACE DATASET (FOR TRAINING)
+    # ============================================================================
+    logger.info("Processing dataset for training...")
+    from datasets import Dataset as HFDataset, concatenate_datasets
+    
+    raw_dataset = HFDataset.from_list(examples)
+    
+    # Create hard examples dataset
+    def add_hard_examples(example):
+        return {
+            "original_query": example["original_query"],
+            "nl_query": example["nl_query"],
+            "positive_example": f"Product Title: {example['positive_product']['product_title']}\nProduct Description: {example['positive_product']['product_text']}",
+            "negative_example": f"Product Title: {example['hard_neg_product']['product_title']}\nProduct Description: {example['hard_neg_product']['product_text']}",
+            "query_distance": float(example["query_distance"])
+        }
+    
+    # Create easy examples dataset  
+    def add_easy_examples(example):
+        return {
+            "original_query": example["original_query"],
+            "nl_query": example["nl_query"],
+            "positive_example": f"Product Title: {example['positive_product']['product_title']}\nProduct Description: {example['positive_product']['product_text']}",
+            "negative_example": f"Product Title: {example['easy_neg_product']['product_title']}\nProduct Description: {example['easy_neg_product']['product_text']}",
+            "query_distance": -1.0
+        }
+    
+    hard_dataset = raw_dataset.map(add_hard_examples, desc="Processing hard examples", remove_columns=raw_dataset.column_names)
+    easy_dataset = raw_dataset.map(add_easy_examples, desc="Processing easy examples", remove_columns=raw_dataset.column_names)
+    processed_dataset = concatenate_datasets([hard_dataset, easy_dataset])
+    
+    # Save processed dataset
+    dataset_output_dir = f"dataset/processed/feature-distance-dataset_{args.model_id}_{args.n_examples}"
+    os.makedirs(os.path.dirname(dataset_output_dir), exist_ok=True)
+    processed_dataset.save_to_disk(dataset_output_dir)
+    logger.info(f"Processed dataset saved to {dataset_output_dir}")
+
+    # ============================================================================
+    # FINAL CLEANUP AND LOGGING
+    # ============================================================================
     dataset_size = len(examples) if examples else 0
     logger.info(f"Dataset creation completed. Generated {dataset_size} examples.")
 

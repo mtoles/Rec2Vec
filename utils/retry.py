@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from vllm import LLM, SamplingParams
 from copy import deepcopy
 import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # Load environment variables from .env file
 load_dotenv()
