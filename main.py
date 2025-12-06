@@ -183,7 +183,7 @@ def get_common_and_differentiating_features(
     """
     Get the common and differentiating features between the positive and substitute/irrelevant products.
     """
-    similar_prompt = "### Product A:\n\n{positive_product}\n\n### Product B:\n\n{substitute_irrelevant_product}\n\nList up to {N_COMMON_FEATURES} features common to both products (\"common_features\"), up to {N_FEATURES} features unique to product A (\"unique_features_a\"), up to {N_FEATURES} features unique to product B (\"unique_features_b\"), and up to {N_FEATURES} features that do not apply to either product (\"neither_features\")). When generating common_features, ensure they are present in both products in some way. For example, if product A is \"low fat\" and product B in \"low sugar\", then \"low calories\" could be in common_features. If there are fewer than {N_COMMON_FEATURES} common features, generate as many as possible. Do not assume anything about products not written in the description. When generating neither_features, ensure they are opposite or mutually exclusive with features in one or both of the products. For example, if product A is \"red\" and product B is \"orange\", then \"blue\" could be in neither_features. Do not generate negated features, such as \"not red\". Use your imagination and create diverse neither_features. All features should be objective and no more than 5 words. Return ONLY JSON: {{'common_features': ['feature1', 'feature2', ...], 'unique_features_a': ['feature1', 'feature2', ...], 'unique_features_b': ['feature1', 'feature2', ...], 'neither_features': ['feature1', 'feature2', ...]}}"
+    similar_prompt = "### Product A:\n\n{positive_product}\n\n### Product B:\n\n{substitute_irrelevant_product}\n\nList up to {N_COMMON_FEATURES} features common to both products (\"common_features\"), up to {N_FEATURES} features unique to product A (\"unique_features_a\"), up to {N_FEATURES} features unique to product B (\"unique_features_b\"), and up to {N_FEATURES} features that do not apply to either product (\"neither_features\")). When generating common_features, ensure they are present in both products in some way. For example, if product A is \"low fat\" and product B in \"low sugar\", then \"low calories\" could be in common_features. If there are fewer than {N_COMMON_FEATURES} common features, generate as many as possible. Do not assume anything about products not written in the description. When generating neither_features, ensure they are opposite or mutually exclusive with features in one or both of the products. For example, if product A is \"red\" and product B is \"orange\", then \"blue\" could be in neither_features. Must not generate negated features, such as \"not red\", \"no wifi\", \"without bluetooth\", or \"doesn't have x\".Dont use \"not\" or \"without\". Use your imagination and create diverse neither_features. All features should be objective and no more than 5 words. Return ONLY JSON: {{'common_features': ['feature1', 'feature2', ...], 'unique_features_a': ['feature1', 'feature2', ...], 'unique_features_b': ['feature1', 'feature2', ...], 'neither_features': ['feature1', 'feature2', ...]}}"
     messages = [
         {
             "role": "user",
@@ -217,6 +217,13 @@ def get_common_and_differentiating_features(
         try:
             parsed_response = json.loads(content)
             validate(instance=parsed_response, schema=schema)
+            
+            # Check for negated features
+            forbidden_prefixes = ["no ", "not ", "without ", "doesn't have ", "does not have "]
+            for key in ["common_features", "unique_features_a", "unique_features_b", "neither_features"]:
+                for feature in parsed_response.get(key, []):
+                    if any(feature.lower().startswith(prefix) for prefix in forbidden_prefixes):
+                        return False
             return True
         except (json.JSONDecodeError, ValidationError):
             return False
