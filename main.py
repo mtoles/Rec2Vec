@@ -35,8 +35,7 @@ np.random.seed(42)
 # Configuration
 N_FEATURES = 5
 ESCI_DATASET_URL = "https://huggingface.co/datasets/tasksource/esci"
-# MODEL_ID = "gpt-5-mini"
-MODEL_ID = "gpt-5-nano"
+
 
 # Global logger
 logger = logging.getLogger(__name__)
@@ -127,7 +126,7 @@ def load_esci_dataset(
     return ds_list
 
 
-def infer_item_and_features(query: str) -> Optional[Dict[str, Any]]:
+def infer_item_and_features(query: str, model_id: str) -> Optional[Dict[str, Any]]:
     """
     Extract features from the query using LLM with JSON schema validation and retry logic.
 
@@ -166,7 +165,7 @@ def infer_item_and_features(query: str) -> Optional[Dict[str, Any]]:
         validation_func=validate_response,
         max_retries=5,
         fallback_value=None,
-        model_id=MODEL_ID,
+        model_id=model_id,
     )
 
     if response is None:
@@ -178,7 +177,7 @@ def infer_item_and_features(query: str) -> Optional[Dict[str, Any]]:
 
 
 def get_common_and_differentiating_features(
-    positive_product: Dict[str, Any], substitute_irrelevant_product: Dict[str, Any]
+    positive_product: Dict[str, Any], substitute_irrelevant_product: Dict[str, Any], model_id: str
 ) -> Optional[Tuple[List[str], List[str], List[str], List[str]]]:
     """
     Get the common and differentiating features between the positive and substitute/irrelevant products.
@@ -226,7 +225,7 @@ def get_common_and_differentiating_features(
         validation_func=validate_response,
         max_retries=5,
         fallback_value=None,
-        model_id=MODEL_ID,
+        model_id=model_id,
     )
     
     if response is None:
@@ -380,7 +379,7 @@ def process_single_example(example: Dict[str, Any], max_distance: int, model_id:
     query = example["query"]
     
     # Step 2: Feature Extraction Pipeline
-    query_extraction_result = infer_item_and_features(query)
+    query_extraction_result = infer_item_and_features(query, model_id=model_id)
     if query_extraction_result is None:
         return None
     query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
@@ -392,7 +391,7 @@ def process_single_example(example: Dict[str, Any], max_distance: int, model_id:
         unique_neg_features,
         neither_features,
     ) = get_common_and_differentiating_features(
-        example["positive_product"], example["hard_neg_product"]
+        example["positive_product"], example["hard_neg_product"], model_id=model_id
     )
     if common_features is None or unique_pos_features is None or unique_neg_features is None or neither_features is None:
         return None
@@ -591,17 +590,17 @@ def main():
     # Parse command line arguments
     args = parse_arguments()
 
-    # Set global MODEL_ID from command line argument
-    global MODEL_ID
-    MODEL_ID = args.model_id
+    # Setup logging
+    model_id = args.model_id
+
 
     logger = setup_logging()
-    logger.info(f"Starting Logical Recall Pipeline with n_examples={args.n_examples}, model_id={args.model_id}")
+    logger.info(f"Starting Logical Recall Pipeline with n_examples={args.n_examples}, model_id={model_id}")
 
     # ============================================================================
     # CHECK FOR CACHED OUTPUT FILE (EARLY EXIT TO SAVE TIME)
     # ============================================================================
-    output_file = f"dataset/feature-distance-dataset_{args.model_id}_{args.n_examples}.jsonl"
+    output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}.jsonl"
     if os.path.exists(output_file):
         logger.info(f"JSONL file already exists: {output_file}. Loading from cache and skipping all processing.")
         examples = load_dataset_jsonl(output_file)
@@ -619,12 +618,12 @@ def main():
         logger.info("Starting feature extraction and query generation...")
 
         # Determine number of workers based on model type
-        if is_gemini_model(args.model_id):
+        if is_gemini_model(model_id):
             num_workers = int(os.getenv("N_WORKERS", "1"))
         else:
             num_workers = 1
         
-        logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {args.model_id})")
+        logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {model_id})")
 
         if num_workers == 1:
             # Sequential processing for non-Gemini models
@@ -637,7 +636,7 @@ def main():
                     logger.info(f"Processing example {i}...")
 
                 # Step 2: Feature Extraction Pipeline
-                query_extraction_result = infer_item_and_features(query)
+                query_extraction_result = infer_item_and_features(query, model_id=model_id)
                 query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
                 query_item = query_extraction_result["item"]
 
@@ -647,7 +646,7 @@ def main():
                     unique_neg_features,
                     neither_features,
                 ) = get_common_and_differentiating_features(
-                    example["positive_product"], example["hard_neg_product"]
+                    example["positive_product"], example["hard_neg_product"], model_id=model_id
                 )
                 generated_example = generate_example(
                     item=query_item,
@@ -673,7 +672,7 @@ def main():
             logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
             
             # Prepare arguments for multiprocessing
-            args_list = [(example, args.max_distance, args.model_id) for example in train_ds]
+            args_list = [(example, args.max_distance, model_id) for example in train_ds]
             
             with Pool(processes=num_workers) as pool:
                 # Use map with chunksize for better performance
@@ -699,7 +698,7 @@ def main():
     # GENERATE MARKDOWN SUMMARY
     # ============================================================================
     logger.info("Generating dataset summary...")
-    summary_file = f"dataset/feature-distance-dataset_{args.model_id}_{args.n_examples}_summary.md"
+    summary_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_summary.md"
     generate_dataset_summary_md(examples, summary_file, n_examples=10)
     logger.info(f"Dataset summary saved to {summary_file}")
 
@@ -736,7 +735,7 @@ def main():
     processed_dataset = concatenate_datasets([hard_dataset, easy_dataset])
     
     # Save processed dataset
-    dataset_output_dir = f"dataset/processed/feature-distance-dataset_{args.model_id}_{args.n_examples}"
+    dataset_output_dir = f"dataset/processed/feature-distance-dataset_{model_id}_{args.n_examples}"
     os.makedirs(os.path.dirname(dataset_output_dir), exist_ok=True)
     processed_dataset.save_to_disk(dataset_output_dir)
     logger.info(f"Processed dataset saved to {dataset_output_dir}")
