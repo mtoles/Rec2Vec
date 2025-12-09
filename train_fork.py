@@ -69,10 +69,20 @@ def evaluate_model(model, dataset):
         map_at_k=ks,
         precision_recall_at_k=ks,
         ndcg_at_k=ks,
+        accuracy_at_k=ks,
     )
     print("Information Retrieval Evaluator:")
     results = ir_evaluator(model)
     print(results)
+
+    # Calculate average negative cosine similarity
+    print("Calculating Average Negative Cosine Similarity...")
+    query_embeddings = model.encode(dataset["query"], convert_to_tensor=True, show_progress_bar=True)
+    negative_embeddings = model.encode(dataset["negative_example"], convert_to_tensor=True, show_progress_bar=True)
+    neg_cosine_scores = torch.nn.functional.cosine_similarity(query_embeddings, negative_embeddings)
+    avg_neg_cosine = torch.mean(neg_cosine_scores).item()
+    results["avg_neg_cosine_sim"] = avg_neg_cosine
+    print(f"Average Negative Cosine Similarity: {avg_neg_cosine}")
     
     # Log all metrics with cosine_ prefix removed
     print("\nInformation Retrieval Metrics (without prefix):")
