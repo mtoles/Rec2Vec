@@ -304,6 +304,15 @@ def generate_example(
     n_common_features = min(randint(0, query_distance), len(common_features))
     n_neither_features = min(randint(0, query_distance), len(neither_features))
 
+    # Ensure at least one positive/common and one negative/neither feature is selected
+    if not (n_pos_features or n_common_features):
+        n_pos_features = 1 if unique_pos_features else 0
+        n_common_features = 1 if not n_pos_features and common_features else 0
+
+    if not (n_neg_features or n_neither_features):
+        n_neg_features = 1 if unique_neg_features else 0
+        n_neither_features = 1 if not n_neg_features and neither_features else 0
+
     selected_pos_features_indices    = random.sample(list(range(len(unique_pos_features))), n_pos_features)
     selected_neg_features_indices    = random.sample(list(range(len(unique_neg_features))), n_neg_features)
     selected_common_features_indices = random.sample(list(range(len(common_features))), n_common_features)
