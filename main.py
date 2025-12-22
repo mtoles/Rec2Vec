@@ -731,8 +731,8 @@ def main():
         return {
             "original_query": example["original_query"],
             "nl_query": example["nl_query"],
-            "positive_example": f"Product Title: {example['positive_product']['product_title']}\nProduct Description: {example['positive_product']['product_text']}",
-            "negative_example": f"Product Title: {example['hard_neg_product']['product_title']}\nProduct Description: {example['hard_neg_product']['product_text']}",
+            "positive_example": f"Product Description: {example['positive_product']['product_text']}",
+            "negative_example": f"Product Description: {example['hard_neg_product']['product_text']}",
             "query_distance": float(example["query_distance"])
         }
     
@@ -741,8 +741,8 @@ def main():
         return {
             "original_query": example["original_query"],
             "nl_query": example["nl_query"],
-            "positive_example": f"Product Title: {example['positive_product']['product_title']}\nProduct Description: {example['positive_product']['product_text']}",
-            "negative_example": f"Product Title: {example['easy_neg_product']['product_title']}\nProduct Description: {example['easy_neg_product']['product_text']}",
+            "positive_example": f"Product Description: {example['positive_product']['product_text']}",
+            "negative_example": f"Product Description: {example['easy_neg_product']['product_text']}",
             "query_distance": -1.0
         }
     
