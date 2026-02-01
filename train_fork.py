@@ -49,16 +49,14 @@ def prep_ds_for_ir_eval(dataset, query_key, pos_key, neg_key, show_progress=True
 def evaluate_model(model, dataset):
     # (Optional) Evaluate the trained model on the test set
     triplet_evaluator = TripletEvaluator(
-        anchors=dataset["query"],
-        positives=dataset["positive_example"],
-        negatives=dataset["negative_example"],
-        # name="all-nli-test",
+        anchors=dataset["anchor"],
+        positives=dataset["positive"],
+        negatives=dataset["negative"],
     )
-    triplet_evaluator(model)
-    print("Triplet Evaluator:")
-    print(triplet_evaluator)
+    triplet_score = triplet_evaluator(model)
+    print("Triplet score:", triplet_score)
 
-    queries, corpus, relevant_docs = prep_ds_for_ir_eval(dataset, "query", show_progress=True)
+    queries, corpus, relevant_docs = prep_ds_for_ir_eval(dataset, "anchor", "positive", "negative", show_progress=True)
     ks = [50, 100, 1000]
     ir_evaluator = InformationRetrievalEvaluator(
         queries=queries,
@@ -76,8 +74,8 @@ def evaluate_model(model, dataset):
 
     # Calculate average negative cosine similarity
     print("Calculating Average Negative Cosine Similarity...")
-    query_embeddings = model.encode(dataset["query"], convert_to_tensor=True, show_progress_bar=True)
-    negative_embeddings = model.encode(dataset["negative_example"], convert_to_tensor=True, show_progress_bar=True)
+    query_embeddings = model.encode(dataset["anchor"], convert_to_tensor=True, show_progress_bar=True)
+    negative_embeddings = model.encode(dataset["negative"], convert_to_tensor=True, show_progress_bar=True)
     neg_cosine_scores = torch.nn.functional.cosine_similarity(query_embeddings, negative_embeddings)
     avg_neg_cosine = torch.mean(neg_cosine_scores).item()
     results["avg_neg_cosine_sim"] = avg_neg_cosine
@@ -183,6 +181,9 @@ def main():
         dataset = dataset.remove_columns(["nl_query"])
     
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
+        dataset = dataset.rename_column("query", "anchor")
+        dataset = dataset.rename_column("positive_example", "positive")
+        dataset = dataset.rename_column("negative_example", "negative")
         # Keep only easy examples (query_distance == -1) for baseline
         dataset = dataset.filter(lambda x: x["query_distance"] == -1)
         dataset = dataset.remove_columns(["query_distance"])
