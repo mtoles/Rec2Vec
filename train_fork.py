@@ -125,16 +125,14 @@ def main():
     parser.add_argument("--report-to", type=str, default=None, help="Reporting destination (e.g., wandb, tensorboard)")
     
     args = parser.parse_args()
-
-    # Initialize wandb only on the main process
-    if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
-        wandb.init(project="sbert-contrastive", name="train")
-
+    # Override config with CLI arguments (CLI args take precedence over config.yaml)
     # Load configuration from file (defaults come from here)
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
-    
-    # Override config with CLI arguments (CLI args take precedence over config.yaml)
+
+    # Initialize wandb only on the main process
+    if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
+        wandb.init(project="Recalogic", name=f"train_{config['model_name']}_{config['dataset']}_{config['training_style']}_{config['training_args']['num_train_epochs']}_{config['training_args']['global_batch_size']}_{config['training_args']['learning_rate']}_{config['training_args']['warmup_ratio']}_{config['training_args']['lr_scheduler_type']}_{config['training_args']['bf16']}")
     
     # Override top-level config parameters
     if args.model_name is not None:
