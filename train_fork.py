@@ -259,7 +259,7 @@ def main():
         evaluate_model(model, test_dataset)
 
         # 9. Save the trained model
-        model.save_pretrained("models/sbert-contrastive/final")
+        model.save_pretrained(f"models/{config['model_name']}/final")
 
 
 if __name__ == "__main__":
