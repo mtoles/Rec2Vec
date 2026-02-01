@@ -29,21 +29,20 @@ class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
     OURS_MSE = "ours-mse"
 
-def prep_ds_for_ir_eval(dataset, query_key, show_progress=True):
-    # add an id col
-    # dataset = dataset.add_column("id", range(len(dataset)))
-    corpus_items = list(set(list(dataset["positive_example"]) + list(dataset["negative_example"])))
-    corpus = dict(zip(range(len(corpus_items)), corpus_items))
+def prep_ds_for_ir_eval(dataset, query_key, pos_key, neg_key, show_progress=True):
+    corpus_items = list(set(list(dataset[pos_key]) + list(dataset[neg_key])))
+    corpus = dict(enumerate(corpus_items))
     reverse_corpus = {v: k for k, v in corpus.items()}
-    query_items = list(dataset[query_key])
-    queries = dict(zip(range(len(query_items)), query_items))
-    reverse_queries = {v: k for k, v in queries.items()}
+
+    queries = {i: dataset[i][query_key] for i in range(len(dataset))}
     relevant_docs = defaultdict(list)
-    iterator = tqdm(dataset, desc="Preparing dataset for IR evaluation") if show_progress else dataset
-    for example in iterator:
-        query_id = reverse_queries[example[query_key]]
-        relevant_corpus_id = reverse_corpus[example['positive_example']]
-        relevant_docs[query_id].append(relevant_corpus_id)
+
+    iterator = tqdm(range(len(dataset)), desc="Preparing dataset for IR evaluation") if show_progress else range(len(dataset))
+    for i in iterator:
+        ex = dataset[i]
+        relevant_corpus_id = reverse_corpus[ex[pos_key]]
+        relevant_docs[i].append(relevant_corpus_id)
+
     return queries, corpus, relevant_docs
 
 
