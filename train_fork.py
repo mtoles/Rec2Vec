@@ -204,7 +204,7 @@ def main():
     # 4. Define a loss function
     # loss = MultipleNegativesRankingLoss(model)
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
-        loss = losses.TripletLoss(model=model)
+        loss = losses.TripletLoss(model=model,distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2)
     elif config["training_style"] == TrainingStyle.OURS_MSE.value:
         loss = losses.MarginMSELoss(model=model)
     else:
