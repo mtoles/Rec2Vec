@@ -89,6 +89,8 @@ def evaluate_model(model, dataset):
         clean_metric_name = metric_name.replace("cosine_", "")
         metrics_to_log[f"test/{clean_metric_name}"] = metric_value
     
+    metrics_to_log["test/triplet_cosine_accuracy"] = triplet_score["cosine_accuracy"]
+
     # Log to wandb only if initialized (main process only)
     if wandb.run is not None:
         wandb.log(metrics_to_log)
