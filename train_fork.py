@@ -29,37 +29,34 @@ class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
     OURS_MSE = "ours-mse"
 
-def prep_ds_for_ir_eval(dataset, query_key, show_progress=True):
-    # add an id col
-    # dataset = dataset.add_column("id", range(len(dataset)))
-    corpus_items = list(set(list(dataset["positive_example"]) + list(dataset["negative_example"])))
-    corpus = dict(zip(range(len(corpus_items)), corpus_items))
+def prep_ds_for_ir_eval(dataset, query_key, pos_key, neg_key, show_progress=True):
+    corpus_items = list(set(list(dataset[pos_key]) + list(dataset[neg_key])))
+    corpus = dict(enumerate(corpus_items))
     reverse_corpus = {v: k for k, v in corpus.items()}
-    query_items = list(dataset[query_key])
-    queries = dict(zip(range(len(query_items)), query_items))
-    reverse_queries = {v: k for k, v in queries.items()}
+
+    queries = {i: dataset[i][query_key] for i in range(len(dataset))}
     relevant_docs = defaultdict(list)
-    iterator = tqdm(dataset, desc="Preparing dataset for IR evaluation") if show_progress else dataset
-    for example in iterator:
-        query_id = reverse_queries[example[query_key]]
-        relevant_corpus_id = reverse_corpus[example['positive_example']]
-        relevant_docs[query_id].append(relevant_corpus_id)
+
+    iterator = tqdm(range(len(dataset)), desc="Preparing dataset for IR evaluation") if show_progress else range(len(dataset))
+    for i in iterator:
+        ex = dataset[i]
+        relevant_corpus_id = reverse_corpus[ex[pos_key]]
+        relevant_docs[i].append(relevant_corpus_id)
+
     return queries, corpus, relevant_docs
 
 
 def evaluate_model(model, dataset):
     # (Optional) Evaluate the trained model on the test set
     triplet_evaluator = TripletEvaluator(
-        anchors=dataset["query"],
-        positives=dataset["positive_example"],
-        negatives=dataset["negative_example"],
-        # name="all-nli-test",
+        anchors=dataset["anchor"],
+        positives=dataset["positive"],
+        negatives=dataset["negative"],
     )
-    triplet_evaluator(model)
-    print("Triplet Evaluator:")
-    print(triplet_evaluator)
+    triplet_score = triplet_evaluator(model)
+    print("Triplet score:", triplet_score)
 
-    queries, corpus, relevant_docs = prep_ds_for_ir_eval(dataset, "query", show_progress=True)
+    queries, corpus, relevant_docs = prep_ds_for_ir_eval(dataset, "anchor", "positive", "negative", show_progress=True)
     ks = [50, 100, 1000]
     ir_evaluator = InformationRetrievalEvaluator(
         queries=queries,
@@ -77,8 +74,8 @@ def evaluate_model(model, dataset):
 
     # Calculate average negative cosine similarity
     print("Calculating Average Negative Cosine Similarity...")
-    query_embeddings = model.encode(dataset["query"], convert_to_tensor=True, show_progress_bar=True)
-    negative_embeddings = model.encode(dataset["negative_example"], convert_to_tensor=True, show_progress_bar=True)
+    query_embeddings = model.encode(dataset["anchor"], convert_to_tensor=True, show_progress_bar=True)
+    negative_embeddings = model.encode(dataset["negative"], convert_to_tensor=True, show_progress_bar=True)
     neg_cosine_scores = torch.nn.functional.cosine_similarity(query_embeddings, negative_embeddings)
     avg_neg_cosine = torch.mean(neg_cosine_scores).item()
     results["avg_neg_cosine_sim"] = avg_neg_cosine
@@ -92,6 +89,8 @@ def evaluate_model(model, dataset):
         clean_metric_name = metric_name.replace("cosine_", "")
         metrics_to_log[f"test/{clean_metric_name}"] = metric_value
     
+    metrics_to_log["test/triplet_cosine_accuracy"] = triplet_score["cosine_accuracy"]
+
     # Log to wandb only if initialized (main process only)
     if wandb.run is not None:
         wandb.log(metrics_to_log)
@@ -128,16 +127,14 @@ def main():
     parser.add_argument("--report-to", type=str, default=None, help="Reporting destination (e.g., wandb, tensorboard)")
     
     args = parser.parse_args()
-
-    # Initialize wandb only on the main process
-    if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
-        wandb.init(project="sbert-contrastive", name="train")
-
+    # Override config with CLI arguments (CLI args take precedence over config.yaml)
     # Load configuration from file (defaults come from here)
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
-    
-    # Override config with CLI arguments (CLI args take precedence over config.yaml)
+
+    # Initialize wandb only on the main process
+    if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
+        wandb.init(project="Recalogic", name=f"train_{config['model_name']}_{config['dataset']}_{config['training_style']}_{config['training_args']['num_train_epochs']}_{config['training_args']['global_batch_size']}_{config['training_args']['learning_rate']}_{config['training_args']['warmup_ratio']}_{config['training_args']['lr_scheduler_type']}_{config['training_args']['bf16']}")
     
     # Override top-level config parameters
     if args.model_name is not None:
@@ -184,6 +181,9 @@ def main():
         dataset = dataset.remove_columns(["nl_query"])
     
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
+        dataset = dataset.rename_column("query", "anchor")
+        dataset = dataset.rename_column("positive_example", "positive")
+        dataset = dataset.rename_column("negative_example", "negative")
         # Keep only easy examples (query_distance == -1) for baseline
         dataset = dataset.filter(lambda x: x["query_distance"] == -1)
         dataset = dataset.remove_columns(["query_distance"])
@@ -204,7 +204,7 @@ def main():
     # 4. Define a loss function
     # loss = MultipleNegativesRankingLoss(model)
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
-        loss = losses.TripletLoss(model=model)
+        loss = losses.TripletLoss(model=model,distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2)
     elif config["training_style"] == TrainingStyle.OURS_MSE.value:
         loss = losses.MarginMSELoss(model=model)
     else:
@@ -259,7 +259,7 @@ def main():
         evaluate_model(model, test_dataset)
 
         # 9. Save the trained model
-        model.save_pretrained("models/sbert-contrastive/final")
+        model.save_pretrained(f"models/{config['model_name']}/final")
 
 
 if __name__ == "__main__":
