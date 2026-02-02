@@ -592,8 +592,13 @@ def parse_arguments():
     parser.add_argument(
         "--model-id",
         type=str,
-        default="gpt-5-nano",
+        default="gemini-2.5-flash",
         help="Model ID to use for inference (default: gpt-5-nano)",
+    )
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip LLM-based feature extraction and query generation",
     )
     return parser.parse_args()
 
@@ -611,12 +616,15 @@ def main():
 
 
     logger = setup_logging()
-    logger.info(f"Starting Logical Recall Pipeline with n_examples={args.n_examples}, model_id={model_id}")
+    logger.info(f"Starting Logical Recall Pipeline with n_examples={args.n_examples}, model_id={model_id}, no_llm={args.no_llm}")
 
     # ============================================================================
     # CHECK FOR CACHED OUTPUT FILE (EARLY EXIT TO SAVE TIME)
     # ============================================================================
-    output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}.jsonl"
+    if args.no_llm:
+        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_no_llm.jsonl"
+    else:
+        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}.jsonl"
     if os.path.exists(output_file):
         logger.info(f"JSONL file already exists: {output_file}. Loading from cache and skipping all processing.")
         examples = load_dataset_jsonl(output_file)
@@ -633,75 +641,90 @@ def main():
         # ============================================================================
         logger.info("Starting feature extraction and query generation...")
 
-        # Determine number of workers based on model type
-        if is_gemini_model(model_id):
-            num_workers = int(os.getenv("N_WORKERS", "1"))
+        if args.no_llm:
+            logger.info("Skipping LLM processing as --no-llm flag is set.")
+            examples = list(train_ds)
+            # Ensure required fields exist even if empty/None for compatibility
+            for ex in examples:
+                ex["original_query"] = ex.get("query", "")
+                # Add placeholders for fields that would have been generated
+                fields = ["nl_query", "selected_pos_features", "selected_neg_features", 
+                          "selected_common_features", "selected_neither_features",
+                          "full_common_features", "full_unique_pos_features", 
+                          "full_unique_neg_features", "full_neither_features"]
+                for field in fields:
+                    ex[field] = [] if "features" in field else ""
+                ex["query_distance"] = 0
         else:
-            num_workers = 1
-        
-        logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {model_id})")
-
-        if num_workers == 1:
-            # Sequential processing for non-Gemini models
-            logger.info("Using sequential processing")
-            examples = []
-            for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
-                query = example["query"]
-
-                if i % 100 == 0:
-                    logger.info(f"Processing example {i}...")
-
-                # Step 2: Feature Extraction Pipeline
-                query_extraction_result = infer_item_and_features(query, model_id=model_id)
-                query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
-                query_item = query_extraction_result["item"]
-
-                (
-                    common_features,
-                    unique_pos_features,
-                    unique_neg_features,
-                    neither_features,
-                ) = get_common_and_differentiating_features(
-                    example["positive_product"], example["hard_neg_product"], model_id=model_id
-                )
-                generated_example = generate_example(
-                    item=query_item,
-                    common_features=common_features,
-                    unique_pos_features=unique_pos_features,
-                    unique_neg_features=unique_neg_features,
-                    neither_features=neither_features,
-                    max_distance=args.max_distance,
-                )
-                # check there are no overlapping keys between example and generated_example
-                if set(example.keys()) & set(generated_example.keys()):
-                    raise ValueError("Overlapping keys between example and generated_example")
-                # rename example["query"] to example["original_query"]
-                example["original_query"] = example.pop("query")
-
-                example.update(generated_example)
-                examples.append(example)
-        else:
-            # Parallel processing for Gemini models
-            logger.info(f"Using parallel processing with {num_workers} workers")
+            # Determine number of workers based on model type
+            if is_gemini_model(model_id):
+                num_workers = int(os.getenv("N_WORKERS", "1"))
+            else:
+                num_workers = 1
             
-            # Process examples in parallel using simple Pool
-            logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
-            
-            # Prepare arguments for multiprocessing
-            args_list = [(example, args.max_distance, model_id) for example in train_ds]
-            
-            with Pool(processes=num_workers) as pool:
-                # Use map with chunksize for better performance
-                results = list(tqdm(
-                    pool.imap(process_wrapper, args_list, chunksize=1),
-                    total=len(args_list),
-                    desc="Processing examples"
-                ))
-                examples = [result for result in results if result is not None]
-            
-            # Filter out None values (failed processing)
-            examples = [ex for ex in examples if ex is not None]
-            logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
+            logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {model_id})")
+
+            if num_workers == 1:
+                # Sequential processing for non-Gemini models
+                logger.info("Using sequential processing")
+                examples = []
+                for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
+                    query = example["query"]
+
+                    if i % 100 == 0:
+                        logger.info(f"Processing example {i}...")
+
+                    # Step 2: Feature Extraction Pipeline
+                    query_extraction_result = infer_item_and_features(query, model_id=model_id)
+                    query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
+                    query_item = query_extraction_result["item"]
+
+                    (
+                        common_features,
+                        unique_pos_features,
+                        unique_neg_features,
+                        neither_features,
+                    ) = get_common_and_differentiating_features(
+                        example["positive_product"], example["hard_neg_product"], model_id=model_id
+                    )
+                    generated_example = generate_example(
+                        item=query_item,
+                        common_features=common_features,
+                        unique_pos_features=unique_pos_features,
+                        unique_neg_features=unique_neg_features,
+                        neither_features=neither_features,
+                        max_distance=args.max_distance,
+                    )
+                    # check there are no overlapping keys between example and generated_example
+                    if set(example.keys()) & set(generated_example.keys()):
+                        raise ValueError("Overlapping keys between example and generated_example")
+                    # rename example["query"] to example["original_query"]
+                    example["original_query"] = example.pop("query")
+
+                    example.update(generated_example)
+                    examples.append(example)
+            else:
+                # Parallel processing for Gemini models
+                logger.info(f"Using parallel processing with {num_workers} workers")
+                
+                # Process examples in parallel using simple Pool
+                logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
+                
+                # Prepare arguments for multiprocessing
+                args_list = [(example, args.max_distance, model_id) for example in train_ds]
+                
+                with Pool(processes=num_workers) as pool:
+                    # Use map with chunksize for better performance
+                    results = list(tqdm(
+                        pool.imap(process_wrapper, args_list, chunksize=1),
+                        total=len(args_list),
+                        desc="Processing examples"
+                    ))
+                    examples = [result for result in results if result is not None]
+                
+                # Filter out None values (failed processing)
+                examples = [ex for ex in examples if ex is not None]
+                logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
 
         # ============================================================================
         # SAVE PROCESSED DATASET TO CACHE
@@ -731,8 +754,8 @@ def main():
         return {
             "original_query": example["original_query"],
             "nl_query": example["nl_query"],
-            "positive_example": f"Product Description: {example['positive_product']['product_text']}",
-            "negative_example": f"Product Description: {example['hard_neg_product']['product_text']}",
+            "positive_example": f"{example['positive_product']['product_text']}",
+            "negative_example": f"{example['hard_neg_product']['product_text']}",
             "query_distance": float(example["query_distance"])
         }
     
@@ -741,8 +764,8 @@ def main():
         return {
             "original_query": example["original_query"],
             "nl_query": example["nl_query"],
-            "positive_example": f"Product Description: {example['positive_product']['product_text']}",
-            "negative_example": f"Product Description: {example['easy_neg_product']['product_text']}",
+            "positive_example": f"{example['positive_product']['product_text']}",
+            "negative_example": f"{example['easy_neg_product']['product_text']}",
             "query_distance": -1.0
         }
     
