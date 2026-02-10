@@ -124,6 +124,7 @@ def load_esci_dataset(
                 "positive_product": positive_product,
                 "hard_neg_product": hard_neg_product,
                 "easy_neg_product": easy_neg_product,
+                "negative_example_source": row["esci_label"],
             }
         )
 
@@ -760,6 +761,7 @@ def main():
             "nl_query": example["nl_query"],
             "positive_example": f"{example['positive_product']['product_text']}",
             "negative_example": f"{example['hard_neg_product']['product_text']}",
+            "negative_example_source": example["negative_example_source"],
             "query_distance": float(example["query_distance"])
         }
     
@@ -770,7 +772,8 @@ def main():
             "nl_query": example["nl_query"],
             "positive_example": f"{example['positive_product']['product_text']}",
             "negative_example": f"{example['easy_neg_product']['product_text']}",
-            "query_distance": -1.0
+            "negative_example_source": "random",
+            "query_distance": float(args.max_distance)*2
         }
     
     hard_dataset = raw_dataset.map(add_hard_examples, desc="Processing hard examples", remove_columns=raw_dataset.column_names)
