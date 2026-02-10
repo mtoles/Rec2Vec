@@ -81,6 +81,10 @@ def load_esci_dataset(
 
     # Convert to df
     df = pd.DataFrame(dataset)
+
+    # filter for english examples
+    df = df[df['product_locale'] == 'us']
+    
     print(f"irrelevant examples: {df[df['esci_label'] == 'Irrelevant']}")
     print(f"substitute examples: {df[df['esci_label'] == 'Substitute']}")
     print(f"exact examples: {df[df['esci_label'] == 'Exact']}")
