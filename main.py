@@ -113,11 +113,11 @@ def load_esci_dataset(
     ds_list = []
     product_cols = ["product_id", "product_title", "product_text"]
     for _, row in tqdm(subs_df.iterrows(), total=len(subs_df)):
-        positive_product = dict(df.iloc[row["exact_id"]][product_cols])
+        positive_product = dict(df.loc[row["exact_id"]][product_cols])
         hard_neg_product = dict(row[product_cols])
         # pick a random easy negative
         easy_neg_id = df.sample(1).index[0]
-        easy_neg_product = dict(df.iloc[easy_neg_id][product_cols])
+        easy_neg_product = dict(df.loc[easy_neg_id][product_cols])
         ds_list.append(
             {
                 "query": row["query"],
