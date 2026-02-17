@@ -168,6 +168,16 @@ def _gemini_api_call(messages: List[Dict[str, str]], model_id: str) -> Tuple[str
     return response.text, input_tokens, output_tokens
 
 
+def update_cost_from_summary(summary: Dict[str, Any]) -> None:
+    """Update global cost tracking from a summary dictionary."""
+    global total_tokens_used, total_api_calls, total_cost
+    
+    total_tokens_used += summary.get("total_tokens_used", 0)
+    total_api_calls += summary.get("total_api_calls", 0)
+    total_cost += summary.get("total_cost", 0.0)
+
+
+
 def _make_api_call(messages_json: str, model_id: str) -> str:
     """Route to OpenAI, Gemini, or vLLM based on model type."""
     global total_tokens_used, total_api_calls, total_cost
