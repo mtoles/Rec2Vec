@@ -26,6 +26,7 @@ from functools import partial
 
 from utils.sat import generate_random_sat_fn, generate_simple_sat_fn
 from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model
+from langdetect import detect, LangDetectException
 
 
 tqdm.pandas()
@@ -115,9 +116,26 @@ def load_esci_dataset(
     for _, row in tqdm(subs_df.iterrows(), total=len(subs_df)):
         positive_product = dict(df.loc[row["exact_id"]][product_cols])
         hard_neg_product = dict(row[product_cols])
+
+        # Filter out non-English products
+        try:
+            if detect(positive_product["product_text"]) != "en":
+                continue
+            if detect(hard_neg_product["product_text"]) != "en":
+                continue
+        except LangDetectException:
+            continue
+
         # pick a random easy negative
-        easy_neg_id = df.sample(1).index[0]
-        easy_neg_product = dict(df.loc[easy_neg_id][product_cols])
+        while True:
+            easy_neg_id = df.sample(1).index[0]
+            easy_neg_product = dict(df.loc[easy_neg_id][product_cols])
+            try:
+                if detect(easy_neg_product["product_text"]) == "en":
+                    break
+            except LangDetectException:
+                continue
+
         ds_list.append(
             {
                 "query": row["query"],
