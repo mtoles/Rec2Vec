@@ -26,7 +26,7 @@ from functools import partial
 
 from utils.sat import generate_random_sat_fn, generate_simple_sat_fn
 from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model, get_cost_summary, update_cost_from_summary, reset_cost_tracking
-
+from langdetect import detect, LangDetectException
 
 
 tqdm.pandas()
@@ -116,9 +116,26 @@ def load_esci_dataset(
     for _, row in tqdm(subs_df.iterrows(), total=len(subs_df)):
         positive_product = dict(df.loc[row["exact_id"]][product_cols])
         hard_neg_product = dict(row[product_cols])
+
+        # Filter out non-English products
+        try:
+            if detect(positive_product["product_text"]) != "en":
+                continue
+            if detect(hard_neg_product["product_text"]) != "en":
+                continue
+        except LangDetectException:
+            continue
+
         # pick a random easy negative
-        easy_neg_id = df.sample(1).index[0]
-        easy_neg_product = dict(df.loc[easy_neg_id][product_cols])
+        while True:
+            easy_neg_id = df.sample(1).index[0]
+            easy_neg_product = dict(df.loc[easy_neg_id][product_cols])
+            try:
+                if detect(easy_neg_product["product_text"]) == "en":
+                    break
+            except LangDetectException:
+                continue
+
         ds_list.append(
             {
                 "query": row["query"],
@@ -683,40 +700,17 @@ def main():
                 logger.info("Using sequential processing")
                 examples = []
                 for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
-                    query = example["query"]
 
                     if i % 100 == 0:
                         logger.info(f"Processing example {i}...")
 
-                    # Step 2: Feature Extraction Pipeline
-                    query_extraction_result = infer_item_and_features(query, model_id=model_id)
-                    query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
-                    query_item = query_extraction_result["item"]
-
-                    (
-                        common_features,
-                        unique_pos_features,
-                        unique_neg_features,
-                        neither_features,
-                    ) = get_common_and_differentiating_features(
-                        example["positive_product"], example["hard_neg_product"], model_id=model_id
-                    )
-                    generated_example = generate_example(
-                        item=query_item,
-                        common_features=common_features,
-                        unique_pos_features=unique_pos_features,
-                        unique_neg_features=unique_neg_features,
-                        neither_features=neither_features,
-                        max_distance=args.max_distance,
-                    )
-                    # check there are no overlapping keys between example and generated_example
-                    if set(example.keys()) & set(generated_example.keys()):
-                        raise ValueError("Overlapping keys between example and generated_example")
-                    # rename example["query"] to example["original_query"]
-                    example["original_query"] = example.pop("query")
-
-                    example.update(generated_example)
-                    examples.append(example)
+                    # Process example using shared logic
+                    processed_example = process_single_example(example, args.max_distance, model_id)
+                    
+                    if processed_example is None:
+                        continue
+                        
+                    examples.append(processed_example)
             else:
                 # Parallel processing for Gemini models
                 logger.info(f"Using parallel processing with {num_workers} workers")
