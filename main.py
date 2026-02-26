@@ -25,7 +25,7 @@ from multiprocessing import Pool, cpu_count
 from functools import partial
 
 from utils.sat import generate_random_sat_fn, generate_simple_sat_fn
-from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model
+from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model, get_cost_summary, update_cost_from_summary, reset_cost_tracking
 from langdetect import detect, LangDetectException
 
 
@@ -456,8 +456,16 @@ def process_single_example(example: Dict[str, Any], max_distance: int, model_id:
 
 def process_wrapper(args_tuple):
     """Wrapper function for multiprocessing that can be pickled."""
+    # Reset cost tracking for this worker process to ensure clean counting for this task
+    reset_cost_tracking()
+    
     example, max_distance, model_id = args_tuple
-    return process_single_example(example, max_distance, model_id)
+    result = process_single_example(example, max_distance, model_id)
+    
+    # Get cost summary for this specific task execution
+    cost_summary = get_cost_summary()
+    
+    return result, cost_summary
 
 
 def calculate_edit_distance(query_fn: Callable, product_features: List[bool]) -> int:
@@ -715,15 +723,21 @@ def main():
                 
                 with Pool(processes=num_workers) as pool:
                     # Use map with chunksize for better performance
-                    results = list(tqdm(
+                    results_with_costs = list(tqdm(
                         pool.imap(process_wrapper, args_list, chunksize=1),
                         total=len(args_list),
                         desc="Processing examples"
                     ))
-                    examples = [result for result in results if result is not None]
+                    
+                    # Separate results and costs
+                    examples = []
+                    for result, cost_summary in results_with_costs:
+                        # Aggregate the cost from this worker's execution
+                        update_cost_from_summary(cost_summary)
+                        
+                        if result is not None:
+                            examples.append(result)
                 
-                # Filter out None values (failed processing)
-                examples = [ex for ex in examples if ex is not None]
                 logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
 
         # ============================================================================
