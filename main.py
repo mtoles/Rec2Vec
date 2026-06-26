@@ -186,13 +186,13 @@ def infer_item_and_features(query: str, model_id: str) -> Optional[Dict[str, Any
     response = retry_with_fallback(
         messages=messages,
         validation_func=validate_response,
-        max_retries=5,
+        max_retries=3,
         fallback_value=None,
         model_id=model_id,
     )
 
     if response is None:
-        return None #{"item": query, "features": []}
+        return None
 
     # Parse the validated response
     parsed_response = json.loads(response)
@@ -360,7 +360,7 @@ def generate_example(
         "selected_neg_features": selected_neg_features,
         "selected_common_features": selected_common_features,
         "selected_neither_features": selected_neither_features,
-        "query_distance": query_distance,
+        "query_distance": len(selected_pos_features) + len(selected_neg_features),
         # Store the full generated features
         "full_common_features": common_features,
         "full_unique_pos_features": unique_pos_features,
@@ -421,7 +421,7 @@ def process_single_example(example: Dict[str, Any], max_distance: int, model_id:
     query_extraction_result = infer_item_and_features(query, model_id=model_id)
     if query_extraction_result is None:
         return None
-    query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
+    #query_features = query_extraction_result["features"] if "features" in query_extraction_result else []
     query_item = query_extraction_result["item"]
 
     (
@@ -543,14 +543,14 @@ def save_dataset_jsonl(dataset: List[Dict[str, Any]], filepath: str):
     logger.info(f"Dataset saved to {filepath} with {len(dataset)} examples")
 
 
-def generate_dataset_summary_md(dataset: List[Dict[str, Any]], output_filepath: str, n_examples: int = 10):
+def generate_dataset_summary_md(dataset: List[Dict[str, Any]], output_filepath: str, n_examples: int = 20):
     """
     Generate a markdown summary of the first n examples from the dataset.
     
     Args:
         dataset: List of example records
         output_filepath: Path for the markdown file
-        n_examples: Number of examples to include in summary (default: 10)
+        n_examples: Number of examples to include in summary (default: 20)
     """
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
@@ -598,9 +598,99 @@ def generate_dataset_summary_md(dataset: List[Dict[str, Any]], output_filepath: 
             f.write(f"- **Selected Neither:** {', '.join(example.get('selected_neither_features', []))}\n")
             f.write(f"- **Query Distance:** {example.get('query_distance', 'N/A')}\n\n")
             
+            if "rephrased_query" in example:
+                f.write(f"**Rephrased Query:** {example['rephrased_query']}\n\n")
+            
             f.write("---\n\n")
     
     logger.info(f"Dataset summary saved to {output_filepath}")
+
+
+def rephrase_query(nl_query: str, model_id: str) -> Optional[str]:
+    """
+    Rephrase a natural language query using the LLM to mean the same thing while avoiding keywords.
+    """
+    # prompt = "Original query: '{query}'\n\nRephrase this query to mean the same thing while avoiding key words. The goal is to make the query harder but semantically equivalent. Return ONLY the JSON object with a single key 'rephrased_query'. For example: {{'rephrased_query': 'your rephrased query here'}}"
+    prompt = """
+    Original query: '{query}'
+
+    Task: Rephrase the query so it keeps the exact same meaning but sounds more natural and slightly varied.
+
+    Rules:
+    - Preserve intent exactly (positive stays positive, negative stays negative).
+    - You MUST change at least 50–80% of the features/phrases, and only when a natural synonym exists.
+    - Do NOT force rewording if it sounds unnatural.
+    - Do NOT change the product/item name unless a very natural alternative exists.
+    - Do NOT change measurement units or numeric values.
+    - Keep the query fluent and realistic.
+
+    Return ONLY a JSON object: {{"rephrased_query": "..."}}"""
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "rephrased_query": {"type": "string"},
+        },
+        "required": ["rephrased_query"],
+        "additionalProperties": False,
+    }
+
+    def validate_response(content: str) -> bool:
+        try:
+            parsed = json.loads(content)
+            validate(instance=parsed, schema=schema)
+            return True
+        except (json.JSONDecodeError, ValidationError):
+            return False
+
+    messages = [{"role": "user", "content": prompt.format(query=nl_query)}]
+    
+    response = retry_with_fallback(
+        messages=messages,
+        validation_func=validate_response,
+        max_retries=5,
+        fallback_value=None,
+        model_id=model_id,
+    )
+    
+    if response is None:
+        return None
+        
+    try:
+        parsed = json.loads(response)
+        return parsed["rephrased_query"]
+    except json.JSONDecodeError:
+        return None
+
+
+def rephrase_single_example(example: Dict[str, Any], model_id: str) -> Dict[str, Any]:
+    """
+    Rephrase the nl_query of a single example and add it as 'rephrased_query'.
+    """
+    query = example.get("nl_query")
+    if not query:
+        return example
+    
+    if "rephrased_query" in example:
+        return example
+
+    rephrased = rephrase_query(query, model_id)
+    if rephrased:
+        example["rephrased_query"] = rephrased
+    else:
+        example["rephrased_query"] = query
+        logger.warning(f"Failed to rephrase query: {query}")
+        
+    return example
+
+
+def rephrase_wrapper(args_tuple):
+    """Wrapper function for multiprocessing rephrasing."""
+    reset_cost_tracking()
+    example, model_id = args_tuple
+    result = rephrase_single_example(example, model_id)
+    cost_summary = get_cost_summary()
+    return result, cost_summary
 
 
 def parse_arguments():
@@ -631,6 +721,12 @@ def parse_arguments():
         action="store_true",
         help="Skip LLM-based feature extraction and query generation",
     )
+    parser.add_argument(
+        "--rephrase-dataset",
+        type=str,
+        default=None,
+        help="Path to an existing JSONL dataset to rephrase. If provided, skips generation and adds a 'rephrased_query' column.",
+    )
     return parser.parse_args()
 
 
@@ -652,106 +748,161 @@ def main():
     # ============================================================================
     # CHECK FOR CACHED OUTPUT FILE (EARLY EXIT TO SAVE TIME)
     # ============================================================================
-    if args.no_llm:
-        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_no_llm.jsonl"
-    else:
-        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}.jsonl"
-    if os.path.exists(output_file):
-        logger.info(f"JSONL file already exists: {output_file}. Loading from cache and skipping all processing.")
-        examples = load_dataset_jsonl(output_file)
-        logger.info(f"Loaded {len(examples)} examples from {output_file}")
-    else:
-        # ============================================================================
-        # DATA LOADING (only if not cached)
-        # ============================================================================
-        logger.info("Loading dataset from HuggingFace...")
-        train_ds = load_esci_dataset(n_examples=args.n_examples, split="train")
-
-        # ============================================================================
-        # FEATURE EXTRACTION AND QUERY GENERATION
-        # ============================================================================
-        logger.info("Starting feature extraction and query generation...")
-
-        if args.no_llm:
-            logger.info("Skipping LLM processing as --no-llm flag is set.")
-            examples = list(train_ds)
-            # Ensure required fields exist even if empty/None for compatibility
-            for ex in examples:
-                ex["original_query"] = ex.get("query", "")
-                # Add placeholders for fields that would have been generated
-                fields = ["nl_query", "selected_pos_features", "selected_neg_features", 
-                          "selected_common_features", "selected_neither_features",
-                          "full_common_features", "full_unique_pos_features", 
-                          "full_unique_neg_features", "full_neither_features"]
-                for field in fields:
-                    ex[field] = [] if "features" in field else ""
-                ex["query_distance"] = 0
+    if args.rephrase_dataset:
+        logger.info(f"Loading existing dataset to rephrase from {args.rephrase_dataset}...")
+        examples = load_dataset_jsonl(args.rephrase_dataset)
+        
+        # Determine number of workers
+        if is_gemini_model(model_id):
+            num_workers = int(os.getenv("N_WORKERS", "1"))
         else:
-            # Determine number of workers based on model type
-            if is_gemini_model(model_id):
-                num_workers = int(os.getenv("N_WORKERS", "1"))
-            else:
-                num_workers = 1
+            num_workers = 1
             
-            logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {model_id})")
-
-            if num_workers == 1:
-                # Sequential processing for non-Gemini models
-                logger.info("Using sequential processing")
-                examples = []
-                for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
-
-                    if i % 100 == 0:
-                        logger.info(f"Processing example {i}...")
-
-                    # Process example using shared logic
-                    processed_example = process_single_example(example, args.max_distance, model_id)
-                    
-                    if processed_example is None:
-                        continue
-                        
-                    examples.append(processed_example)
-            else:
-                # Parallel processing for Gemini models
-                logger.info(f"Using parallel processing with {num_workers} workers")
+        logger.info(f"Starting dataset rephrasing process with {num_workers} workers...")
+        if num_workers == 1:
+            rephrased_examples = []
+            for i, example in tqdm(enumerate(examples), total=len(examples)):
+                if i % 100 == 0:
+                    logger.info(f"Rephrasing example {i}...")
+                rephrased_examples.append(rephrase_single_example(example, model_id))
+        else:
+            args_list = [(example, model_id) for example in examples]
+            with Pool(processes=num_workers) as pool:
+                results_with_costs = list(tqdm(
+                    pool.imap(rephrase_wrapper, args_list, chunksize=1),
+                    total=len(args_list),
+                    desc="Rephrasing examples"
+                ))
+            
+            rephrased_examples = []
+            for result, cost_summary in results_with_costs:
+                update_cost_from_summary(cost_summary)
+                rephrased_examples.append(result)
                 
-                # Process examples in parallel using simple Pool
-                logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
-                
-                # Prepare arguments for multiprocessing
-                args_list = [(example, args.max_distance, model_id) for example in train_ds]
-                
-                with Pool(processes=num_workers) as pool:
-                    # Use map with chunksize for better performance
-                    results_with_costs = list(tqdm(
-                        pool.imap(process_wrapper, args_list, chunksize=1),
-                        total=len(args_list),
-                        desc="Processing examples"
-                    ))
-                    
-                    # Separate results and costs
-                    examples = []
-                    for result, cost_summary in results_with_costs:
-                        # Aggregate the cost from this worker's execution
-                        update_cost_from_summary(cost_summary)
-                        
-                        if result is not None:
-                            examples.append(result)
-                
-                logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
-
-        # ============================================================================
-        # SAVE PROCESSED DATASET TO CACHE
-        # ============================================================================
-        logger.info("Saving dataset...")
+        examples = rephrased_examples
+        
+        # Save rephrased dataset
+        output_file = args.rephrase_dataset.replace(".jsonl", "_rephrased.jsonl")
+        if output_file == args.rephrase_dataset:
+            output_file += "_rephrased.jsonl"
+            
+        logger.info("Saving rephrased dataset...")
         save_dataset_jsonl(examples, output_file)
-        logger.info(f"Dataset saved to {output_file}")
+        logger.info(f"Rephrased dataset saved to {output_file}")
+        
+    else:
+        if args.no_llm:
+            output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_no_llm.jsonl"
+        else:
+            output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}.jsonl"
+        
+        if os.path.exists(output_file):
+            logger.info(f"JSONL file already exists: {output_file}. Loading from cache and skipping all processing.")
+            examples = load_dataset_jsonl(output_file)
+            logger.info(f"Loaded {len(examples)} examples from {output_file}")
+        else:
+            # ============================================================================
+            # DATA LOADING (only if not cached)
+            # ============================================================================
+            logger.info("Loading dataset from HuggingFace...")
+            train_ds = load_esci_dataset(n_examples=args.n_examples, split="train")
+
+            # ============================================================================
+            # FEATURE EXTRACTION AND QUERY GENERATION
+            # ============================================================================
+            logger.info("Starting feature extraction and query generation...")
+
+            if args.no_llm:
+                logger.info("Skipping LLM processing as --no-llm flag is set.")
+                examples = list(train_ds)
+                # Ensure required fields exist even if empty/None for compatibility
+                for ex in examples:
+                    ex["original_query"] = ex.get("query", "")
+                    # Add placeholders for fields that would have been generated
+                    fields = ["nl_query", "selected_pos_features", "selected_neg_features", 
+                              "selected_common_features", "selected_neither_features",
+                              "full_common_features", "full_unique_pos_features", 
+                              "full_unique_neg_features", "full_neither_features"]
+                    for field in fields:
+                        ex[field] = [] if "features" in field else ""
+                    ex["query_distance"] = 0
+            else:
+                # Determine number of workers based on model type
+                if is_gemini_model(model_id):
+                    num_workers = int(os.getenv("N_WORKERS", "1"))
+                else:
+                    num_workers = 1
+                
+                logger.info(f"Using {num_workers} worker(s) for parallel processing (model: {model_id})")
+
+                if num_workers == 1:
+                    # Sequential processing for non-Gemini models
+                    logger.info("Using sequential processing")
+                    examples = []
+                    for i, example in tqdm(enumerate(train_ds or []), total=len(train_ds)):
+
+                        if i % 100 == 0:
+                            logger.info(f"Processing example {i}...")
+
+                        # Process example using shared logic
+                        processed_example = process_single_example(example, args.max_distance, model_id)
+                        
+                        if processed_example is None:
+                            continue
+                            
+                        examples.append(processed_example)
+                else:
+                    # Parallel processing for Gemini models
+                    logger.info(f"Using parallel processing with {num_workers} workers")
+                    
+                    # Process examples in parallel using simple Pool
+                    logger.info(f"Processing {len(train_ds)} examples with {num_workers} workers")
+                    
+                    # Prepare arguments for multiprocessing
+                    args_list = [(example, args.max_distance, model_id) for example in train_ds]
+                    
+                    with Pool(processes=num_workers) as pool:
+                        # Use map with chunksize for better performance
+                        results_with_costs = list(tqdm(
+                            pool.imap(process_wrapper, args_list, chunksize=1),
+                            total=len(args_list),
+                            desc="Processing examples"
+                        ))
+                        
+                        # Separate results and costs
+                        examples = []
+                        for result, cost_summary in results_with_costs:
+                            # Aggregate the cost from this worker's execution
+                            update_cost_from_summary(cost_summary)
+                            
+                            if result is not None:
+                                examples.append(result)
+                    
+                    logger.info(f"Successfully processed {len(examples)} out of {len(train_ds) if train_ds else 0} examples")
+
+            # ============================================================================
+            # SAVE PROCESSED DATASET TO CACHE
+            # ============================================================================
+            logger.info("Saving dataset...")
+            save_dataset_jsonl(examples, output_file)
+            logger.info(f"Dataset saved to {output_file}")
 
     # ============================================================================
     # GENERATE MARKDOWN SUMMARY
     # ============================================================================
     logger.info("Generating dataset summary...")
-    summary_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_summary.md"
+    if args.rephrase_dataset:
+        # Extract the original number from the filename to keep them synced
+        match = re.search(r'_(\d+)\.jsonl$', args.rephrase_dataset)
+        dataset_size_str = match.group(1) if match else str(len(examples))
+    else:
+        dataset_size_str = str(args.n_examples) if args.n_examples is not None else str(len(examples))
+
+    if args.rephrase_dataset:
+        summary_file = f"dataset/feature-distance-dataset_{model_id}_{dataset_size_str}_rephrased_summary.md"
+    else:
+        summary_file = f"dataset/feature-distance-dataset_{model_id}_{dataset_size_str}_summary.md"
+    
     generate_dataset_summary_md(examples, summary_file, n_examples=10)
     logger.info(f"Dataset summary saved to {summary_file}")
 
@@ -768,6 +919,7 @@ def main():
         return {
             "original_query": example["original_query"],
             "nl_query": example["nl_query"],
+            "rephrased_query": example.get("rephrased_query", ""),
             "positive_example": f"{example['positive_product']['product_text']}",
             "negative_example": f"{example['hard_neg_product']['product_text']}",
             "negative_example_source": example["negative_example_source"],
@@ -779,6 +931,7 @@ def main():
         return {
             "original_query": example["original_query"],
             "nl_query": example["nl_query"],
+            "rephrased_query": example.get("rephrased_query", ""),
             "positive_example": f"{example['positive_product']['product_text']}",
             "negative_example": f"{example['easy_neg_product']['product_text']}",
             "negative_example_source": "random",
@@ -790,7 +943,11 @@ def main():
     processed_dataset = concatenate_datasets([hard_dataset, easy_dataset])
     
     # Save processed dataset
-    dataset_output_dir = f"dataset/processed/feature-distance-dataset_{model_id}_{args.n_examples}"
+    if args.rephrase_dataset:
+        dataset_output_dir = f"dataset/processed/feature-distance-dataset_{model_id}_{dataset_size_str}_rephrased"
+    else:
+        dataset_output_dir = f"dataset/processed/feature-distance-dataset_{model_id}_{dataset_size_str}"
+        
     os.makedirs(os.path.dirname(dataset_output_dir), exist_ok=True)
     processed_dataset.save_to_disk(dataset_output_dir)
     logger.info(f"Processed dataset saved to {dataset_output_dir}")
