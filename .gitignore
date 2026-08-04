@@ -12,3 +12,4 @@ checkpoints
 .cache
 .cursorrules
 run.sh
+./tmp
