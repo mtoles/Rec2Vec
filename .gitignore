@@ -12,3 +12,5 @@ checkpoints
 .cache
 .cursorrules
 run.sh
+./tmp
+CLAUDE.md
