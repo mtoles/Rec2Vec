@@ -1,4 +1,4 @@
-model_name: microsoft/mpnet-base
+model_name: sentence-transformers/all-mpnet-base-v2
 training_style: baseline-triplet
 
 training_args:

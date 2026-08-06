@@ -27,6 +27,7 @@ tqdm.pandas()
 
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
+    BASELINE_INFONCE = "baseline-infonce"
     OURS_MSE = "ours-mse"
 
 def prep_ds_for_ir_eval(dataset, query_key, pos_key, neg_key, show_progress=True):
@@ -104,7 +105,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default=None, help="Path to processed dataset directory")
     parser.add_argument("--use-synthetic-data", action="store_true", help="Use synthetic data (nl_query) instead of original_query")
-    parser.add_argument("--training-style", type=str, default=None, help="Training style: baseline-triplet or ours-mse")
+    parser.add_argument("--training-style", type=str, default=None, help="Training style: baseline-triplet, baseline-infonce, or ours-mse")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to configuration file")
     
     # Model configuration arguments
@@ -132,10 +133,6 @@ def main():
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
 
-    # Initialize wandb only on the main process
-    if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
-        wandb.init(project="Recalogic", name=f"train_{config['model_name']}_{config['dataset']}_{config['training_style']}_{config['training_args']['num_train_epochs']}_{config['training_args']['global_batch_size']}_{config['training_args']['learning_rate']}_{config['training_args']['warmup_ratio']}_{config['training_args']['lr_scheduler_type']}_{config['training_args']['bf16']}")
-    
     # Override top-level config parameters
     if args.model_name is not None:
         config["model_name"] = args.model_name
@@ -160,7 +157,12 @@ def main():
     
     # Use the merged config for training
     train_config = config["training_args"]
-    
+
+    # Initialize wandb only on the main process, after CLI overrides are merged in
+    # so the run name reflects what actually ran.
+    if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
+        wandb.init(project="Recalogic", name=f"train_{config['model_name']}_{config['dataset']}_{config['training_style']}_{train_config['num_train_epochs']}_{train_config['global_batch_size']}_{train_config['learning_rate']}_{train_config['warmup_ratio']}_{train_config['lr_scheduler_type']}_{train_config['bf16']}")
+
     # Disable wandb model upload
     os.environ["WANDB_LOG_MODEL"] = "false"
 
@@ -180,7 +182,7 @@ def main():
     if "nl_query" in dataset.column_names:
         dataset = dataset.remove_columns(["nl_query"])
     
-    if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
+    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.BASELINE_INFONCE.value):
         dataset = dataset.rename_column("query", "anchor")
         dataset = dataset.rename_column("positive_example", "positive")
         dataset = dataset.rename_column("negative_example", "negative")
@@ -205,6 +207,9 @@ def main():
     # loss = MultipleNegativesRankingLoss(model)
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
         loss = losses.TripletLoss(model=model,distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2)
+    elif config["training_style"] == TrainingStyle.BASELINE_INFONCE.value:
+        # InfoNCE: in-batch negatives plus the explicit hard negative column
+        loss = losses.MultipleNegativesRankingLoss(model=model)
     elif config["training_style"] == TrainingStyle.OURS_MSE.value:
         loss = losses.MarginMSELoss(model=model)
     else:
@@ -259,7 +264,9 @@ def main():
         evaluate_model(model, test_dataset)
 
         # 9. Save the trained model
-        model.save_pretrained(f"models/{config['model_name']}/final")
+        # Save next to the checkpoints so concurrent/repeat runs with the same base
+        # model do not overwrite each other's final weights.
+        model.save_pretrained(f"{train_config['output_dir']}/final")
 
 
 if __name__ == "__main__":
