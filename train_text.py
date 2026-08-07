@@ -29,6 +29,7 @@ tqdm.pandas()
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
     OURS_MSE = "ours-mse"
+    OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
 
 def prep_ds_for_ir_eval(dataset, query_key, pos_key, neg_key, show_progress=True):
@@ -296,7 +297,7 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
     return 
 
 
-def prepare_dataset_for_trainer(dataset):
+def prepare_dataset_for_trainer(dataset, swap_pos_neg=False):
     columns_to_remove = [
         "query_distance",
         "negative_example_source",
@@ -304,7 +305,17 @@ def prepare_dataset_for_trainer(dataset):
     ]
     removable_columns = [col for col in columns_to_remove if col in dataset.column_names]
     if removable_columns:
-        return dataset.remove_columns(removable_columns)
+        dataset = dataset.remove_columns(removable_columns)
+    if swap_pos_neg:
+        # MarginMSELoss reads columns positionally (query, positive, negative) and fits
+        # sim(q, col2) - sim(q, col3) to the label, so swapping the column order flips the
+        # sign of the predicted margin without touching the labels.
+        assert {"anchor", "positive", "negative"} <= set(dataset.column_names), (
+            f"Cannot swap positive/negative, columns are {dataset.column_names}"
+        )
+        reordered = ["anchor", "negative", "positive"]
+        reordered += [col for col in dataset.column_names if col not in reordered]
+        dataset = dataset.select_columns(reordered)
     return dataset
 
 
@@ -312,7 +323,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default=None, help="Path to processed dataset directory")
     parser.add_argument("--use-synthetic-data", nargs='?', const=True, type=lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes'], default=False, help="Use synthetic data (nl_query) instead of original_query")
-    parser.add_argument("--training-style", type=str, default=None, help="Training style: baseline-triplet or ours-mse")
+    parser.add_argument("--training-style", type=str, default=None, help="Training style: baseline-triplet, ours-mse, ours-mse-reversed, or classic-mse")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to configuration file")
     parser.add_argument("--easy-negative-value", type=int, default=None, help="Value for easy negatives")
     parser.add_argument("--V", type=int, default=None, help="Value for V")
@@ -381,7 +392,9 @@ def main():
     dataset_size = config['dataset'].replace('_fixed_distance','').split("_")[-1].split("/")[0]
     # Initialize wandb only on the main process
     if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
-        wandb_name = f"{config['training_style']}_{str(dataset_size)}_{'synthetic' if args.use_synthetic_data else 'original'}{'_multiplier-' + str(config.get("hard_negative_multiplier")) if config.get("hard_negative_multiplier") is not None else ''}{'_easy-' + str(config.get("easy_negative_value")) if config.get("easy_negative_value") is not None else ''}"
+        multiplier_suffix = f"_multiplier-{config.get('hard_negative_multiplier')}" if config.get("hard_negative_multiplier") is not None else ""
+        easy_suffix = f"_easy-{config.get('easy_negative_value')}" if config.get("easy_negative_value") is not None else ""
+        wandb_name = f"{config['training_style']}_{str(dataset_size)}_{'synthetic' if args.use_synthetic_data else 'original'}{multiplier_suffix}{easy_suffix}"
         wandb.init(
             project=config.get("wandb_project", "Rec2Vec"),
             group=config.get("wandb_group", None),
@@ -426,7 +439,7 @@ def main():
         if "negative_example_source" in dataset.column_names:
             cols_to_keep.append("negative_example_source")
         dataset = dataset.select_columns(cols_to_keep)
-    elif config["training_style"] == TrainingStyle.OURS_MSE.value or config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
+    elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value):
         dataset = dataset.rename_column("query_distance", "label")
         # if label is 20 (easy negatives) change to easy_negative_value
         dataset = dataset.map(lambda x: {"label": easy_negative_value if x["label"]==20 else x["label"]})
@@ -493,7 +506,7 @@ def main():
 
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
         loss = losses.TripletLoss(model=model,distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2)
-    elif config["training_style"] == TrainingStyle.OURS_MSE.value:
+    elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value):
         loss = losses.MarginMSELoss(model=model,similarity_fct=util.pairwise_cos_sim)
     elif config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
         loss = losses.CosineSimilarityLoss(model=model)
@@ -533,8 +546,9 @@ def main():
 
 
     # 7. Create a trainer & train
-    train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset)
-    eval_dataset_for_trainer = prepare_dataset_for_trainer(eval_dataset)
+    swap_pos_neg = config["training_style"] == TrainingStyle.OURS_MSE_REVERSED.value
+    train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset, swap_pos_neg=swap_pos_neg)
+    eval_dataset_for_trainer = prepare_dataset_for_trainer(eval_dataset, swap_pos_neg=swap_pos_neg)
 
     print(f"Trainer train dataset columns: {train_dataset_for_trainer.column_names}")
     print(f"Trainer eval dataset columns: {eval_dataset_for_trainer.column_names}")
