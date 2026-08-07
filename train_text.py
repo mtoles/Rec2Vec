@@ -23,8 +23,13 @@ import wandb
 from tqdm import tqdm
 import torch.distributed as dist
 import torch
+from utils.run_naming import build_output_dir, build_run_name
 
 tqdm.pandas()
+
+# Easy negatives carry this instead of a measured feature distance (see preprocess_*.py).
+EASY_NEGATIVE_SENTINEL = -1
+
 
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
@@ -128,9 +133,14 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
         if label_key in dataset.column_names:
             labels_list = dataset[label_key]
             labels_tensor = torch.tensor(labels_list, device=neg_cosine_scores.device)
-            max_label_tensor = torch.max(labels_tensor)
-            easy_mask = labels_tensor >= max_label_tensor - 1e-5
-            hard_mask = labels_tensor < max_label_tensor - 1e-5
+            if label_key == "query_distance":
+                # Raw distances: easy negatives still carry the sentinel.
+                easy_mask = torch.isclose(labels_tensor, torch.tensor(float(EASY_NEGATIVE_SENTINEL), device=labels_tensor.device))
+            else:
+                # Already remapped/scaled: easy negatives sit at the largest target distance.
+                max_label_tensor = torch.max(labels_tensor)
+                easy_mask = labels_tensor >= max_label_tensor - 1e-5
+            hard_mask = ~easy_mask
 
     if easy_mask is not None and torch.any(easy_mask):
         avg_easy_neg_cosine = torch.mean(neg_cosine_scores[easy_mask]).item()
@@ -178,9 +188,10 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
             has_label = "label" in dataset.column_names
             label_key = "label" if has_label else "query_distance"
             
-            # Efficiently compute max outside the loop
-            max_label = max(dataset[label_key])
-            
+            # Easy negatives are the sentinel in the raw column, and the largest target
+            # distance once labels have been remapped/scaled.
+            easy_label = EASY_NEGATIVE_SENTINEL if label_key == "query_distance" else max(dataset[label_key])
+
             for row in dataset:
                 q = row["anchor"]
                 p = row["positive"]
@@ -188,15 +199,12 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
                 label = row[label_key]
                 
                 # Logic for labeling:
-                # If distance == 20 (or approx), it's an "Easy Negative" in the dataset sense
-                # Otherwise, it's a "Hard Negative"
-                # If not in the map, it will be "Random" (handled in format_prediction)
-                
-                # We can't easily map back from query ID to all negatives without iterating
-                # So we map (q, n) -> ("Hard Negative" or "Easy Negative", label)
-                
-
-                if str(label) == str(max_label):
+                # A label at `easy_label` means "Easy Negative", anything else is a
+                # "Hard Negative". If not in the map, it will be "Random" (handled in
+                # format_prediction).
+                # We can't easily map back from query ID to all negatives without iterating,
+                # so we map (q, n) -> ("Hard Negative" or "Easy Negative", label)
+                if str(label) == str(easy_label):
                     neg_type = "Easy Negative"
                 else:
                     neg_type = "Hard Negative"
@@ -389,12 +397,22 @@ def main():
         if arg_value is not None:
             config["training_args"][key] = arg_value
 
-    dataset_size = config['dataset'].replace('_fixed_distance','').split("_")[-1].split("/")[0]
+    query_kind = "synthetic" if args.use_synthetic_data else "original"
+    name_extras = {
+        "multiplier": config.get("hard_negative_multiplier"),
+        "easy": config.get("easy_negative_value"),
+        "V": config.get("V"),
+    }
+    # The run directory has to identify the dataset, otherwise two runs that differ only
+    # by --dataset overwrite each other's checkpoints.
+    if args.output_dir is None:
+        config["training_args"]["output_dir"] = build_output_dir(
+            config, modality="text", query_kind=query_kind, extra=name_extras
+        )
+
     # Initialize wandb only on the main process
     if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
-        multiplier_suffix = f"_multiplier-{config.get('hard_negative_multiplier')}" if config.get("hard_negative_multiplier") is not None else ""
-        easy_suffix = f"_easy-{config.get('easy_negative_value')}" if config.get("easy_negative_value") is not None else ""
-        wandb_name = f"{config['training_style']}_{str(dataset_size)}_{'synthetic' if args.use_synthetic_data else 'original'}{multiplier_suffix}{easy_suffix}"
+        wandb_name = build_run_name(config, modality="text", query_kind=query_kind, extra=name_extras)
         wandb.init(
             project=config.get("wandb_project", "Rec2Vec"),
             group=config.get("wandb_group", None),
@@ -441,8 +459,11 @@ def main():
         dataset = dataset.select_columns(cols_to_keep)
     elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value):
         dataset = dataset.rename_column("query_distance", "label")
-        # if label is 20 (easy negatives) change to easy_negative_value
-        dataset = dataset.map(lambda x: {"label": easy_negative_value if x["label"]==20 else x["label"]})
+        # -1 is the easy-negative sentinel in both pipelines, not a real distance.
+        # Map it to the actual distance we want easy negatives trained toward.
+        n_easy = sum(1 for v in dataset["label"] if v == EASY_NEGATIVE_SENTINEL)
+        print(f"Remapping {n_easy}/{len(dataset)} easy-negative labels to {easy_negative_value}")
+        dataset = dataset.map(lambda x: {"label": easy_negative_value if x["label"] == EASY_NEGATIVE_SENTINEL else x["label"]})
         # scale
         dataset = dataset.map(lambda x: {"label": float(x["label"]/ V)})
         dataset = dataset.cast_column("label", Value("float"))
@@ -579,7 +600,7 @@ def main():
         )
 
         # 9. Save the trained model
-        model.save_pretrained(f"models/{config['model_name']}_{config['training_style']}/final")
+        model.save_pretrained(os.path.join(train_config["output_dir"], "final"))
 
 
 if __name__ == "__main__":

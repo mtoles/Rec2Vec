@@ -36,7 +36,10 @@ DEFAULT_HF_DATASET = "Marqo/deepfashion-inshop"
 DEFAULT_MODEL_ID = "gemini-2.5-flash"
 N_FEATURES = 5
 RANDOM_SEED = 42
-EASY_NEGATIVE_DISTANCE = 20.0
+# Sentinel, not a real distance: easy negatives are unrelated, so there is no feature
+# distance to measure. Training remaps it to `easy_negative_value`. Kept identical to the
+# text pipeline so both datasets use one convention.
+EASY_NEGATIVE_DISTANCE = -1.0
 HARD_NEGATIVE_DISTANCE = 1.0
 
 logger = logging.getLogger(__name__)

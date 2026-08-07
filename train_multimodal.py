@@ -24,13 +24,20 @@ import torch
 import wandb
 import yaml
 
+from utils.run_naming import build_output_dir, build_run_name
+
 
 logger = logging.getLogger(__name__)
+
+
+# Easy negatives carry this instead of a measured feature distance (see preprocess_*.py).
+EASY_NEGATIVE_SENTINEL = -1
 
 
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
     OURS_MSE = "ours-mse"
+    OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
 
 
@@ -259,7 +266,7 @@ def evaluate_model(
     return results
 
 
-def prepare_dataset_for_trainer(dataset: Dataset) -> Dataset:
+def prepare_dataset_for_trainer(dataset: Dataset, swap_pos_neg: bool = False) -> Dataset:
     columns_to_remove = [
         "query_distance",
         "negative_example_source",
@@ -281,6 +288,16 @@ def prepare_dataset_for_trainer(dataset: Dataset) -> Dataset:
     removable_columns = [column for column in columns_to_remove if column in dataset.column_names]
     if removable_columns:
         dataset = dataset.remove_columns(removable_columns)
+    if swap_pos_neg:
+        # MarginMSELoss reads columns positionally (query, positive, negative) and fits
+        # sim(q, col2) - sim(q, col3) to the label, so swapping the column order flips the
+        # sign of the predicted margin without touching the labels.
+        assert {"anchor", "positive", "negative"} <= set(dataset.column_names), (
+            f"Cannot swap positive/negative, columns are {dataset.column_names}"
+        )
+        reordered = ["anchor", "negative", "positive"]
+        reordered += [column for column in dataset.column_names if column not in reordered]
+        dataset = dataset.select_columns(reordered)
     return dataset
 
 
@@ -293,7 +310,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=str, default=None, help="Path to processed image dataset directory")
     parser.add_argument("--use-synthetic-data", nargs="?", const=True, type=parse_bool, default=True)
     parser.add_argument("--use-rephrased-query", nargs="?", const=True, type=parse_bool, default=False)
-    parser.add_argument("--training-style", type=str, default=None, help="baseline-triplet, ours-mse, or classic-mse")
+    parser.add_argument("--training-style", type=str, default=None, help="baseline-triplet, ours-mse, ours-mse-reversed, or classic-mse")
     parser.add_argument("--config", type=str, default="config.yaml")
     parser.add_argument("--easy-negative-value", type=int, default=None)
     parser.add_argument("--V", type=int, default=None)
@@ -384,8 +401,21 @@ def load_config(args: argparse.Namespace) -> Dict[str, Any]:
             config["training_args"][key] = value
 
     if args.output_dir is None:
-        safe_model_name = str(config["model_name"]).replace("/", "_")
-        config["training_args"]["output_dir"] = f"models/{safe_model_name}_{config['training_style']}"
+        # Include the dataset in the path, otherwise runs that differ only by --dataset
+        # collide in models/.
+        query_label = {"original_query": "original", "nl_query": "synthetic", "rephrased_query": "rephrased"}.get(
+            select_query_key(args), "original"
+        )
+        config["training_args"]["output_dir"] = build_output_dir(
+            config,
+            modality="multimodal",
+            query_kind=query_label,
+            extra={
+                "easy": config.get("easy_negative_value"),
+                "V": config.get("V"),
+                "transform": config.get("distance_transform"),
+            },
+        )
 
     return config
 
@@ -448,11 +478,15 @@ def main():
     is_main_process = int(os.environ.get("LOCAL_RANK", -1)) <= 0
     wandb_project = config.get("wandb_project", "Rec2Vec")
     wandb_group = config.get("wandb_group", None)
-    dataset_size = str(config.get("dataset", "dataset")).rstrip("/").split("_")[-1]
     query_label = {"original_query": "original", "nl_query": "synthetic", "rephrased_query": "rephrased"}.get(
         query_key, query_key
     )
-    wandb_name = f"multimodal_{config['training_style']}_{dataset_size}_{query_label}"
+    name_extras = {
+        "easy": config.get("easy_negative_value"),
+        "V": config.get("V"),
+        "transform": config.get("distance_transform"),
+    }
+    wandb_name = build_run_name(config, modality="multimodal", query_kind=query_label, extra=name_extras)
     wandb_run_id = None
 
     if is_main_process:
@@ -497,9 +531,17 @@ def main():
             if column in dataset.column_names:
                 cols_to_keep.append(column)
         dataset = dataset.select_columns(cols_to_keep)
-    elif config["training_style"] in [TrainingStyle.OURS_MSE.value, TrainingStyle.CLASSIC_MSE.value]:
+    elif config["training_style"] in [
+        TrainingStyle.OURS_MSE.value,
+        TrainingStyle.OURS_MSE_REVERSED.value,
+        TrainingStyle.CLASSIC_MSE.value,
+    ]:
         dataset = dataset.rename_column("query_distance", "label")
-        dataset = dataset.map(lambda x: {"label": easy_negative_value if x["label"] == 20 else x["label"]})
+        # -1 is the easy-negative sentinel, not a real distance; map it to the distance
+        # we actually want easy negatives trained toward.
+        dataset = dataset.map(
+            lambda x: {"label": easy_negative_value if x["label"] == EASY_NEGATIVE_SENTINEL else x["label"]}
+        )
         dataset = dataset.map(
             lambda x: {
                 "label": transform_normalized_distance(
@@ -563,7 +605,7 @@ def main():
             distance_metric=losses.TripletDistanceMetric.COSINE,
             triplet_margin=0.2,
         )
-    elif config["training_style"] == TrainingStyle.OURS_MSE.value:
+    elif config["training_style"] in [TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value]:
         loss = losses.MarginMSELoss(model=model, similarity_fct=util.pairwise_cos_sim)
     elif config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
         loss = losses.CosineSimilarityLoss(model=model)
@@ -597,8 +639,9 @@ def main():
         report_to=train_config.get("report_to", "none"),
     )
 
-    train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset)
-    eval_dataset_for_trainer = prepare_dataset_for_trainer(eval_dataset)
+    swap_pos_neg = config["training_style"] == TrainingStyle.OURS_MSE_REVERSED.value
+    train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset, swap_pos_neg=swap_pos_neg)
+    eval_dataset_for_trainer = prepare_dataset_for_trainer(eval_dataset, swap_pos_neg=swap_pos_neg)
 
     if config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
         train_dataset_for_trainer = add_image_transform(train_dataset_for_trainer, ["sentence_B"])
