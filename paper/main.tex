@@ -314,7 +314,7 @@ Given these annotations and the query constraints, the target distance is comput
 
 \paragraph{Multimodal compositional retrieval.}
 Compositional constraints create analogous difficulties in vision--language retrieval.
-CLIP learns a general shared space for images and text, whereas composed image-retrieval benchmarks and methods such as CIRR and CLIP4CIR focus on retrieving images that satisfy language-specified attribute modifications~\cite{pmlr-v139-radford21a,Liu_2021_ICCV,Baldrati_2022_CVPR}.
+CLIP learns a shared embedding space for images and text, whereas the CIRR benchmark and methods such as CLIP4CIR study retrieval from queries that combine a reference image with a textual modification~\cite{pmlr-v139-radford21a,Liu_2021_ICCV,Baldrati_2022_CVPR}.
 More recent approaches introduce supervision specifically for negation and fine-grained composition.
 CoN-CLIP and NegationCLIP improve sensitivity to negated concepts, while CoLLM uses LLM-generated triplets for composed image retrieval~\cite{Singh_2025_WACV,Park_2025_ICCV,Huynh_2025_CVPR}.
 This literature further demonstrates that general semantic alignment does not reliably encode whether each positive and negative constraint is satisfied.
