@@ -293,7 +293,7 @@ These methods demonstrate the value of informative negatives and graded training
 In contrast, we derive supervision from the discrete structure of the query: candidates are graded by the number of query-relevant feature edits required to make them satisfy its constraints.
 
 \paragraph{Compositional, Boolean, and product retrieval.}
-Product relevance is inherently compositional, as a relevant item may need to satisfy multiple positive and negative attribute constraints simultaneously.
+Product relevance is often compositional, as a relevant item may need to satisfy multiple positive and negative attribute constraints simultaneously.
 Prior product-search methods address this problem through behaviorally informed negative sampling or representations that explicitly model product facets and attribute composition~\cite{Mohan2019,kong2022multiaspect,Choudhary2022}.
 A related line of work studies logical composition in dense retrieval.
 QUEST considers natural-language queries representing set operations, while BoolQuestions examines conjunction, disjunction, and exclusion through Boolean-aware training and query decomposition~\cite{malaviya-etal-2023-quest,zhang-etal-2024-boolquestions}.
