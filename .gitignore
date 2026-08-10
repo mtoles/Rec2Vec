@@ -16,3 +16,4 @@ run.sh
 CLAUDE.md
 tmp/
 logs/
+*.pdf
