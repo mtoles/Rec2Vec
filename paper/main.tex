@@ -271,6 +271,53 @@ Embedding-based retrieval aims to recall a match set of semantically relevant do
 
 \textbf{Embeddings & Retrieval}
 
+The ``\verb|acmart|'' document class can be used to prepare articles
+for any ACM publication --- conference or journal, and for any stage
+of publication, from review to final ``camera-ready'' copy, to the
+author's own version, with {\itshape very} few changes to the source.
+\section{Related Work}
+
+\paragraph{Dense retrieval and graded supervision.}
+Dense bi-encoders enable efficient first-stage retrieval by mapping queries and candidates into a shared embedding space~\cite{reimers-gurevych-2019-sentence,karpukhin-etal-2020-dense}.
+Their effectiveness, however, depends strongly on the selection and supervision of negative examples.
+Methods such as ANCE and RocketQA improve training by retrieving challenging negatives, sharing negatives across batches, or denoising mined candidates~\cite{xiong2020approximate,qu-etal-2021-rocketqa}.
+Other approaches move beyond uniform positive--negative separation by distilling continuous teacher-score differences, as in MarginMSE and TAS-Balanced~\cite{hofstatter2020improving,hofstatter2021tas}, or by using relevance- and attribute-dependent margins in metric-learning objectives~\cite{zhou2020ladder,Jeong_2021_ICCV,Zhao2019}.
+These methods demonstrate the value of informative negatives and graded training signals, but generally derive the degree of separation from teacher scores, relevance labels, or broad semantic relationships.
+In contrast, we derive supervision from the discrete structure of the query: candidates are graded by the number of query-relevant feature edits required to make them satisfy its constraints.
+
+\paragraph{Compositional, Boolean, and product retrieval.}
+Product relevance is often compositional, as a relevant item may need to satisfy multiple positive and negative attribute constraints simultaneously.
+Prior product-search methods address this problem through behaviorally informed negative sampling or representations that explicitly model product facets and attribute composition~\cite{Mohan2019,kong2022multiaspect,Choudhary2022}.
+A related line of work studies logical composition in dense retrieval.
+QUEST considers natural-language queries representing set operations, while BoolQuestions examines conjunction, disjunction, and exclusion through Boolean-aware training and query decomposition~\cite{malaviya-etal-2023-quest,zhang-etal-2024-boolquestions}.
+Logical query-embedding methods such as BetaE and ConE instead construct geometric representations that directly support logical operators~\cite{NEURIPS2020_e43739bb,NEURIPS2021_a0160709}.
+
+Negation is particularly challenging for embedding-based retrieval.
+NevIR shows that bi-encoders are often insensitive to negated meaning, while product-search systems have mitigated related failures through explicit detection and filtering of prohibited attributes~\cite{weller-etal-2024-nevir,Merra2023}.
+Collectively, these findings expose a limitation of representations dominated by aggregate semantic similarity: candidates may appear highly similar to a query despite violating one or more of its essential constraints.
+Our objective directly supervises this distinction by organizing candidates according to their degree of constraint satisfaction.
+
+\paragraph{Synthetic supervision for retrieval.}
+Large language models have increasingly been used to generate targeted supervision for dense retrieval.
+Syntriever and SyNeg generate queries, relevant examples, or challenging negatives that expose distinctions absent from conventional training data~\cite{kim-baek-2025-syntriever,li2024syneg}.
+In product retrieval, Agapaki and Gill combine structured product information with LLM-based relevance assessment to identify difficult training examples~\cite{agapaki2026negative}.
+These approaches show that synthetic data can control which distinctions a retriever encounters during training.
+Our use of generated information differs in an important respect: generated feature annotations specify the candidate structure, but do not directly determine the supervision target.
+Given these annotations and the query constraints, the target distance is computed deterministically as a discrete feature-edit distance.
+
+\paragraph{Multimodal compositional retrieval.}
+Compositional constraints create analogous difficulties in vision--language retrieval.
+CLIP learns a shared embedding space for images and text, whereas the CIRR benchmark and methods such as CLIP4CIR study retrieval from queries that combine a reference image with a textual modification~\cite{pmlr-v139-radford21a,Liu_2021_ICCV,Baldrati_2022_CVPR}.
+More recent approaches introduce supervision specifically for negation and fine-grained composition.
+CoN-CLIP and NegationCLIP improve sensitivity to negated concepts, while CoLLM uses LLM-generated triplets for composed image retrieval~\cite{Singh_2025_WACV,Park_2025_ICCV,Huynh_2025_CVPR}.
+This literature further demonstrates that general semantic alignment does not reliably encode whether each positive and negative constraint is satisfied.
+
+\paragraph{Positioning of our work.}
+Prior research has improved compositional retrieval through hard-negative mining, teacher-derived graded supervision, Boolean-aware modeling, attribute-sensitive representations, and synthetic example generation.
+Our work connects these directions by introducing a discrete, query-relative structural distance: the minimum number of query-relevant feature edits required for a candidate to satisfy the query.
+Unlike teacher scores or learned relevance estimates, this distance is deterministic once the query constraints and candidate features are specified.
+We use it as graded supervision for first-stage retrieval, encouraging distances in the learned embedding space to reflect degree of constraint satisfaction.
+We evaluate the resulting formulation in both textual and image-based product retrieval.
 
 \section{Template Overview}
 As noted in the introduction, the ``\verb|acmart|'' document class can
@@ -797,7 +844,7 @@ in this statement.
 %% The next two lines define the bibliography style to be used, and
 %% the bibliography file.
 \bibliographystyle{ACM-Reference-Format}
-\bibliography{sample-base}
+\bibliography{sample-base,related-work}
 
 
 %%

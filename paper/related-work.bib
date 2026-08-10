@@ -1,0 +1,332 @@
+@inproceedings{reimers-gurevych-2019-sentence,
+    title = "Sentence-{BERT}: Sentence Embeddings using {S}iamese {BERT}-Networks",
+    author = "Reimers, Nils  and
+      Gurevych, Iryna",
+    editor = "Inui, Kentaro  and
+      Jiang, Jing  and
+      Ng, Vincent  and
+      Wan, Xiaojun",
+    booktitle = "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)",
+    month = nov,
+    year = "2019",
+    address = "Hong Kong, China",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/D19-1410/",
+    doi = "10.18653/v1/D19-1410",
+    pages = "3982--3992",
+    abstract = "BERT (Devlin et al., 2018) and RoBERTa (Liu et al., 2019) has set a new state-of-the-art performance on sentence-pair regression tasks like semantic textual similarity (STS). However, it requires that both sentences are fed into the network, which causes a massive computational overhead: Finding the most similar pair in a collection of 10,000 sentences requires about 50 million inference computations ({\textasciitilde}65 hours) with BERT. The construction of BERT makes it unsuitable for semantic similarity search as well as for unsupervised tasks like clustering. In this publication, we present Sentence-BERT (SBERT), a modification of the pretrained BERT network that use siamese and triplet network structures to derive semantically meaningful sentence embeddings that can be compared using cosine-similarity. This reduces the effort for finding the most similar pair from 65 hours with BERT / RoBERTa to about 5 seconds with SBERT, while maintaining the accuracy from BERT. We evaluate SBERT and SRoBERTa on common STS tasks and transfer learning tasks, where it outperforms other state-of-the-art sentence embeddings methods."
+}
+
+@inproceedings{karpukhin-etal-2020-dense,
+    title = "Dense Passage Retrieval for Open-Domain Question Answering",
+    author = "Karpukhin, Vladimir  and
+      Oguz, Barlas  and
+      Min, Sewon  and
+      Lewis, Patrick  and
+      Wu, Ledell  and
+      Edunov, Sergey  and
+      Chen, Danqi  and
+      Yih, Wen-tau",
+    editor = "Webber, Bonnie  and
+      Cohn, Trevor  and
+      He, Yulan  and
+      Liu, Yang",
+    booktitle = "Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
+    month = nov,
+    year = "2020",
+    address = "Online",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2020.emnlp-main.550/",
+    doi = "10.18653/v1/2020.emnlp-main.550",
+    pages = "6769--6781",
+    abstract = "Open-domain question answering relies on efficient passage retrieval to select candidate contexts, where traditional sparse vector space models, such as TF-IDF or BM25, are the de facto method. In this work, we show that retrieval can be practically implemented using dense representations alone, where embeddings are learned from a small number of questions and passages by a simple dual-encoder framework. When evaluated on a wide range of open-domain QA datasets, our dense retriever outperforms a strong Lucene-BM25 system greatly by 9{\%}-19{\%} absolute in terms of top-20 passage retrieval accuracy, and helps our end-to-end QA system establish new state-of-the-art on multiple open-domain QA benchmarks."
+}
+
+@article{xiong2020approximate,
+  title={Approximate nearest neighbor negative contrastive learning for dense text retrieval},
+  author={Xiong, Lee and Xiong, Chenyan and Li, Ye and Tang, Kwok-Fung and Liu, Jialin and Bennett, Paul and Ahmed, Junaid and Overwijk, Arnold},
+  journal={arXiv preprint arXiv:2007.00808},
+  year={2020},
+  url = {https://arxiv.org/abs/2007.00808}
+}
+
+@inproceedings{qu-etal-2021-rocketqa,
+    title = "{R}ocket{QA}: An Optimized Training Approach to Dense Passage Retrieval for Open-Domain Question Answering",
+    author = "Qu, Yingqi  and
+      Ding, Yuchen  and
+      Liu, Jing  and
+      Liu, Kai  and
+      Ren, Ruiyang  and
+      Zhao, Wayne Xin  and
+      Dong, Daxiang  and
+      Wu, Hua  and
+      Wang, Haifeng",
+    editor = "Toutanova, Kristina  and
+      Rumshisky, Anna  and
+      Zettlemoyer, Luke  and
+      Hakkani-Tur, Dilek  and
+      Beltagy, Iz  and
+      Bethard, Steven  and
+      Cotterell, Ryan  and
+      Chakraborty, Tanmoy  and
+      Zhou, Yichao",
+    booktitle = "Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies",
+    month = jun,
+    year = "2021",
+    address = "Online",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2021.naacl-main.466/",
+    doi = "10.18653/v1/2021.naacl-main.466",
+    pages = "5835--5847",
+    abstract = "In open-domain question answering, dense passage retrieval has become a new paradigm to retrieve relevant passages for finding answers. Typically, the dual-encoder architecture is adopted to learn dense representations of questions and passages for semantic matching. However, it is difficult to effectively train a dual-encoder due to the challenges including the discrepancy between training and inference, the existence of unlabeled positives and limited training data. To address these challenges, we propose an optimized training approach, called RocketQA, to improving dense passage retrieval. We make three major technical contributions in RocketQA, namely cross-batch negatives, denoised hard negatives and data augmentation. The experiment results show that RocketQA significantly outperforms previous state-of-the-art models on both MSMARCO and Natural Questions. We also conduct extensive experiments to examine the effectiveness of the three strategies in RocketQA. Besides, we demonstrate that the performance of end-to-end QA can be improved based on our RocketQA retriever."
+}
+
+@article{hofstatter2020improving,
+  title   = {Improving Efficient Neural Ranking Models with Cross-Architecture Knowledge Distillation},
+  author  = {Hofst{\"a}tter, Sebastian and Althammer, Sophia and
+             Schr{\"o}der, Michael and Sertkan, Mete and Hanbury, Allan},
+  journal = {arXiv preprint arXiv:2010.02666},
+  year    = {2020},
+  url     = {https://arxiv.org/abs/2010.02666}
+}
+
+@inproceedings{hofstatter2021tas,
+  title     = {Efficiently Teaching an Effective Dense Retriever with Balanced Topic Aware Sampling},
+  author    = {Hofst{\"a}tter, Sebastian and Lin, Sheng-Chieh and
+               Yang, Jheng-Hong and Lin, Jimmy and Hanbury, Allan},
+  booktitle = {Proceedings of the 44th International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  pages={113--122},
+  year      = {2021},
+  doi       = {10.1145/3404835.3462891},
+  url       = {https://arxiv.org/abs/2104.06967}
+}
+
+@misc{Mohan2019,
+ author = {Vijai Mohan and Yiwei Song and Priyanka Nigam and Choon Hui Teo and Weitian Ding and Vihan Lakshman and Ankit Shingavi and Hao Gu and Bing Yin},
+ title = {Semantic product search},
+ year = {2019},
+ url = {https://www.amazon.science/publications/semantic-product-search},
+}
+
+@inproceedings{kong2022multiaspect,
+title	= {Multi-Aspect Dense Retrieval},
+author	= {Weize Kong and Swaraj Khadanga and Cheng Li and Shaleen Gupta and Mingyang Zhang and Wensong Xu and Mike Bendersky},
+year	= {2022},
+booktitle	= {Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining}
+}
+
+@Article{Choudhary2022,
+ author = {Nurendra Choudhary and Nikhil Rao and Sumeet Katariya and Karthik Subbian and Chandan Reddy},
+ title = {ANTHEM: Attentive hyperbolic entity model for product search},
+ year = {2022},
+ url = {https://www.amazon.science/publications/anthem-attentive-hyperbolic-entity-model-for-product-search},
+}
+@inproceedings{malaviya-etal-2023-quest,
+    title = "{QUEST}: A Retrieval Dataset of Entity-Seeking Queries with Implicit Set Operations",
+    author = "Malaviya, Chaitanya  and
+      Shaw, Peter  and
+      Chang, Ming-Wei  and
+      Lee, Kenton  and
+      Toutanova, Kristina",
+    editor = "Rogers, Anna  and
+      Boyd-Graber, Jordan  and
+      Okazaki, Naoaki",
+    booktitle = "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = jul,
+    year = "2023",
+    address = "Toronto, Canada",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2023.acl-long.784/",
+    doi = "10.18653/v1/2023.acl-long.784",
+    pages = "14032--14047",
+    abstract = "Formulating selective information needs results in queries that implicitly specify set operations, such as intersection, union, and difference. For instance, one might search for ``shorebirds that are not sandpipers'' or ``science-fiction films shot in England''. To study the ability of retrieval systems to meet such information needs, we construct QUEST, a dataset of 3357 natural language queries with implicit set operations, that map to a set of entities corresponding to Wikipedia documents. The dataset challenges models to match multiple constraints mentioned in queries with corresponding evidence in documents and correctly perform various set operations. The dataset is constructed semi-automatically using Wikipedia category names. Queries are automatically composed from individual categories, then paraphrased and further validated for naturalness and fluency by crowdworkers. Crowdworkers also assess the relevance of entities based on their documents and highlight attribution of query constraints to spans of document text. We analyze several modern retrieval systems, finding that they often struggle on such queries. Queries involving negation and conjunction are particularly challenging and systems are further challenged with combinations of these operations."
+}
+
+@inproceedings{zhang-etal-2024-boolquestions,
+    title = "{B}ool{Q}uestions: Does Dense Retrieval Understand {B}oolean Logic in Language?",
+    author = "Zhang, Zongmeng  and
+      Zhu, Jinhua  and
+      Zhou, Wengang  and
+      Qi, Xiang  and
+      Zhang, Peng  and
+      Li, Houqiang",
+    editor = "Al-Onaizan, Yaser  and
+      Bansal, Mohit  and
+      Chen, Yun-Nung",
+    booktitle = "Findings of the Association for Computational Linguistics: EMNLP 2024",
+    month = nov,
+    year = "2024",
+    address = "Miami, Florida, USA",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.findings-emnlp.156/",
+    doi = "10.18653/v1/2024.findings-emnlp.156",
+    pages = "2767--2779",
+    abstract = "Dense retrieval, which aims to encode the semantic information of arbitrary text into dense vector representations or embeddings, has emerged as an effective and efficient paradigm for text retrieval, consequently becoming an essential component in various natural language processing systems. These systems typically focus on optimizing the embedding space by attending to the relevance of text pairs, while overlooking the Boolean logic inherent in language, which may not be captured by current training objectives. In this work, we first investigate whether current retrieval systems can comprehend the Boolean logic implied in language. To answer this question, we formulate the task of Boolean Dense Retrieval and collect a benchmark dataset, BoolQuestions, which covers complex queries containing basic Boolean logic and corresponding annotated passages. Through extensive experimental results on the proposed task and benchmark dataset, we draw the conclusion that current dense retrieval systems do not fully understand Boolean logic in language, and there is a long way to go to improve our dense retrieval systems. Furthermore, to promote further research on enhancing the understanding of Boolean logic for language models, we explore Boolean operation on decomposed query and propose a contrastive continual training method that serves as a strong baseline for the research community."
+}
+
+@inproceedings{NEURIPS2020_e43739bb,
+ author = {Ren, Hongyu and Leskovec, Jure},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {H. Larochelle and M. Ranzato and R. Hadsell and M.F. Balcan and H. Lin},
+ pages = {19716--19726},
+ publisher = {Curran Associates, Inc.},
+ title = {Beta Embeddings for Multi-Hop Logical Reasoning in Knowledge Graphs},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2020/file/e43739bba7cdb577e9e3e4e42447f5a5-Paper.pdf},
+ volume = {33},
+ year = {2020}
+}
+
+@inproceedings{NEURIPS2021_a0160709,
+ author = {Zhang, Zhanqiu and Wang, Jie and Chen, Jiajun and Ji, Shuiwang and Wu, Feng},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {M. Ranzato and A. Beygelzimer and Y. Dauphin and P.S. Liang and J. Wortman Vaughan},
+ pages = {19172--19183},
+ publisher = {Curran Associates, Inc.},
+ title = {ConE: Cone Embeddings for Multi-Hop Reasoning over Knowledge Graphs},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2021/file/a0160709701140704575d499c997b6ca-Paper.pdf},
+ volume = {34},
+ year = {2021}
+}
+
+@inproceedings{weller-etal-2024-nevir,
+    title = "{N}ev{IR}: Negation in Neural Information Retrieval",
+    author = "Weller, Orion  and
+      Lawrie, Dawn  and
+      Van Durme, Benjamin",
+    editor = "Graham, Yvette  and
+      Purver, Matthew",
+    booktitle = "Proceedings of the 18th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = mar,
+    year = "2024",
+    address = "St. Julian{'}s, Malta",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.eacl-long.139/",
+    doi = "10.18653/v1/2024.eacl-long.139",
+    pages = "2274--2287",
+    abstract = "Negation is a common everyday phenomena and has been a consistent area of weakness for language models (LMs). Although the Information Retrieval (IR) community has adopted LMs as the backbone of modern IR architectures, there has been little to no research in understanding how negation impacts neural IR. We therefore construct a straightforward benchmark on this theme: asking IR models to rank two documents that differ only by negation. We show that the results vary widely according to the type of IR architecture: cross-encoders perform best, followed by late-interaction models, and in last place are bi-encoder and sparse neural architectures. We find that most current information retrieval models do not consider negation, performing similarly or worse than randomly ranking. We show that although the obvious approach of continued fine-tuning on a dataset of contrastive documents containing negations increases performance (as does model size), there is still a large gap between machine and human performance."
+}
+
+@Article{Merra2023,
+ author = {Felice Merra and Omar Zaidan and Fabu Nascimento},
+ title = {Improving the relevance of product search for queries with negations},
+ year = {2023},
+ url = {https://www.amazon.science/publications/improving-the-relevance-of-product-search-for-queries-with-negations},
+}
+
+@inproceedings{zhou2020ladder,
+  title={Ladder loss for coherent visual-semantic embedding},
+  author={Zhou, Mo and Niu, Zhenxing and Wang, Le and Gao, Zhanning and Zhang, Qilin and Hua, Gang},
+  booktitle={Proceedings of the AAAI conference on artificial intelligence},
+  volume={34},
+  number={07},
+  pages={13050--13057},
+  year={2020}
+}
+@InProceedings{Jeong_2021_ICCV,
+    author    = {Jeong, Boseung and Park, Jicheol and Kwak, Suha},
+    title     = {ASMR: Learning Attribute-Based Person Search With Adaptive Semantic Margin Regularizer},
+    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+    month     = {October},
+    year      = {2021},
+    pages     = {12016--12025}
+}
+@Article{Zhao2019,
+ author = {Xiaonan Zhao and Huan Qi and Larry Davis},
+ title = {A weakly supervised adaptive margin model for visual similarity search},
+ year = {2019},
+ url = {https://www.amazon.science/publications/a-weakly-supervised-adaptive-margin-model-for-visual-similarity-search},
+}
+@inproceedings{kim-baek-2025-syntriever,
+    title = "Syntriever: How to Train Your Retriever with Synthetic Data from {LLM}s",
+    author = "Kim, Minsang  and
+      Baek, Seung Jun",
+    editor = "Chiruzzo, Luis  and
+      Ritter, Alan  and
+      Wang, Lu",
+    booktitle = "Findings of the Association for Computational Linguistics: NAACL 2025",
+    month = apr,
+    year = "2025",
+    address = "Albuquerque, New Mexico",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2025.findings-naacl.136/",
+    doi = "10.18653/v1/2025.findings-naacl.136",
+    pages = "2523--2539",
+    ISBN = "979-8-89176-195-7",
+    abstract = "LLMs have boosted progress in many AI applications. Recently, there were attempts to distill the vast knowledge of LLMs into information retrieval systems. Those distillation methods mostly use output probabilities of LLMs which are unavailable in the latest black-box LLMs. We propose Syntriever, a training framework for retrievers using synthetic data from black-box LLMs. Syntriever consists of two stages. Firstly in the distillation stage, we synthesize relevant and plausibly irrelevant passages and augmented queries using chain-of-thoughts for the given queries. LLM is asked to self-verify the synthetic data for possible hallucinations, after which retrievers are trained with a loss designed to cluster the embeddings of relevant passages. Secondly in the alignment stage, we align the retriever with the preferences of LLMs. We propose a preference modeling called partial Plackett-Luce ranking to learn LLM preferences with regularization which prevents the model from deviating excessively from that trained in the distillation stage. Experiments show that Syntriever achieves state-of-the-art performances on benchmark datasets from various domains in nDCG@$K$. the source code is available in \url{https://github.com/kmswin1/Syntriever}"
+}
+@article{li2024syneg,
+  title={Syneg: Llm-driven synthetic hard-negatives for dense retrieval},
+  author={Li, Xiaopeng and Li, Xiangyang and Zhang, Hao and Du, Zhaocheng and Jia, Pengyue and Wang, Yichao and Zhao, Xiangyu and Guo, Huifeng and Tang, Ruiming},
+  journal={arXiv preprint arXiv:2412.17250},
+  year={2024},
+  url     = {https://arxiv.org/abs/2412.17250}
+}
+
+@article{agapaki2026negative,
+  title={Negative Data Mining for Contrastive Learning in Dense Retrieval at IKEA.com},
+  author={Agapaki, Eva and Gill, Amritpal Singh},
+  journal={arXiv preprint arXiv:2605.00353},
+  year={2026}
+}
+
+@InProceedings{pmlr-v139-radford21a,
+  title = 	 {Learning Transferable Visual Models From Natural Language Supervision},
+  author =       {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya and Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda and Mishkin, Pamela and Clark, Jack and Krueger, Gretchen and Sutskever, Ilya},
+  booktitle = 	 {Proceedings of the 38th International Conference on Machine Learning},
+  pages = 	 {8748--8763},
+  year = 	 {2021},
+  editor = 	 {Meila, Marina and Zhang, Tong},
+  volume = 	 {139},
+  series = 	 {Proceedings of Machine Learning Research},
+  month = 	 {18--24 Jul},
+  publisher =    {PMLR},
+  pdf = 	 {http://proceedings.mlr.press/v139/radford21a/radford21a.pdf},
+  url = 	 {https://proceedings.mlr.press/v139/radford21a.html},
+  abstract = 	 {State-of-the-art computer vision systems are trained to predict a fixed set of predetermined object categories. This restricted form of supervision limits their generality and usability since additional labeled data is needed to specify any other visual concept. Learning directly from raw text about images is a promising alternative which leverages a much broader source of supervision. We demonstrate that the simple pre-training task of predicting which caption goes with which image is an efficient and scalable way to learn SOTA image representations from scratch on a dataset of 400 million (image, text) pairs collected from the internet. After pre-training, natural language is used to reference learned visual concepts (or describe new ones) enabling zero-shot transfer of the model to downstream tasks. We study the performance of this approach by benchmarking on over 30 different existing computer vision datasets, spanning tasks such as OCR, action recognition in videos, geo-localization, and many types of fine-grained object classification. The model transfers non-trivially to most tasks and is often competitive with a fully supervised baseline without the need for any dataset specific training. For instance, we match the accuracy of the original ResNet-50 on ImageNet zero-shot without needing to use any of the 1.28 million training examples it was trained on.}
+}
+
+@InProceedings{Liu_2021_ICCV,
+    author    = {Liu, Zheyuan and Rodriguez-Opazo, Cristian and Teney, Damien and Gould, Stephen},
+    title     = {Image Retrieval on Real-Life Images With Pre-Trained Vision-and-Language Models},
+    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+    month     = {October},
+    year      = {2021},
+    pages     = {2125--2134}
+}
+
+@InProceedings{Baldrati_2022_CVPR,
+    author    = {Baldrati, Alberto and Bertini, Marco and Uricchio, Tiberio and Del Bimbo, Alberto},
+    title     = {Effective Conditioned and Composed Image Retrieval Combining CLIP-Based Features},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2022},
+    pages     = {21466--21474}
+}
+
+
+@InProceedings{Singh_2025_WACV,
+    author    = {Singh, Jaisidh and Shrivastava, Ishaan and Vatsa, Mayank and Singh, Richa and Bharati, Aparna},
+    title     = {Learning the Power of ''No'': Foundation Models with Negations},
+    booktitle = {Proceedings of the Winter Conference on Applications of Computer Vision (WACV)},
+    month     = {February},
+    year      = {2025},
+    pages     = {7991--8001}
+}
+
+@InProceedings{Park_2025_ICCV,
+    author    = {Park, Junsung and Lee, Jungbeom and Song, Jongyoon and Yu, Sangwon and Jung, Dahuin and Yoon, Sungroh},
+    title     = {Know ''No'' Better: A Data-Driven Approach for Enhancing Negation Awareness in CLIP},
+    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+    month     = {October},
+    year      = {2025},
+    pages     = {2825--2835}
+}
+
+@InProceedings{Huynh_2025_CVPR,
+    author    = {Huynh, Chuong and Yang, Jinyu and Tawari, Ashish and Shah, Mubarak and Tran, Son and Hamid, Raffay and Chilimbi, Trishul and Shrivastava, Abhinav},
+    title     = {CoLLM: A Large Language Model for Composed Image Retrieval},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2025},
+    pages     = {3994--4004}
+}
