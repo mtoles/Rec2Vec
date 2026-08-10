@@ -3,7 +3,6 @@ from enum import Enum
 import argparse
 import json
 import logging
-import math
 import os
 from typing import Any, Dict, Iterable, List
 
@@ -24,6 +23,7 @@ import torch
 import wandb
 import yaml
 
+from utils.distance_transform import DistanceTransform, transform_normalized_distance
 from utils.run_naming import build_output_dir, build_run_name
 
 
@@ -39,32 +39,6 @@ class TrainingStyle(Enum):
     OURS_MSE = "ours-mse"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
-
-
-class DistanceTransform(Enum):
-    LINEAR = "linear"
-    QUADRATIC = "quadratic"
-    LOG = "log"
-    EXP = "exp"
-
-
-def transform_normalized_distance(value: float, transform_name: str, transform_alpha: float = 5.0) -> float:
-    value = max(0.0, min(1.0, float(value)))
-
-    if transform_name == DistanceTransform.LINEAR.value:
-        return value
-    if transform_name == DistanceTransform.QUADRATIC.value:
-        return value**2
-    if transform_name == DistanceTransform.LOG.value:
-        if transform_alpha <= 0:
-            raise ValueError("distance_transform_alpha must be > 0 for log transform")
-        return math.log1p(transform_alpha * value) / math.log1p(transform_alpha)
-    if transform_name == DistanceTransform.EXP.value:
-        if transform_alpha <= 0:
-            raise ValueError("distance_transform_alpha must be > 0 for exp transform")
-        return math.expm1(transform_alpha * value) / math.expm1(transform_alpha)
-
-    raise ValueError(f"Invalid distance transform: {transform_name}")
 
 
 def load_rgb_image(path: str) -> Image.Image:

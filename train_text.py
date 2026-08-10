@@ -23,6 +23,7 @@ import wandb
 from tqdm import tqdm
 import torch.distributed as dist
 import torch
+from utils.distance_transform import DistanceTransform, transform_normalized_distance
 from utils.run_naming import build_output_dir, build_run_name
 
 tqdm.pandas()
@@ -335,6 +336,14 @@ def main():
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to configuration file")
     parser.add_argument("--easy-negative-value", type=int, default=None, help="Value for easy negatives")
     parser.add_argument("--V", type=int, default=None, help="Value for V")
+    parser.add_argument(
+        "--distance-transform",
+        type=str,
+        default=None,
+        choices=[transform.value for transform in DistanceTransform],
+        help="Shaping applied to the normalized distance label",
+    )
+    parser.add_argument("--distance-transform-alpha", type=float, default=None, help="Alpha for log/exp transforms")
     parser.add_argument("--wandb-project", type=str, default="Rec2Vec", help="Wandb project name")
     parser.add_argument("--wandb-group", type=str, default=None, help="Wandb group name (acts like a folder in UI)")
     # Model configuration arguments
@@ -384,7 +393,13 @@ def main():
     
     if args.V is not None:
         config["V"] = args.V
-    
+
+    if args.distance_transform is not None:
+        config["distance_transform"] = args.distance_transform
+
+    if args.distance_transform_alpha is not None:
+        config["distance_transform_alpha"] = args.distance_transform_alpha
+
     # Override training_args parameters
     training_arg_keys = [
         'output_dir', 'num_train_epochs', 'global_batch_size', 'per_device_max_batch_size',
@@ -402,6 +417,7 @@ def main():
         "multiplier": config.get("hard_negative_multiplier"),
         "easy": config.get("easy_negative_value"),
         "V": config.get("V"),
+        "transform": config.get("distance_transform"),
     }
     # The run directory has to identify the dataset, otherwise two runs that differ only
     # by --dataset overwrite each other's checkpoints.
@@ -449,6 +465,8 @@ def main():
 
     V = config.get("V", 25)
     easy_negative_value = int(config.get("easy_negative_value", 15))
+    distance_transform = config.get("distance_transform", DistanceTransform.LINEAR.value)
+    distance_transform_alpha = float(config.get("distance_transform_alpha", 5.0))
     
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
         cols_to_keep = ["anchor", "positive", "negative"]
@@ -464,8 +482,16 @@ def main():
         n_easy = sum(1 for v in dataset["label"] if v == EASY_NEGATIVE_SENTINEL)
         print(f"Remapping {n_easy}/{len(dataset)} easy-negative labels to {easy_negative_value}")
         dataset = dataset.map(lambda x: {"label": easy_negative_value if x["label"] == EASY_NEGATIVE_SENTINEL else x["label"]})
-        # scale
-        dataset = dataset.map(lambda x: {"label": float(x["label"]/ V)})
+        # scale, then shape the normalized distance (linear leaves it untouched)
+        dataset = dataset.map(
+            lambda x: {
+                "label": transform_normalized_distance(
+                    x["label"] / V,
+                    distance_transform,
+                    distance_transform_alpha,
+                )
+            }
+        )
         dataset = dataset.cast_column("label", Value("float"))
     else:
         raise ValueError(f"Invalid training style: {config['training_style']}")

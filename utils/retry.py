@@ -5,7 +5,6 @@ from typing import List, Dict, Callable, Any, Optional, Tuple
 from joblib import Memory
 import openai
 from dotenv import load_dotenv
-from vllm import LLM, SamplingParams
 from copy import deepcopy
 import google.generativeai as genai
 
@@ -72,6 +71,11 @@ def make_hashable(messages: List[Dict[str, str]]) -> str:
 
 def _vllm_api_call(messages: List[Dict[str, str]], model_id: str) -> str:
     """Make an API call using vLLM for HuggingFace models."""
+    # Imported here, not at module scope: vLLM is only needed for local HF models, and a
+    # broken/absent install should not stop the rest of this module (cost tracking, the
+    # hosted-API paths) from importing.
+    from vllm import LLM, SamplingParams
+
     # Prevent debugger from attaching to vLLM subprocesses (fixes Python 3.12 'imp' module error)
     # This is necessary because vLLM spawns subprocesses for model inspection,
     # and the VS Code debugger (debugpy) has compatibility issues with Python 3.12

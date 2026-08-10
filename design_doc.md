@@ -43,25 +43,32 @@ If the query contains 1+ features, we include those as features, reducing the nu
 
 2. Query Generation
 
-We wish to generate a "query function" in boolean SAT style logical form, irrespective of the actual features. 
+We wish to generate a "query function" as a **conjunction of literals**, irrespective of the actual features.
 The query function is a function that takes booleans f_1...f_n and returns a boolean value.
-We generate one randomly, i.e.
-(f_4 and f_2) and (not f_3 or f_1)
-Each feature should appear exactly once in the query function.
+Each feature appears exactly once, either required or forbidden, i.e.
+f_4 and f_2 and (not f_3) and (not f_1)
 Shuffle feature order.
-Then randomly generate queries according to a grammar.
-The grammar should allow:
+The grammar allows:
   - f_1...f_n used only once
-  - Paretheses must be closed by the end
-  - And, Or, Not, ()
+  - And, Not
+  - No Or, no nesting: the query is a flat conjunction of literals
+
+Disjunction is deliberately excluded. A conjunctive query's satisfying set is a single
+subcube of the feature hypercube, which makes the edit distance in step 3 a closed-form
+count and makes the embedding geometry analyzable (see paper/formalization.md).
+Adding Or turns the satisfying set into a union of subcubes and the distance into a min
+over branches, which no inner-product scoring function can represent. Disjunctive queries
+would need multi-vector query representations with max-pooled scoring, and are out of scope.
+
 We create a natural language description of the query function.
-For the features "white", "large", "cotton", "Nike", we could have "white, large sweater that is not size large or is from Nike"
+For the features "white", "large", "cotton", "Nike", we could have "white, large sweater that is not cotton and is not from Nike"
 
 
 3. Calculate Edit Distance
 
 d:=dist(q, p) is the minimum number of features that would need to be changed for product p to satisfy query q.
-Calculate this using brute force or some better method
+Because queries are conjunctions, this is a closed-form count and needs no search:
+d = (# required features that p lacks) + (# forbidden features that p has).
 
 4. Finalization
 
@@ -92,6 +99,13 @@ Use venv
 
 
 # Development Guidelines
+
+## Repo layout
+
+`paper/` is reserved for **completed work that is attached to the LaTeX build**: `main.tex`,
+its included sources, figures it references, the bibliography, and the class/style files.
+Nothing else goes there. Drafts, scratch derivations, working notes, and in-progress
+formalizations live in `tmp/` until they are finished and cited by `main.tex`.
 
 Never add dummy code.
 After each time you make a substantial new edit, do:

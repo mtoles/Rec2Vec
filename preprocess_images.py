@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from jsonschema import ValidationError, validate
 from tqdm import tqdm
 
-from utils.retry import get_cost_summary, print_cost_report, retry_vlm_with_fallback
+from utils.retry import get_cost_summary, print_cost_report
 
 
 DEFAULT_HF_DATASET = "Marqo/deepfashion-inshop"
@@ -376,6 +376,10 @@ Return ONLY JSON: {{"common_features": ["feature1", "feature2"], "unique_feature
         N_FEATURES=N_FEATURES,
         N_COMMON_FEATURES=N_FEATURES,
     )
+
+    # Imported at the call site: the VLM helper is only needed when generating hard-negative
+    # distances, so reusing this module's dataset builders does not require it to exist.
+    from utils.retry import retry_vlm_with_fallback
 
     response = retry_vlm_with_fallback(
         prompt=prompt,
