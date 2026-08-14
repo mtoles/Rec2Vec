@@ -104,6 +104,9 @@
 %%\citestyle{acmauthoryear}
 
 
+%% Red text for drafting notes/highlights: \red{...}
+\newcommand{\red}[1]{\textcolor{red}{#1}}
+
 %%
 %% end of the preamble, start of the body of the document source.
 \begin{document}
@@ -268,7 +271,55 @@
 \section{Introduction}
 
 Embedding-based retrieval aims to recall a match set of semantically relevant documents satisfying the user's query.
-Such embeddings are often used in tasks such as product search where fine-grained matching of details between the query and the document determine relevance.
+Such embeddings are often used in retrieval tasks, such as RAG, product search, and image search, where fine-grained matching of details between the query and the document determine relevance.
+
+Much of this progress is due to broadly applicable techniques, such as instruction tuning and chain of thought.
+However, these strategies are not applicable to embedding models.
+Combined with the parameter count, representational constraints, and document corpus size on embedding models, this results in a significant language modeling gap between embedding models and generative models; it is common for embedding models to erroneously retrieve documents that a similarly sized generative model can trivially identify as irrelevant.
+Thus, we seek a method for distilling the relevant categorization capabilities of a generative model directly into and embedding model.
+
+Specifically, we concentrate on improving conjuntive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
+This focus is motivated by patterns in user queries and the design of pre-existing non-embedding search systems.
+For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as "screen size >30cm" for laptops.
+Users find such categories useful both in searching for and understanding products. 
+Unfortunately, attribute ontologies are usually fixed, failing when a user desires a product with or without a novel attribute.
+Because unique and novel attributes differentiate products, sellers are well motivated to include them in product descriptions to differentiate their products. 
+As a result, natural language search systems, such as dense retrieval, are better suited for the long tail of highly specific queries.
+Similar use cases exist other retrieval tasks, including for images, videos, resumes, patents, and real estate.
+
+% mechanics - why our system works
+
+Unfortunately, publicly available retrieval datasets, such as \red{cite} mainly contain simple queries, with little to no conjunction or negation.
+Instead, datasets like the popular ECSI \red{cite} focus on providing hard negatives---similar pairs of similar documents, only one of which is valid.
+This neglects an important dynamic in the user experience of search systems wherein queries tend to gain attributes over time as users refine them. 
+\citet{hirsch2020query} find that over 50\% of queries on Ebay occur during a reformulation session, with queries growing in length over time.
+Longer queries were associated with increased purchase rates, indicating that support for highly specific queries should be a priority.
+
+There is evidence to believe that queries are underspecified because users doubt the capabilities of recommender systems \citep{kato2014cognitive}.
+\citet{papenmeier2020modern} find that the length of users' free-form text descriptions of their desired laptops include on average 29 words and 3.83 attributes. 
+However, when Amazon product search, they entered only 2.2 words, indicating that users do not feel including additional attributes would be helpful. 
+
+Users' pessimism is not unfounded, as bi-encoders have known limitations in their expressivity.
+% \citet{zhang2025excluir} and \citet{weller2024nevir} show that embedding models struggle to model negation.
+These include negation \citep{zhang2025excluir, weller2024nevir}, set operations \citep{killingback2025benchmarking}, constraint dilution \citep{lu2025multiconir}, and attribute binding \citep{yuksekgonul2022and}.
+It then follows that user query behavior may suffer from a chicken-and-egg problem; users do not use complex queries because they expect models to fail, while practicioners to do not optimize for complex queries because they do not appear in user data.
+
+To address this gap, we introduce Ours, a strategy for training strong embedding models for conjunctive queries.
+We first use an LLM to extract attributes of each document in structured form, creating a large, synthetic dataset with LLM-level accuracy.
+We then use a Hamming distance-based loss function to train the embedding model.
+This contrasts with baseline loss functions that treat all negatives as equally wrong.
+For the query "warm red hoodie", the document "warm blue jacket" is considered just as incorrect as "gas-powered lawnmower".
+On the other hand, Ours sets the loss proportional to the squared number of attributes that must be changed to satisfy the query, and much higher if the subject (hoodie vs. lawnmower) must be changed.
+
+\red{Details on results}
+
+\red{Details on theory}
+
+
+
+
+
+
 
 \textbf{Embeddings \& Retrieval}
 
