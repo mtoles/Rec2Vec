@@ -1,3 +1,4 @@
+% @Claude NEVER edit this without explicit instruction to do so
 \documentclass{article} % For LaTeX2e
 \usepackage{iclr2026_conference,times}
 
@@ -7,6 +8,16 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
+\usepackage{dsfont} % \mathds{1} indicator (Type 1 fonts, unlike bbm)
+\usepackage{amsthm}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
 
 %% Commands for TeXCount
 %TC:macro \cite [option:text,text]
@@ -20,6 +31,15 @@
 
 %% Red text for drafting notes/highlights: \red{...}
 \newcommand{\red}[1]{\textcolor{red}{#1}}
+
+%% Dark blue for the Notes section
+\definecolor{darkblue}{RGB}{0,0,139}
+
+%% Indicator function: \ind{d \not\models c_i}
+\newcommand{\ind}[1]{\mathds{1}\!\left[#1\right]}
+
+%% Inner product: \inner{q}{d}
+\newcommand{\inner}[2]{\left\langle #1, #2 \right\rangle}
 
 \title{Dense Retrieval with }
 
@@ -129,6 +149,509 @@ Our work connects these directions by introducing a discrete, query-relative str
 Unlike teacher scores or learned relevance estimates, this distance is deterministic once the query constraints and candidate features are specified.
 We use it as graded supervision for first-stage retrieval, encouraging distances in the learned embedding space to reflect degree of constraint satisfaction.
 We evaluate the resulting formulation in both textual and image-based product retrieval.
+
+\section{Methods}
+
+
+
+\subsection{Background}
+
+Formally, following \citep{lu2025multiconir}, let query $q_k$ be composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., \red{K}\}$.
+We say a document $x$ is a positive document, $x^+$, with respect to $q_k$ if $x^+ \models C$, i.e., $x^+$ satisfies all $k$ conditions.
+Otherwise, we say the document $x^-$ is negative with respect to $q_k$.
+
+
+\subsection{Loss Function}
+
+We introduce attribute Hamming loss.
+Training operates on triples $(q_k, x^+, x^-)$ in which the positive satisfies every condition of the query, and the predicted margin between the positive and negative similarities is regressed onto the number of query constraints the negative violates:
+
+\begin{equation}
+\label{eq:hamming}
+    \mathcal{L}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \tfrac{1}{V} \sum_{i=1}^{k} \ind{x^- \not\models c_i} \Big)^2 ,
+\end{equation}
+
+where $f$ maps texts to their embeddings and $V$ is a fixed label scale.
+The target is zero when the negative satisfies every constraint and grows by $1/V$ per violated constraint, so partial satisfaction is graded rather than binary.
+
+One can imagine this loss function attempting to approximating bit-wise filtering on a table of $n$ documents and arbitrarily many columns of attributes. 
+Because for any given query $q_k$, only the $k$ attributes present in the query are relevant, the space requirement of this dataset can be bounded by $\mathcal{O}(nk)$.
+
+...
+
+\subsection{Equivalence to Linear Probing}
+
+% For a given $c_i$, 
+Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ being queries or documents composed of sequences of tokens.
+Let $f : L \rightarrow \mathbb{R}^d$ give the embeddings of dimension $d$.
+We let $z_i : L \rightarrow \{0,1\}$ be an attribute of a query or corresponding product, for example, whether a query requires a red product, or whether the product in question is red. 
+Note that the value of $z_i$ only depends on the text.
+
+
+% Under the Linear Representation Hypothesis, we assume that for a set of features $z_1, ..., z_m : L \rightarrow \mathbb{R}$
+
+Under the Linear Representation Hypothesis, we say a feature is $(\epsilon, S)-$ linearly recovered for some linear probe vector $b_i \in \mathbb{R}^d$ if 
+% Let $b_i \in \mathbb{R}^d$ be a probe vector for attribute $z_i$ such that
+
+\begin{equation}
+    |\inner{b_i}{f(\ell)} - z_i(\ell)| < \epsilon 
+\end{equation}
+
+for all $\ell \in S$
+
+% =====================================================================
+% RESOLVED: binary-attribute specialization of garg2026many.
+%
+% We restrict features to z_i : L -> {0,1}, whereas the main results of
+% Garg et al. are stated for real-valued features.
+%
+%   (a) UPPER BOUND -- transfers for free.  {0,1} subset [-1,1], so any
+%       d sufficient for the general case is sufficient for ours.
+%       Garg: d = O_eps(k^2 log m) suffices.
+%
+%   (b) LOWER BOUND -- transfers via their Theorem 12, which is stated
+%       for features restricted to the Boolean cube {0,1}^m: it gives
+%       Omega(k^2 log(m/k)) dimensions to linearly separate embeddings
+%       with and without a feature.  No reconstruction of their Sec. 3
+%       argument is needed, and the lower-bound claim can stand.
+%
+%   (c) AFFINE PROBES -- upper bound: trivial, affine contains linear
+%       (take beta_i = 0), so existence transfers verbatim.  Lower
+%       bound: their Corollary 13 (to Theorem 12) shows bias + monotone
+%       activation do not raise asymptotic capacity.  This licenses the
+%       offset beta_i in Definition 3 of the Notes section.
+%
+%   (d) CAPACITY CHAINING -- their O_eps hides an eps^-2; chained with
+%       our eps = delta/2k the honest bound is d = O(k'^2 k^2 log m /
+%       delta^2), conditional on linear REPRESENTATION (f = Az, sparse
+%       z), which accessibility alone does not give.  See the
+%       conditional-capacity corollary in the Notes section.
+%
+%   Units question is likewise settled: eq:hamming is now the margin
+%   form matching the trainer, regressing a difference of similarities
+%   onto a violation count scaled by V.  V's role is quantified in the
+%   label-scale remark of the Notes section.
+% =====================================================================
+
+\section{Experiment}
+
+\subsection{Dataset Generation}
+
+\red{Explain dataset creation}
+
+\red{Dataset statistics table}
+
+\subsection{Model Details}
+
+\subsection{Ours Details}
+
+
+...
+
+\section{Results}
+
+...
+
+\red{main results, we beat baselines}
+
+\red{more positives = easier, more negatives = no relation}
+
+
+
+
+\section{Notes}
+\begingroup\color{darkblue}
+
+\red{Working notes --- not for submission.}
+
+We characterize the optimum of the attribute Hamming objective.
+For a training triple the label equals a signed difference of attribute values, $y = \sum_{i \in C} s_i ( z_i(x^+) - z_i(x^-) )$, so a query representation formed as the signed sum of per-attribute probes matches the regression target termwise.
+The correspondence holds in both directions: if every queried attribute is linearly recoverable from the document embeddings at error $\epsilon$, the query vector $\sum_{i \in C} s_i b_i$ attains loss below $(2k\epsilon)^2$ (Theorem~\ref{thm:forward}); conversely, if the query family is closed under deleting a condition, a model with loss below $\delta^2$ on every triple yields a probe recovering each queried attribute at error $2\delta$ (Corollary~\ref{cor:delete}).
+Under these hypotheses, minimizing the objective and making the query embedding a simultaneous linear probe for the attributes it names are the same requirement.
+Triplet and in-batch objectives constrain only the ordering of scores and are satisfied by any embedding that ranks the positive first by at least the margin; constraining the margin's magnitude to a count makes partial constraint satisfaction a graded, linearly decodable quantity.
+Under the additional assumption that document embeddings satisfy the linear representation hypothesis with $k'$-sparse attribute vectors, the construction of \citet{garg2026many} realizes loss $\delta^2$ at dimension $d = O(k'^2 k^2 \delta^{-2} \log m)$ (Corollary~\ref{cor:capacity}).
+The dependence on the number of attributes is logarithmic, so a fixed-width embedding supports exponentially many.
+% Throughout, the objective is the dot-product form of Definition~\ref{def:obj}; normalization enters only through the label scale (Remark~\ref{rem:scale}).
+% These are statements of capacity, not optimization: they establish that representations with this structure exist and that the objective's optimum has it.
+
+% \paragraph{Motivation.}
+% The optimum of our objective is a query embedding that acts as a simultaneous linear probe for the
+% attributes the query names, in the sense of \citet{garg2026many}, with the two directions agreeing
+% up to a factor $2k$ in the error.
+% Three things follow.
+% \begin{enumerate}
+%     \item \emph{A capacity statement for attribute-conditioned retrieval.}
+%     \citet{garg2026many} answer how many features a $d$-dimensional representation can store and
+%     linearly decode. That question is about language models, and on its own says nothing about
+%     retrieval. Corollary~\ref{cor:capacity} supplies the bridge. Assuming document embeddings are
+%     linearly represented with $k'$-sparse attribute vectors, loss $\delta^2$ on $k$-condition
+%     queries is realizable at $d = O(k'^2 k^2 \delta^{-2} \log m)$, polynomial in the sparsities and
+%     logarithmic in the attribute vocabulary, so exponentially many attributes fit at fixed width.
+%     This is the formal version of the claim that the open-vocabulary long tail
+%     described in the introduction is reachable at all.
+%     \item \emph{A mechanism for why graded supervision helps.}
+%     Triplet and in-batch objectives, on the other hand, constrain only the \emph{ordering} of scores, and are satisfied
+%     by any embedding that ranks the positive first. Ours constrains the margin to equal a
+%     \emph{count}, and Theorem~\ref{thm:forward} shows this is what forces each queried attribute onto
+%     a linear direction. This is the precise content of the claim that we distill categorization structure into
+%     the embedding.
+%     \item \emph{A prediction we can measure.}
+%     Theorem~\ref{thm:back} and Corollary~\ref{cor:delete} say a model with loss below $\delta^2$
+%     on every triple admits probes of error $O(\delta)$. Fitting
+%     linear probes post hoc on our checkpoints therefore tests the theory directly, and predicts that
+%     baselines trained to comparable loss yield worse probes.
+%     \red{Run this against the attribute labels in \texttt{analysis/}.}
+% \end{enumerate}
+% The scope is capacity, not optimization: the bounds certify that suitable embeddings and query
+% representations exist at a given dimension, not that training finds them.
+
+
+% The following is a self-contained proof that minimizing the attribute Hamming objective is equivalent, up to a factor $2k$ in the error, to requiring the query embedding to act as a simultaneous linear probe for the attributes its conditions name, in the sense of \citet{garg2026many}.
+% We first fix notation and record four elementary lemmas, then prove the two directions.
+
+\subsection{Setup}
+
+\begin{definition}[Attributes and conditions]
+\label{def:attr}
+Let $L$ be the set of texts, comprising both queries and documents, and let $z_i : L \rightarrow \{0,1\}$ for $i \in [m]$ be attribute indicators, with $z_i(x) = 1$ when $x$ has attribute $i$.
+A \emph{condition} $c_i$ names an attribute $i$ together with a \emph{polarity} $s_i \in \{-1, +1\}$.
+A document $x$ \emph{satisfies} $c_i$, written $x \models c_i$, when $z_i(x) = 1$ in the case $s_i = +1$, and when $z_i(x) = 0$ in the case $s_i = -1$.
+A query $q_C$ carries a set of conditions $C$ with $|C| = k$, and $x \models C$ means $x \models c_i$ for every $i \in C$.
+\end{definition}
+
+Note that $s_i^2 = |s_i| = 1$, used repeatedly below.
+
+\begin{definition}[Embedding and objective]
+\label{def:obj}
+Let $f : L \rightarrow \mathbb{R}^d$ assign a representation to each text.
+Training consumes triples $(q_C, x^+, x^-)$ in which $x^+ \models C$ and $x^-$ is a hard negative.
+The model predicts the \emph{margin}, $M$, and is regressed onto the \emph{label}, $y$,
+\begin{equation}
+\label{eq:app-obj}
+    M(q_C, x^+, x^-) = \inner{f(q_C)}{f(x^+) - f(x^-)} ,
+    \qquad
+    y(q_C, x^-) = \sum_{i \in C} \ind{x^- \not\models c_i} ,
+\end{equation}
+under the squared loss $\mathcal{L}(q_C, x^+, x^-) = \big( M(q_C, x^+, x^-) - y(q_C, x^-) \big)^2$.
+\end{definition}
+
+The trainer in fact regresses onto $y / V$ for a fixed constant $V > 0$.
+The change of variables $g = V f(q_C)$ turns the $V$-scaled loss into $V^{-2} \big( \inner{g}{\Delta f} - y \big)^2$, so the two objectives share minimizers and we set $V = 1$ throughout.
+Under a unit-norm constraint this change of variables is unavailable, and $V$ returns in Remark~\ref{rem:scale}.
+
+\begin{definition}[Linear recovery, after \citealp{garg2026many}]
+\label{def:rec}
+Let $S \subseteq L$ and $\epsilon > 0$.
+Attribute $z_i$ is \emph{$(\epsilon, S)$-linearly recovered} by a probe $(b_i, \beta_i) \in \mathbb{R}^d \times \mathbb{R}$ if
+\begin{equation}
+\label{eq:app-rec}
+    \big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < \epsilon
+    \qquad \text{for all } x \in S .
+\end{equation}
+We write $r_i(x) = \inner{b_i}{f(x)} + \beta_i - z_i(x)$ for the \emph{residual}, so that Eq.~\eqref{eq:app-rec} reads $|r_i(x)| < \epsilon$ on $S$.
+\citet{garg2026many} state linear accessibility with a strictly linear probe, $g_i(x) = \inner{b_i}{x}$; we allow the offset $\beta_i$, which is the usual linear probe with bias and is exactly linear recovery of $z_i$ from the homogeneous lift $(f(x), 1) \in \mathbb{R}^{d+1}$.
+On the upper-bound side the offset is free, since affine probes contain linear ones (take $\beta_i = 0$) and existence results transfer verbatim.
+On the lower-bound side, their Theorem 12 extends the dimension lower bound to binary-valued features, and its Corollary 13 shows that a bias and a monotonic activation do not raise the asymptotic capacity, so allowing $\beta_i$ does not let the model evade the bound; the binary restriction of our attributes is settled by the same theorem.
+\end{definition}
+
+Throughout, $S$ is the set of documents appearing in training triples, and we abbreviate
+\begin{equation}
+\label{eq:deltas}
+    \Delta f = f(x^+) - f(x^-) ,
+    \qquad
+    \Delta z_i = z_i(x^+) - z_i(x^-) ,
+    \qquad
+    \Delta r_i = r_i(x^+) - r_i(x^-) .
+\end{equation}
+
+\subsection{Four lemmas}
+
+The first lemma replaces the case split of Definition~\ref{def:attr} by a single arithmetic expression, which is what allows positive and negated conditions to be handled together.
+
+\begin{lemma}[Polarity identity]
+\label{lem:polarity}
+For every $x \in L$ and every condition $c_i$,
+\begin{equation}
+\label{eq:app-polarity}
+    \ind{x \not\models c_i} = \tfrac{1}{2}\big( 1 - s_i ( 2 z_i(x) - 1 ) \big) .
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Both sides take values in $\{0,1\}$, so it suffices to check the four combinations of $s_i$ and $z_i(x)$.
+If $s_i = +1$ the right-hand side is $\tfrac{1}{2}(1 - 2z_i(x) + 1) = 1 - z_i(x)$, which is $0$ when $z_i(x) = 1$ and $1$ when $z_i(x) = 0$; by Definition~\ref{def:attr} a positive condition is satisfied exactly when $z_i(x) = 1$, so this agrees with the left-hand side in both cases.
+If $s_i = -1$ the right-hand side is $\tfrac{1}{2}(1 + 2z_i(x) - 1) = z_i(x)$, which is $0$ when $z_i(x) = 0$ and $1$ when $z_i(x) = 1$; a negated condition is satisfied exactly when $z_i(x) = 0$, so again the two sides agree.
+\end{proof}
+
+\begin{lemma}[Attribute values of the positive]
+\label{lem:pos}
+If $x^+ \models C$, then $z_i(x^+) = \tfrac{1}{2}(1 + s_i)$ for every $i \in C$.
+\end{lemma}
+
+\begin{proof}
+Fix $i \in C$.
+Since $x^+ \models c_i$ we have $\ind{x^+ \not\models c_i} = 0$, so Lemma~\ref{lem:polarity} gives $\tfrac{1}{2}(1 - s_i(2 z_i(x^+) - 1)) = 0$, that is, $s_i (2 z_i(x^+) - 1) = 1$.
+Multiplying both sides by $s_i$ and using $s_i^2 = 1$ yields $2 z_i(x^+) - 1 = s_i$, and solving for $z_i(x^+)$ gives the claim.
+\end{proof}
+
+% The value $\tfrac{1}{2}(1 + s_i)$ is $1$ for a positive condition and $0$ for a negated one, as it must be: the positive document has every attribute the query requires and none it forbids.
+
+The next lemma is the pivot of the whole argument.
+The label of Definition~\ref{def:obj} is a count computed from $x^-$ alone, yet the margin it is regressed onto is antisymmetric in $x^+$ and $x^-$.
+Lemma~\ref{lem:label} shows the two are nonetheless compatible, by rewriting the count as a signed difference.
+
+\begin{lemma}[Antisymmetric form of the label]
+\label{lem:label}
+If $x^+ \models C$, then
+\begin{equation}
+\label{eq:app-label}
+    y(q_C, x^-) = \sum_{i \in C} s_i \, \Delta z_i .
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Fix $i \in C$.
+Expanding Lemma~\ref{lem:polarity} at $x^-$ and collecting terms,
+\begin{equation}
+    \ind{x^- \not\models c_i}
+    = \tfrac{1}{2}\big( 1 - s_i(2 z_i(x^-) - 1) \big)
+    = \tfrac{1}{2}(1 + s_i) - s_i z_i(x^-) .
+\end{equation}
+By Lemma~\ref{lem:pos} the leading term is exactly $z_i(x^+)$, and multiplying it by $s_i^2 = 1$ lets us write it as $s_i z_i(x^+)$.
+Hence
+\begin{equation}
+    \ind{x^- \not\models c_i} = s_i z_i(x^+) - s_i z_i(x^-) = s_i \, \Delta z_i .
+\end{equation}
+Summing over $i \in C$ and applying Definition~\ref{def:obj} gives Eq.~\eqref{eq:app-label}.
+\end{proof}
+
+\begin{remark}
+\label{rem:constant}
+The rewriting in Lemma~\ref{lem:label} is not cosmetic.
+Written in terms of $x^-$ alone the label is $y = \tfrac{1}{2}\big(k + \sum_{i \in C} s_i\big) - \sum_{i \in C} s_i z_i(x^-)$, whose leading term is a nonzero constant.
+A margin is antisymmetric, $M(q_C, x, x) = 0$, and so can never reproduce a constant; it is only because $x^+ \models C$ forces that constant to equal $\sum_{i \in C} s_i z_i(x^+)$ that the objective is satisfiable at all.
+This is also why the objective of Eq.~\eqref{eq:hamming} is stated over triples rather than over single documents.
+\end{remark}
+
+\begin{lemma}[Margin decomposition]
+\label{lem:decomp}
+Let $b_i \in \mathbb{R}^d$ for $i \in C$ and set $f(q_C) = \sum_{i \in C} s_i b_i$.
+Then
+\begin{equation}
+\label{eq:app-decomp}
+    M(q_C, x^+, x^-) = \sum_{i \in C} s_i \Big( \inner{b_i}{f(x^+)} - \inner{b_i}{f(x^-)} \Big) .
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+The inner product is bilinear, hence linear in its first argument: $\inner{\sum_{i \in C} s_i b_i}{\Delta f} = \sum_{i \in C} s_i \inner{b_i}{\Delta f}$.
+It is also linear in its second argument, so $\inner{b_i}{\Delta f} = \inner{b_i}{f(x^+)} - \inner{b_i}{f(x^-)}$ by Eq.~\eqref{eq:deltas}.
+Substituting the second identity into the first gives Eq.~\eqref{eq:app-decomp}.
+\end{proof}
+
+\subsection{Main results}
+
+The forward direction constructs the query representation explicitly; it is an existence statement, and whether training produces this vector is a question about optimization rather than about capacity.
+The constructed vector need not be unit norm; Remark~\ref{rem:scale} treats the normalized case.
+
+\begin{theorem}[Recovery implies low loss]
+\label{thm:forward}
+Let $S \subseteq L$ and $\epsilon > 0$, and suppose every attribute $z_i$ with $i \in C$ is $(\epsilon, S)$-linearly recovered by a probe $b_i$.
+Then the query representation $f(q_C) = \sum_{i \in C} s_i b_i$ satisfies
+\begin{equation}
+    \mathcal{L}(q_C, x^+, x^-) < (2 k \epsilon)^2
+\end{equation}
+for every triple with $x^+, x^- \in S$ and $x^+ \models C$.
+\end{theorem}
+
+\begin{proof}
+By Lemma~\ref{lem:decomp} the margin decomposes over conditions, and by Lemma~\ref{lem:label} so does the label.
+Subtracting them termwise,
+\begin{equation}
+    M - y
+    = \sum_{i \in C} s_i \Big( \big( \inner{b_i}{f(x^+)} - \inner{b_i}{f(x^-)} \big) - \Delta z_i \Big) .
+\end{equation}
+Regrouping each summand by document rather than by quantity, and using $\Delta z_i = z_i(x^+) - z_i(x^-)$,
+\begin{equation}
+    M - y
+    = \sum_{i \in C} s_i \Big( \big( \inner{b_i}{f(x^+)} - z_i(x^+) \big) - \big( \inner{b_i}{f(x^-)} - z_i(x^-) \big) \Big)
+    = \sum_{i \in C} s_i \, \Delta r_i ,
+\end{equation}
+by Definition~\ref{def:rec}, the offsets $\beta_i$ cancelling because each appears once at $x^+$ and once at $x^-$.
+The error of the objective is therefore exactly a signed sum of differences of probe residuals.
+Applying the triangle inequality to the sum, then $|s_i \Delta r_i| = |s_i| \, |\Delta r_i| = |\Delta r_i|$, and then the triangle inequality again inside each term,
+\begin{equation}
+    |M - y|
+    \;\le\; \sum_{i \in C} \big| \Delta r_i \big|
+    \;\le\; \sum_{i \in C} \Big( \big| r_i(x^+) \big| + \big| r_i(x^-) \big| \Big)
+    \;<\; \sum_{i \in C} 2\epsilon
+    \;=\; 2 k \epsilon ,
+\end{equation}
+where the strict inequality applies Eq.~\eqref{eq:app-rec} once at $x^+$ and once at $x^-$ for each of the $k$ conditions, both being members of $S$.
+Squaring preserves the inequality for nonnegative quantities, giving $\mathcal{L} = (M - y)^2 < (2k\epsilon)^2$.
+\end{proof}
+
+Combining Theorem~\ref{thm:forward} with the construction of \citet{garg2026many} bounds the dimension required to realize the objective.
+Their theorem assumes linear representation, $f(x) = A z(x)$ with sparse attribute vectors, which is stronger than the linear accessibility used above; we adopt it as a hypothesis.
+
+\begin{corollary}[Conditional capacity]
+\label{cor:capacity}
+Assume additionally that document embeddings are linearly represented, $f(x) = A z(x)$ with $A \in \mathbb{R}^{d \times m}$ drawn as in the random construction of \citet{garg2026many}, and that the attribute vector $z(x) \in \{0,1\}^m$ of every $x \in S$ has at most $k'$ nonzero entries.
+For any $\epsilon > 0$ their construction supplies probes attaining Eq.~\eqref{eq:app-rec} once $d = O(k'^2 \epsilon^{-2} \log m)$, the $\epsilon^{-2}$ entering through the incoherence $\mu \approx \epsilon / k'$ of the random directions.
+Taking $\epsilon = \delta / 2k$ and applying Theorem~\ref{thm:forward}, margin loss below $\delta^2$ on every $k$-condition query over these documents is realizable once
+\begin{equation}
+\label{eq:app-capacity}
+    d = O\!\left( \frac{k'^2 k^2}{\delta^2} \, \log m \right) ,
+    \qquad \text{equivalently} \qquad
+    m = \exp\!\left( \Omega\!\left( \frac{d \, \delta^2}{k^2 k'^2} \right) \right) .
+\end{equation}
+\end{corollary}
+
+The dependence on the number of attributes is logarithmic.
+The polynomial factor arises because Theorem~\ref{thm:forward} requires per-probe error $\epsilon = \delta / 2k$, while the $d = O_\epsilon(k^2 \log m)$ form of \citet{garg2026many} holds at fixed $\epsilon$.
+
+The converse recovers probes from a trained model in two steps: differencing two queries isolates a single attribute, and a single positive document then fixes the offset.
+
+\begin{theorem}[Low loss implies aggregate recovery]
+\label{thm:back}
+Let $\delta > 0$ and suppose $\mathcal{L}(q_C, x^+, x^-) < \delta^2$ for every triple with $x^+, x^- \in S$ and $x^+ \models C$.
+Then
+\begin{equation}
+\label{eq:app-agg}
+    \Big| \inner{f(q_C)}{\Delta f} - \sum_{i \in C} s_i \, \Delta z_i \Big| < \delta
+\end{equation}
+for every such triple.
+\end{theorem}
+
+\begin{proof}
+Both $\mathcal{L}$ and $\delta^2$ are nonnegative, so $\mathcal{L} < \delta^2$ is equivalent to $|M - y| < \delta$.
+Substituting Eq.~\eqref{eq:app-obj} for $M$ and Lemma~\ref{lem:label} for $y$ gives Eq.~\eqref{eq:app-agg}.
+\end{proof}
+
+Theorem~\ref{thm:back} constrains only the aggregate $\sum_{i \in C} s_i \Delta z_i$: a model could err on one condition and compensate on another without violating it.
+Isolating a single attribute requires comparing two queries that differ in exactly one condition, which is the content of the following corollary.
+
+\begin{corollary}[Per-attribute recovery under deletion closure]
+\label{cor:delete}
+Assume in addition that the query family contains $q_{C \setminus \{i\}}$ for some $i \in C$, that it assigns the same polarity to every condition the two queries share, and that both queries satisfy the hypothesis of Theorem~\ref{thm:back}.
+Fix any reference $x_0 \in S$ with $x_0 \models C$; at least one exists, since every triple contains a positive.
+Then $z_i$ is $(2\delta, S)$-linearly recovered by the probe
+\begin{equation}
+\label{eq:app-probe}
+    b_i = s_i \big( f(q_C) - f(q_{C \setminus \{i\}}) \big) ,
+    \qquad
+    \beta_i = z_i(x_0) - \inner{b_i}{f(x_0)} .
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+Applying Eq.~\eqref{eq:app-agg} to $q_C$ and to $q_{C \setminus \{i\}}$ in turn,
+\begin{equation}
+    \Big| \inner{f(q_C)}{\Delta f} - \sum_{j \in C} s_j \Delta z_j \Big| < \delta ,
+    \qquad
+    \Big| \inner{f(q_{C \setminus \{i\}})}{\Delta f} - \sum_{j \in C \setminus \{i\}} s_j \Delta z_j \Big| < \delta .
+\end{equation}
+Because the two queries agree in polarity on their shared conditions, the two sums differ in exactly the single term $s_i \Delta z_i$.
+Subtracting the second bound from the first and applying the triangle inequality, together with linearity of the inner product in its first argument,
+\begin{equation}
+    \Big| \inner{f(q_C) - f(q_{C \setminus \{i\}})}{\Delta f} - s_i \Delta z_i \Big| < 2\delta .
+\end{equation}
+Multiplying the quantity inside the absolute value by $s_i$ leaves the value unchanged, since $|s_i| = 1$, and $s_i^2 = 1$ reduces $s_i \cdot s_i \Delta z_i$ to $\Delta z_i$, giving
+\begin{equation}
+\label{eq:app-diff}
+    \big| \inner{b_i}{\Delta f} - \Delta z_i \big| < 2\delta
+    \qquad \text{for every triple.}
+\end{equation}
+It remains to fix the offset.
+The hypothesis of Theorem~\ref{thm:back} ranges over every triple with $x^+, x^- \in S$ and $x^+ \models C$, so we may take $x^+ = x_0$ and let $x^- = x$ range over all of $S$.
+For such a pair Eq.~\eqref{eq:app-diff} reads
+\begin{equation}
+    \big| \inner{b_i}{f(x_0)} - \inner{b_i}{f(x)} - z_i(x_0) + z_i(x) \big| < 2\delta .
+\end{equation}
+By the definition of $\beta_i$ in Eq.~\eqref{eq:app-probe} we have $\inner{b_i}{f(x_0)} - z_i(x_0) = -\beta_i$, so the quantity inside is $-\big( \inner{b_i}{f(x)} + \beta_i - z_i(x) \big)$, whose absolute value is unchanged by the sign.
+Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \in S$, which is Eq.~\eqref{eq:app-rec} with $\epsilon = 2\delta$.
+\end{proof}
+
+% \subsection{Remarks}
+
+% \begin{remark}[Identifiability]
+% \label{rem:diff}
+% Eq.~\eqref{eq:app-diff} constrains $b_i$ only through its action on the observed differences, so $b_i$ is determined only up to components orthogonal to their span.
+% Corollary~\ref{cor:delete} requires only that some probe attain the bound, so nothing downstream depends on this.
+% The offset $\beta_i$ is pinned by the single reference document, which the triple structure supplies for free.
+% The hypotheses quantify over triples on which the loss is controlled; empirically, this is the training set.
+% \end{remark}
+
+% \begin{remark}[Cost of query complexity]
+% \label{rem:cost}
+% Theorem~\ref{thm:forward} loses a factor $2k$, so attaining loss $\delta^2$ on $k$-condition queries demands per-probe error $\epsilon < \delta / 2k$.
+% Through Corollary~\ref{cor:capacity} this quantity is priced in dimension quadratically in the document sparsity and again in the query size, so the width requirement is driven by the sparsities rather than by the size of the corpus.
+% \end{remark}
+
+% \begin{remark}[Non-discriminating conditions]
+% \label{rem:disc}
+% Under the standing assumption $x^+ \models C$, a condition fails to discriminate on a triple precisely when the negative also satisfies it; then $\Delta z_i = 0$ and, by Lemma~\ref{lem:label}, the condition contributes nothing to the \emph{label}, which is why the recorded \texttt{query\_distance} counts only discriminating conditions.
+% The \emph{error budget} is not reduced in the same way: in Theorem~\ref{thm:forward} the residual term $s_i \Delta r_i$ of a non-discriminating condition is bounded by $2\epsilon$ but need not vanish, so the $k$ in $(2k\epsilon)^2$ must be read as the full number of queried conditions $|C|$.
+% Queried conditions that do not discriminate thus add residual noise to the margin without adding signal to the label, a formal counterpart of constraint dilution.
+% \end{remark}
+
+% \begin{remark}[Consistency with the generator]
+% \label{rem:gen}
+% Our queries draw positive conditions from the features unique to $x^+$ and from those common to both products, and negated conditions from the features unique to $x^-$ and from those applying to neither.
+% Common and neither features are satisfied by both documents, so by Remark~\ref{rem:disc} they contribute nothing to the label, and $y$ reduces to the count of unique-positive plus unique-negative features, which is the \texttt{query\_distance} recorded by our preprocessing.
+% \end{remark}
+
+% \begin{remark}[Normalization and the label scale]
+% \label{rem:scale}
+% The deployed encoder $\ell_2$-normalizes both sides, so that $\inner{f(q)}{f(x)}$ is a cosine similarity and $|M| \le 2$, while the raw label can reach $k$.
+% The label scale addresses this. The trainer's target is $y / V$, attainable only if $V \ge k_{\max} / 2$.
+% In our pipeline hard-negative labels are capped by \texttt{max\_distance} $= 10$ and easy negatives are remapped to $15$, so $V = 25$ places every target in $[0, 0.6]$, inside $[-2, 2]$.
+% Under normalization $V$ is not absorbable: a unit-norm query realizes the probe sum $B_C = \sum_{i \in C} s_i b_i$ only through its direction $B_C / \lVert B_C \rVert$, with $V$ standing in for $\lVert B_C \rVert$, and the margin error becomes $2 k \epsilon / \lVert B_C \rVert$ plus a scale-mismatch term $y \, \lvert V - \lVert B_C \rVert \rvert / ( V \lVert B_C \rVert )$, vanishing when $\lVert B_C \rVert = V$.
+% \red{If the normalized statement is needed exactly, add the norm-matching assumption $\lVert B_C \rVert = V$ or carry the mismatch term through Theorem~\ref{thm:forward}.}
+% \end{remark}
+
+\paragraph{Glossary.}
+\begin{description}\setlength{\itemsep}{0pt}
+    \item[$L$] Input set, the queries and documents composed of sequences of tokens. Not to be
+    confused with the loss $\mathcal{L}$.
+    \item[$S$] The subset of $L$ on which recovery is required; here the documents appearing in
+    training triples. Easy negatives are excluded.
+    \item[$f$] The embedding $f : L \rightarrow \mathbb{R}^d$. The analysis imposes no norm
+    constraint; the deployed encoder normalizes, see Remark~\ref{rem:scale}.
+    \item[$d$] Embedding dimension.
+    \item[$x$] A document. $x^+$ is a positive, satisfying every condition of the query; $x^-$ is a
+    hard negative drawn from the same annotated product pair.
+    \item[$z_i$] Attribute indicator $z_i : L \rightarrow \{0,1\}$, equal to $1$ when the text has
+    attribute $i$. Depends only on the text.
+    \item[$m$] Total number of attributes in the corpus.
+    \item[$q_C$] Query with condition set $C$.
+    \item[$c_i$] A single condition, naming attribute $i$ together with a polarity.
+    \item[$C$] The set of conditions of a query.
+    \item[$k$] Number of conditions, $|C|$. The label depends only on discriminating conditions,
+    but error bounds use the full $|C|$ (Remark~\ref{rem:disc}).
+    \item[$k'$] Maximum number of attributes present in a single document; document-side
+    sparsity, used only in Corollary~\ref{cor:capacity}.
+    \item[$s_i$] Polarity of condition $c_i$; $+1$ when the query requires attribute $i$ to be
+    present, $-1$ when it requires it absent. Always $|s_i| = 1$.
+    \item[$b_i$] Linear probe vector for attribute $i$. A property of the attribute, not of the
+    query: one probe serves both polarities.
+    \item[$\beta_i$] Scalar offset of the probe for attribute $i$, fixed by a reference document.
+    Equivalent to one extra coordinate, see Definition~\ref{def:rec}.
+    \item[$M$] The margin $\inner{f(q_C)}{f(x^+) - f(x^-)}$, the quantity the model predicts.
+    \item[$y$] The label, the number of conditions the negative violates.
+    \item[$\mathcal{L}$] The loss $(M - y)^2$ on a triple.
+    \item[$\epsilon$] Probe error: the tolerance in the recovery condition Eq.~\eqref{eq:app-rec}.
+    \item[$\delta$] Margin error: the square root of the loss achieved on every triple.
+    \item[$V$] Fixed label scale applied by the trainer. Absorbable for the unconstrained
+    objective (set to $1$ in the analysis); not absorbable under normalization, see
+    Remark~\ref{rem:scale}.
+    \item[$\ind{\cdot}$] Indicator, $1$ when its argument holds and $0$ otherwise.
+    \item[$\models$] Satisfaction: $x \models c_i$ when document $x$ meets condition $c_i$, and
+    $x \models C$ when it meets all of them.
+\end{description}
+
+\endgroup
+
 
 \bibliography{related-work}
 \bibliographystyle{iclr2026_conference}
