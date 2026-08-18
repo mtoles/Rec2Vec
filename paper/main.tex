@@ -71,7 +71,7 @@ Thus, we seek a method for distilling the relevant categorization capabilities o
 
 Specifically, we concentrate on improving conjuntive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
 This focus is motivated by patterns in user queries and the design of pre-existing non-embedding search systems.
-For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as "screen size >30cm" for laptops.
+For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as ``screen size $>30$\,cm'' for laptops.
 Users find such categories useful both in searching for and understanding products. 
 Unfortunately, attribute ontologies are usually fixed, failing when a user desires a product with or without a novel attribute.
 Because unique and novel attributes differentiate products, sellers are well motivated to include them in product descriptions to differentiate their products. 
@@ -99,7 +99,7 @@ To address this gap, we introduce Ours, a strategy for training strong embedding
 We first use an LLM to extract attributes of each document in structured form, creating a large, synthetic dataset with LLM-level accuracy.
 We then use a Hamming distance-based loss function to train the embedding model.
 This contrasts with baseline loss functions that treat all negatives as equally wrong.
-For the query "warm red hoodie", the document "warm blue jacket" is considered just as incorrect as "gas-powered lawnmower".
+For the query ``warm red hoodie'', the document ``warm blue jacket'' is considered just as incorrect as ``gas-powered lawnmower''.
 On the other hand, Ours sets the loss proportional to the squared number of attributes that must be changed to satisfy the query, and much higher if the subject (hoodie vs. lawnmower) must be changed.
 
 \red{Details on results}
@@ -337,7 +337,7 @@ under the squared loss $\mathcal{L}(q_C, x^+, x^-) = \big( M(q_C, x^+, x^-) - y(
 
 The trainer in fact regresses onto $y / V$ for a fixed constant $V > 0$.
 The change of variables $g = V f(q_C)$ turns the $V$-scaled loss into $V^{-2} \big( \inner{g}{\Delta f} - y \big)^2$, so the two objectives share minimizers and we set $V = 1$ throughout.
-Under a unit-norm constraint this change of variables is unavailable, and $V$ returns in Remark~\ref{rem:scale}.
+Under a unit-norm constraint this change of variables is unavailable.
 
 \begin{definition}[Linear recovery, after \citealp{garg2026many}]
 \label{def:rec}
@@ -429,7 +429,7 @@ Summing over $i \in C$ and applying Definition~\ref{def:obj} gives Eq.~\eqref{eq
 \label{rem:constant}
 The rewriting in Lemma~\ref{lem:label} is not cosmetic.
 Written in terms of $x^-$ alone the label is $y = \tfrac{1}{2}\big(k + \sum_{i \in C} s_i\big) - \sum_{i \in C} s_i z_i(x^-)$, whose leading term is a nonzero constant.
-A margin is antisymmetric, $M(q_C, x, x) = 0$, and so can never reproduce a constant; it is only because $x^+ \models C$ forces that constant to equal $\sum_{i \in C} s_i z_i(x^+)$ that the objective is satisfiable at all.
+A margin is antisymmetric, $M(q_C, x, x) = 0$, and so can never reproduce a constant; it is only because $x^+ \models C$ forces that constant to equal $\sum_{i \in C} s_i z_i(x^+)$ that the label takes a form a margin can match.
 This is also why the objective of Eq.~\eqref{eq:hamming} is stated over triples rather than over single documents.
 \end{remark}
 
@@ -452,11 +452,11 @@ Substituting the second identity into the first gives Eq.~\eqref{eq:app-decomp}.
 \subsection{Main results}
 
 The forward direction constructs the query representation explicitly; it is an existence statement, and whether training produces this vector is a question about optimization rather than about capacity.
-The constructed vector need not be unit norm; Remark~\ref{rem:scale} treats the normalized case.
+The constructed vector need not be unit norm.
 
 \begin{theorem}[Recovery implies low loss]
 \label{thm:forward}
-Let $S \subseteq L$ and $\epsilon > 0$, and suppose every attribute $z_i$ with $i \in C$ is $(\epsilon, S)$-linearly recovered by a probe $b_i$.
+Let $S \subseteq L$ and $\epsilon > 0$, and suppose every attribute $z_i$ with $i \in C$ is $(\epsilon, S)$-linearly recovered by a probe $(b_i, \beta_i)$.
 Then the query representation $f(q_C) = \sum_{i \in C} s_i b_i$ satisfies
 \begin{equation}
     \mathcal{L}(q_C, x^+, x^-) < (2 k \epsilon)^2
@@ -493,11 +493,12 @@ Squaring preserves the inequality for nonnegative quantities, giving $\mathcal{L
 
 Combining Theorem~\ref{thm:forward} with the construction of \citet{garg2026many} bounds the dimension required to realize the objective.
 Their theorem assumes linear representation, $f(x) = A z(x)$ with sparse attribute vectors, which is stronger than the linear accessibility used above; we adopt it as a hypothesis.
+The corollary is therefore an existence result about representations, not a property of the trained encoder.
 
 \begin{corollary}[Conditional capacity]
 \label{cor:capacity}
 Assume additionally that document embeddings are linearly represented, $f(x) = A z(x)$ with $A \in \mathbb{R}^{d \times m}$ drawn as in the random construction of \citet{garg2026many}, and that the attribute vector $z(x) \in \{0,1\}^m$ of every $x \in S$ has at most $k'$ nonzero entries.
-For any $\epsilon > 0$ their construction supplies probes attaining Eq.~\eqref{eq:app-rec} once $d = O(k'^2 \epsilon^{-2} \log m)$, the $\epsilon^{-2}$ entering through the incoherence $\mu \approx \epsilon / k'$ of the random directions.
+Their upper bound is stated as $d = O_\epsilon(k'^2 \log m)$; the random construction proving it supplies, for any $\epsilon > 0$, probes attaining Eq.~\eqref{eq:app-rec} once $d = O(k'^2 \epsilon^{-2} \log m)$, the $\epsilon^{-2}$ entering through the incoherence $\mu \approx \epsilon / k'$ of the random directions.
 Taking $\epsilon = \delta / 2k$ and applying Theorem~\ref{thm:forward}, margin loss below $\delta^2$ on every $k$-condition query over these documents is realizable once
 \begin{equation}
 \label{eq:app-capacity}
@@ -617,7 +618,7 @@ Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \i
     \item[$S$] The subset of $L$ on which recovery is required; here the documents appearing in
     training triples. Easy negatives are excluded.
     \item[$f$] The embedding $f : L \rightarrow \mathbb{R}^d$. The analysis imposes no norm
-    constraint; the deployed encoder normalizes, see Remark~\ref{rem:scale}.
+    constraint; the deployed encoder normalizes its outputs.
     \item[$d$] Embedding dimension.
     \item[$x$] A document. $x^+$ is a positive, satisfying every condition of the query; $x^-$ is a
     hard negative drawn from the same annotated product pair.
@@ -628,7 +629,7 @@ Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \i
     \item[$c_i$] A single condition, naming attribute $i$ together with a polarity.
     \item[$C$] The set of conditions of a query.
     \item[$k$] Number of conditions, $|C|$. The label depends only on discriminating conditions,
-    but error bounds use the full $|C|$ (Remark~\ref{rem:disc}).
+    but error bounds use the full $|C|$.
     \item[$k'$] Maximum number of attributes present in a single document; document-side
     sparsity, used only in Corollary~\ref{cor:capacity}.
     \item[$s_i$] Polarity of condition $c_i$; $+1$ when the query requires attribute $i$ to be
@@ -643,8 +644,7 @@ Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \i
     \item[$\epsilon$] Probe error: the tolerance in the recovery condition Eq.~\eqref{eq:app-rec}.
     \item[$\delta$] Margin error: the square root of the loss achieved on every triple.
     \item[$V$] Fixed label scale applied by the trainer. Absorbable for the unconstrained
-    objective (set to $1$ in the analysis); not absorbable under normalization, see
-    Remark~\ref{rem:scale}.
+    objective, and set to $1$ in the analysis.
     \item[$\ind{\cdot}$] Indicator, $1$ when its argument holds and $0$ otherwise.
     \item[$\models$] Satisfaction: $x \models c_i$ when document $x$ meets condition $c_i$, and
     $x \models C$ when it meets all of them.
