@@ -9,6 +9,19 @@
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{dsfont} % \mathds{1} indicator (Type 1 fonts, unlike bbm)
+\usepackage{textcomp}
+\usepackage{listings}
+\lstdefinestyle{promptstyle}{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  breakautoindent=false,
+  columns=fullflexible,
+  frame=single,
+  framesep=4pt,
+  xleftmargin=0pt,
+  showstringspaces=false,
+  keepspaces=true,
+}
 \usepackage{amsthm}
 \newtheorem{proposition}{Proposition}
 \theoremstyle{plain}
@@ -179,7 +192,7 @@ Because for any given query $q_k$, only the $k$ attributes present in the query 
 
 ...
 
-\subsection{Equivalence to Linear Probing}
+\subsection{Relation to Linear Probing}
 
 % For a given $c_i$, 
 Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ being queries or documents composed of sequences of tokens.
@@ -199,47 +212,69 @@ Under the Linear Representation Hypothesis, we say a feature is $(\epsilon, S)-$
 
 for all $\ell \in S$
 
-% =====================================================================
-% RESOLVED: binary-attribute specialization of garg2026many.
-%
-% We restrict features to z_i : L -> {0,1}, whereas the main results of
-% Garg et al. are stated for real-valued features.
-%
-%   (a) UPPER BOUND -- transfers for free.  {0,1} subset [-1,1], so any
-%       d sufficient for the general case is sufficient for ours.
-%       Garg: d = O_eps(k^2 log m) suffices.
-%
-%   (b) LOWER BOUND -- transfers via their Theorem 12, which is stated
-%       for features restricted to the Boolean cube {0,1}^m: it gives
-%       Omega(k^2 log(m/k)) dimensions to linearly separate embeddings
-%       with and without a feature.  No reconstruction of their Sec. 3
-%       argument is needed, and the lower-bound claim can stand.
-%
-%   (c) AFFINE PROBES -- upper bound: trivial, affine contains linear
-%       (take beta_i = 0), so existence transfers verbatim.  Lower
-%       bound: their Corollary 13 (to Theorem 12) shows bias + monotone
-%       activation do not raise asymptotic capacity.  This licenses the
-%       offset beta_i in Definition 3 of the Notes section.
-%
-%   (d) CAPACITY CHAINING -- their O_eps hides an eps^-2; chained with
-%       our eps = delta/2k the honest bound is d = O(k'^2 k^2 log m /
-%       delta^2), conditional on linear REPRESENTATION (f = Az, sparse
-%       z), which accessibility alone does not give.  See the
-%       conditional-capacity corollary in the Notes section.
-%
-%   Units question is likewise settled: eq:hamming is now the margin
-%   form matching the trainer, regressing a difference of similarities
-%   onto a violation count scaled by V.  V's role is quantified in the
-%   label-scale remark of the Notes section.
-% =====================================================================
-
 \section{Experiment}
 
 \subsection{Dataset Generation}
 
-\red{Explain dataset creation}
+We target two domains, e-commerce products and images, to demonstrate the multimodal capabilities of our system.
+For e-commerce, we choose the ESCI corpus of Amazon products \red{cite} due to its large size.
+For images, we choose the DeepFashion In-Shop because it contains images with subtle but objectively different attributes.
 
-\red{Dataset statistics table}
+In both datasets, we select easy negatives through random sampling of the entire dataset.
+We select candidates for hard negatives in ESCI using the pre-existing substitution labels.
+For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees''.
+
+To extract document attributes, we prompt Gemini 2.5 Flash with the pair of examples, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
+In the DeepFashion dataset, we include images of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
+
+We instruct it to generate up to $k/4=5$ attributes that apply to only the first example, only the second example, to both examples, or to neither example, for a total of $k=20$ attributes.
+We then select a random subset of these attributes to compose the query, negating attributes that do not apply to the positive example, ensuring that at least one attribute is not satisfied by the hard negative example.
+This downsampling step is useful to ensure that selected attributes are not merely the most salient.
+We manually annotate \red{xx} attributes across \red{xx} products in each dataset and find that the attributes are correct \red{xx\%} and \red{xx\%} of the time in ECSI and DeepFashion, respectively.
+Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $0 \leq k' < k$.
+We construct the query with the template "I am looking for: "{item}" that has: {postive + common attributes}; and does not have: {negative + neither attributes}".
+Additionally, we construct a rewritten version of the query to test robustness to rephrasing and non-exact match, prompting the model to preserve intent and numeric values while replacing most attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}).
+
+
+
+% Both datasets are built by the same two-stage procedure: pair a positive document with a hard negative, then use a language model to name the attributes that separate them.
+% The text dataset is derived from the ESCI shopping-queries corpus, restricted to the US locale and to products whose descriptions are detected as English.
+% For each query we take an \texttt{Exact} product as the positive $x^+$ and a \texttt{Substitute} or \texttt{Irrelevant} product for the same query as the hard negative $x^-$, discarding queries with no \texttt{Exact} match; an easy negative is drawn uniformly from the corpus.
+% The image dataset is built from DeepFashion In-Shop (\texttt{Marqo/deepfashion-inshop}), grouping views of the same SKU by product identifier.
+% The positive and hard negative are distinct products sharing a category (\texttt{category2} by default, optionally also matched on colour), and the easy negative is drawn from a different category.
+% Both pipelines are seeded at $42$ and prompt \texttt{gemini-2.5-flash}, the image pipeline passing both photographs to the model alongside product metadata.
+% The model returns four disjoint attribute buckets of at most $N=5$ entries each: features common to both products, features unique to $x^+$, features unique to $x^-$, and features applying to neither.
+% Attributes are constrained to be objective, at most five words, and stated positively, so that negation enters only through the query template rather than through the attribute strings.
+
+% Queries are then assembled from these buckets.
+% We draw a target distance $k \sim \mathrm{Unif}\{1, \dots, 10\}$ and sample $n_{\text{pos}} \sim \mathrm{Unif}\{0, \dots, k\}$ unique-positive attributes, $n_{\text{neg}} = k - n_{\text{pos}}$ unique-negative attributes, and independently $\mathrm{Unif}\{0, \dots, k\}$ attributes from each of the common and neither buckets, every count capped by the size of its bucket.
+% At least one attribute is forced from the positive-or-common side and one from the negative-or-neither side, so every query carries both a requirement and a prohibition and $|C| \ge 2$.
+% The natural-language query is rendered as \emph{I am looking for: ``\{item\}'' that has: \{positive and common attributes\}; and does not have: \{negative and neither attributes\}}, placing unique-positive and common attributes under the positive polarity $s_i = +1$ and unique-negative and neither attributes under $s_i = -1$.
+% The regression label is $n_{\text{pos}} + n_{\text{neg}}$, counting only the attributes that distinguish $x^+$ from $x^-$; common and neither attributes are satisfied identically by both documents and contribute nothing.
+% Each pair yields two training triples, one against the hard negative and one against the easy negative, the latter carrying a sentinel label remapped at training time to $15$.
+% Labels are divided by $V = 25$ and used without further shaping, the linear setting of the transform.
+% The image split contains $20{,}000$ triplets.
+
+\begin{table}[t]
+\centering
+\label{tab:datasets}
+\vspace{1em}
+\begin{tabular}{lrr}
+    \toprule
+    & Amazon ESCI & DeepFashion In-Shop \\
+    % & (text) & (image) \\
+    \midrule
+    Corpus documents               & 224{,}791 & 28{,}387 \\
+    Training documents             & 195{,}006 & 24{,}151 \\
+    Validation documents           & 41{,}049  & 3{,}773 \\
+    Test documents                 & 41{,}047  & 3{,}767 \\
+    Words per document             & 190.0     & 71.0 \\
+    Words per generated query      & 38.1      & 35.2 \\
+    Attributes per generated query & 10.0      & 9.8 \\
+    \bottomrule
+\end{tabular}
+\caption{Dataset summary statistics}
+\end{table}
 
 \subsection{Model Details}
 
@@ -660,5 +695,76 @@ Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \i
 \section{Appendix}
 
 \red{TODO: appendix.}
+
+\section{List of Prompts}
+\label{app:prompts}
+
+Placeholders in braces are substituted at generation time.
+Attribute counts appear resolved to their configured value of five per bucket.
+
+\subsection{Product Attribute Extraction}
+\label{prompt:text-features}
+
+Applied to each (positive, hard negative) product pair drawn from ESCI, with both product
+records serialised into the corresponding placeholders.
+
+\begin{lstlisting}[style=promptstyle]
+### Product A:
+
+{positive_product}
+
+### Product B:
+
+{substitute_irrelevant_product}
+
+List up to 5 features common to both products ("common_features"), up to 5 features unique to product A ("unique_features_a"), up to 5 features unique to product B ("unique_features_b"), and up to 5 features that do not apply to either product ("neither_features")). When generating common_features, ensure they are present in both products in some way. For example, if product A is "low fat" and product B in "low sugar", then "low calories" could be in common_features. If there are fewer than 5 common features, generate as many as possible. Do not assume anything about products not written in the description. When generating neither_features, ensure they are opposite or mutually exclusive with features in one or both of the products. For example, if product A is "red" and product B is "orange", then "blue" could be in neither_features. Must not generate negated features, such as "not red", "no wifi", "without bluetooth", or "doesn't have x".Dont use "not" or "without". Use your imagination and create diverse neither_features. All features should be objective and no more than 5 words. Return ONLY JSON: {'common_features': ['feature1', 'feature2', ...], 'unique_features_a': ['feature1', 'feature2', ...], 'unique_features_b': ['feature1', 'feature2', ...], 'neither_features': ['feature1', 'feature2', ...]}
+\end{lstlisting}
+
+\subsection{Visual Attribute Extraction}
+\label{prompt:image-features}
+
+Applied to each (positive, hard negative) garment pair drawn from DeepFashion In-Shop.
+Both photographs are supplied to the model alongside the prompt, in the order named.
+
+\begin{lstlisting}[style=promptstyle]
+### Product A:
+
+The first image is Product A. Metadata: {positive_product}
+
+### Product B:
+
+The second image is Product B. Metadata: {hard_negative_product}
+
+List up to 5 visual features common to both products ("common_features"), up to 5 visual features unique to product A ("unique_features_a"), up to 5 visual features unique to product B ("unique_features_b"), and up to 5 visual features that do not apply to either product ("neither_features").
+
+When generating common_features, ensure they are visible in both products in some way. If there are fewer than 5 common features, generate as many as possible. Do not assume anything not visible in the images or stated in metadata.
+
+When generating neither_features, ensure they are opposite or mutually exclusive with visual features in one or both products. For example, if product A is red and product B is orange, then "blue" could be in neither_features. Must not generate negated features, such as "not red", "no sleeves", "without pattern", or "doesn't have x". Dont use "not" or "without". Use your imagination and create diverse neither_features. All features should be objective and no more than 5 words.
+
+Return ONLY JSON: {"common_features": ["feature1", "feature2"], "unique_features_a": ["feature1", "feature2"], "unique_features_b": ["feature1", "feature2"], "neither_features": ["feature1", "feature2"]}
+\end{lstlisting}
+
+\subsection{Query Rephrasing}
+\label{prompt:rephrase}
+
+Applied to the templated query to produce the rewritten variant used in the robustness evaluation.
+
+\begin{lstlisting}[style=promptstyle]
+Original query: '{query}'
+
+Task: Rephrase the query so it keeps the exact same meaning but sounds more natural and slightly varied.
+
+Rules:
+- Preserve intent exactly (positive stays positive, negative stays negative).
+- You MUST change at least 50-80% of the features/phrases, and only when a natural synonym exists.
+- Do NOT force rewording if it sounds unnatural.
+- Do NOT change the product/item name unless a very natural alternative exists.
+- Do NOT change measurement units or numeric values.
+- Keep the query fluent and realistic.
+
+Return ONLY a JSON object: {"rephrased_query": "..."}
+\end{lstlisting}
+
+
 
 \end{document}
