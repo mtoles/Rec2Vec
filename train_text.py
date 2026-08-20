@@ -133,7 +133,7 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
         label_key = "label" if "label" in dataset.column_names else "query_distance"
         if label_key in dataset.column_names:
             labels_list = dataset[label_key]
-            labels_tensor = torch.tensor(labels_list, device=neg_cosine_scores.device)
+            labels_tensor = torch.tensor(labels_list, device=neg_cosine_scores.device, dtype=torch.float)
             if label_key == "query_distance":
                 # Raw distances: easy negatives still carry the sentinel.
                 easy_mask = torch.isclose(labels_tensor, torch.tensor(float(EASY_NEGATIVE_SENTINEL), device=labels_tensor.device))
@@ -336,6 +336,7 @@ def main():
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to configuration file")
     parser.add_argument("--easy-negative-value", type=int, default=None, help="Value for easy negatives")
     parser.add_argument("--V", type=int, default=None, help="Value for V")
+    parser.add_argument("--note", type=str, default=None, help="Free-form experiment tag; becomes part of the run name and output dir")
     parser.add_argument(
         "--distance-transform",
         type=str,
@@ -394,6 +395,9 @@ def main():
     if args.V is not None:
         config["V"] = args.V
 
+    if args.note is not None:
+        config["note"] = args.note
+
     if args.distance_transform is not None:
         config["distance_transform"] = args.distance_transform
 
@@ -418,6 +422,7 @@ def main():
         "easy": config.get("easy_negative_value"),
         "V": config.get("V"),
         "transform": config.get("distance_transform"),
+        "note": config.get("note"),
     }
     # The run directory has to identify the dataset, otherwise two runs that differ only
     # by --dataset overwrite each other's checkpoints.
@@ -474,6 +479,8 @@ def main():
             cols_to_keep.append("query_distance")
         if "negative_example_source" in dataset.column_names:
             cols_to_keep.append("negative_example_source")
+        if "split" in dataset.column_names:
+            cols_to_keep.append("split")
         dataset = dataset.select_columns(cols_to_keep)
     elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value):
         dataset = dataset.rename_column("query_distance", "label")
@@ -496,25 +503,37 @@ def main():
     else:
         raise ValueError(f"Invalid training style: {config['training_style']}")
     
-    # Extract unique queries
-    import pandas as pd
-    unique_queries = pd.Series(dataset["anchor"]).drop_duplicates().tolist()
-    
-    # Split queries 80/10/10
-    from sklearn.model_selection import train_test_split
-    train_queries, temp_queries = train_test_split(unique_queries, test_size=0.2, random_state=42)
-    eval_queries, test_queries = train_test_split(temp_queries, test_size=0.5, random_state=42)
-    
-    # Convert to sets for faster lookup
-    train_queries_set = set(train_queries)
-    eval_queries_set = set(eval_queries)
-    test_queries_set = set(test_queries)
-    
-    # Filter original dataset based on queries
-    train_dataset = dataset.filter(lambda x: x["anchor"] in train_queries_set)
-    eval_dataset = dataset.filter(lambda x: x["anchor"] in eval_queries_set)
-    test_dataset = dataset.filter(lambda x: x["anchor"] in test_queries_set)
-    
+    if "split" in dataset.column_names:
+        # Leakage-free split precomputed by utils/leakage_split.py: no query, product, or
+        # ESCI item is shared across splits.
+        train_dataset = dataset.filter(lambda x: x["split"] == "train")
+        eval_dataset = dataset.filter(lambda x: x["split"] == "validation")
+        test_dataset = dataset.filter(lambda x: x["split"] == "test")
+        aux_cols = [c for c in ("split", "item", "positive_id", "negative_id") if c in dataset.column_names]
+        train_dataset = train_dataset.remove_columns(aux_cols)
+        eval_dataset = eval_dataset.remove_columns(aux_cols)
+        test_dataset = test_dataset.remove_columns(aux_cols)
+    else:
+        # Legacy query-only split: documents still leak across splits.
+        import pandas as pd
+        unique_queries = pd.Series(dataset["anchor"]).drop_duplicates().tolist()
+
+        # Split queries 80/10/10
+        from sklearn.model_selection import train_test_split
+        train_queries, temp_queries = train_test_split(unique_queries, test_size=0.2, random_state=42)
+        eval_queries, test_queries = train_test_split(temp_queries, test_size=0.5, random_state=42)
+
+        # Convert to sets for faster lookup
+        train_queries_set = set(train_queries)
+        eval_queries_set = set(eval_queries)
+        test_queries_set = set(test_queries)
+
+        # Filter original dataset based on queries
+        train_dataset = dataset.filter(lambda x: x["anchor"] in train_queries_set)
+        eval_dataset = dataset.filter(lambda x: x["anchor"] in eval_queries_set)
+        test_dataset = dataset.filter(lambda x: x["anchor"] in test_queries_set)
+
+
     print(f"Dataset loaded: {len(train_dataset)} train, {len(eval_dataset)} eval, {len(test_dataset)} test examples")
 
     # 4. Define a loss function
@@ -618,15 +637,16 @@ def main():
 
     # 8. Evaluate the trained model
     if int(os.environ.get("LOCAL_RANK", -1)) <= 0:
+        # Save before evaluating: a crash in the val evaluation must not discard a
+        # completed training run.
+        model.save_pretrained(os.path.join(train_config["output_dir"], "final"))
+
         evaluate_model(
             model,
             raw_eval_dataset,
             split_name="val",
             log_predictions_table_name=args.log_predictions_table,
         )
-
-        # 9. Save the trained model
-        model.save_pretrained(os.path.join(train_config["output_dir"], "final"))
 
 
 if __name__ == "__main__":

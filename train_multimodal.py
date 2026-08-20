@@ -288,6 +288,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=str, default="config.yaml")
     parser.add_argument("--easy-negative-value", type=int, default=None)
     parser.add_argument("--V", type=int, default=None)
+    parser.add_argument("--note", type=str, default=None, help="Free-form experiment tag; becomes part of the run name and output dir")
     parser.add_argument(
         "--distance-transform",
         type=str,
@@ -348,6 +349,8 @@ def load_config(args: argparse.Namespace) -> Dict[str, Any]:
         config["easy_negative_value"] = args.easy_negative_value
     if args.V is not None:
         config["V"] = args.V
+    if args.note is not None:
+        config["note"] = args.note
     if args.distance_transform is not None:
         config["distance_transform"] = args.distance_transform
     if args.distance_transform_alpha is not None:
@@ -388,6 +391,7 @@ def load_config(args: argparse.Namespace) -> Dict[str, Any]:
                 "easy": config.get("easy_negative_value"),
                 "V": config.get("V"),
                 "transform": config.get("distance_transform"),
+                "note": config.get("note"),
             },
         )
 
@@ -459,6 +463,7 @@ def main():
         "easy": config.get("easy_negative_value"),
         "V": config.get("V"),
         "transform": config.get("distance_transform"),
+        "note": config.get("note"),
     }
     wandb_name = build_run_name(config, modality="multimodal", query_kind=query_label, extra=name_extras)
     wandb_run_id = None
@@ -653,6 +658,7 @@ def main():
                 id=wandb_run_id,
                 resume="allow",
             )
+        model.save_pretrained(os.path.join(train_config["output_dir"], "final"))
         evaluate_model(
             model,
             raw_eval_dataset,
@@ -662,7 +668,6 @@ def main():
             output_dir=train_config["output_dir"],
             wandb_step=trainer.state.global_step + 1,
         )
-        model.save_pretrained(os.path.join(train_config["output_dir"], "final"))
         if wandb.run is not None:
             wandb.finish()
 
