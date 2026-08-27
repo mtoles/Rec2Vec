@@ -34,6 +34,8 @@ EASY_NEGATIVE_SENTINEL = -1
 
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
+    INFONCE = "infonce"
+    COSENT = "cosent"
     OURS_MSE = "ours-mse"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
@@ -473,7 +475,7 @@ def main():
     distance_transform = config.get("distance_transform", DistanceTransform.LINEAR.value)
     distance_transform_alpha = float(config.get("distance_transform_alpha", 5.0))
     
-    if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
+    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.INFONCE.value):
         cols_to_keep = ["anchor", "positive", "negative"]
         if "query_distance" in dataset.column_names:
             cols_to_keep.append("query_distance")
@@ -482,7 +484,7 @@ def main():
         if "split" in dataset.column_names:
             cols_to_keep.append("split")
         dataset = dataset.select_columns(cols_to_keep)
-    elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value):
+    elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
         dataset = dataset.rename_column("query_distance", "label")
         # -1 is the easy-negative sentinel in both pipelines, not a real distance.
         # Map it to the actual distance we want easy negatives trained toward.
@@ -541,7 +543,7 @@ def main():
 
     raw_eval_dataset = eval_dataset
 
-    if config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
+    if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
         def to_pairs(batch):
             anchors = []
             others = []
@@ -572,6 +574,15 @@ def main():
 
     if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
         loss = losses.TripletLoss(model=model,distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2)
+    elif config["training_style"] == TrainingStyle.INFONCE.value:
+        # The standard bi-encoder objective: cross-entropy over in-batch negatives, with
+        # our labeled hard negative as the extra column. Ordering only, no graded signal.
+        loss = losses.MultipleNegativesRankingLoss(model=model)
+    elif config["training_style"] == TrainingStyle.COSENT.value:
+        # Consumes the same graded label as ours-mse but ordinally: every pair with a
+        # higher label must score higher. Separates "graded supervision" from
+        # "margin regression" as the source of any gain.
+        loss = losses.CoSENTLoss(model=model)
     elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value):
         loss = losses.MarginMSELoss(model=model,similarity_fct=util.pairwise_cos_sim)
     elif config["training_style"] == TrainingStyle.CLASSIC_MSE.value:

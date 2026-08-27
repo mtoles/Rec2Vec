@@ -36,6 +36,8 @@ EASY_NEGATIVE_SENTINEL = -1
 
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
+    INFONCE = "infonce"
+    COSENT = "cosent"
     OURS_MSE = "ours-mse"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
@@ -504,7 +506,7 @@ def main():
     if V <= 0:
         raise ValueError(f"V must be > 0, got {V}")
 
-    if config["training_style"] == TrainingStyle.BASELINE_TRIPLET.value:
+    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.INFONCE.value):
         cols_to_keep = ["anchor", "positive", "negative"]
         for column in ["query_distance", "negative_example_source"]:
             if column in dataset.column_names:
@@ -514,6 +516,7 @@ def main():
         TrainingStyle.OURS_MSE.value,
         TrainingStyle.OURS_MSE_REVERSED.value,
         TrainingStyle.CLASSIC_MSE.value,
+        TrainingStyle.COSENT.value,
     ]:
         dataset = dataset.rename_column("query_distance", "label")
         # -1 is the easy-negative sentinel, not a real distance; map it to the distance
@@ -559,7 +562,7 @@ def main():
             wandb.finish()
         return
 
-    if config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
+    if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
         def to_pairs(batch):
             anchors = []
             others = []
@@ -584,6 +587,12 @@ def main():
             distance_metric=losses.TripletDistanceMetric.COSINE,
             triplet_margin=0.2,
         )
+    elif config["training_style"] == TrainingStyle.INFONCE.value:
+        # Standard contrastive objective: cross-entropy over in-batch negatives.
+        loss = losses.MultipleNegativesRankingLoss(model=model)
+    elif config["training_style"] == TrainingStyle.COSENT.value:
+        # Same graded label as ours-mse, used ordinally instead of regressed.
+        loss = losses.CoSENTLoss(model=model)
     elif config["training_style"] in [TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value]:
         loss = losses.MarginMSELoss(model=model, similarity_fct=util.pairwise_cos_sim)
     elif config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
@@ -622,7 +631,7 @@ def main():
     train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset, swap_pos_neg=swap_pos_neg)
     eval_dataset_for_trainer = prepare_dataset_for_trainer(eval_dataset, swap_pos_neg=swap_pos_neg)
 
-    if config["training_style"] == TrainingStyle.CLASSIC_MSE.value:
+    if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
         train_dataset_for_trainer = add_image_transform(train_dataset_for_trainer, ["sentence_B"])
         eval_dataset_for_trainer = add_image_transform(eval_dataset_for_trainer, ["sentence_B"])
     else:
