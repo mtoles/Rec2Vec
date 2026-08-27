@@ -544,6 +544,15 @@ def main():
     raw_eval_dataset = eval_dataset
 
     if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
+        # CoSENT scores every pair in a batch against every other, so a duplicated positive
+        # pair counts twice in the comparison set. The dataset holds two rows per triple
+        # (hard negative, easy negative) sharing one positive, so emit it from the hard row
+        # only. CosineSimilarityLoss scores each pair independently and is left as it was.
+        dedup_positive = (
+            config["training_style"] == TrainingStyle.COSENT.value
+            and "negative_example_source" in train_dataset.column_names
+        )
+
         def to_pairs(batch):
             anchors = []
             others = []
@@ -555,11 +564,13 @@ def main():
                 p = batch['positive'][i]
                 neg = batch['negative'][i]
                 l = batch['label'][i]
-                
+                is_easy = dedup_positive and batch['negative_example_source'][i] == "random"
+
                 # Positive pair: (anchor, positive) -> sim 1.0
-                anchors.append(a)
-                others.append(p)
-                labels.append(1.0)
+                if not is_easy:
+                    anchors.append(a)
+                    others.append(p)
+                    labels.append(1.0)
                 
                 # Negative pair: (anchor, negative) -> sim 1.0 - label
                 # (Assuming label is distance-based scaled [0,1])
@@ -596,6 +607,16 @@ def main():
     assert train_config["global_batch_size"] // (per_device_train_batch_size * torch.cuda.device_count()) == train_config["global_batch_size"] / (per_device_train_batch_size * torch.cuda.device_count()), f"Global batch size {train_config['global_batch_size']} is not divisible by the product of per-device batch size {per_device_train_batch_size} and the number of devices {torch.cuda.device_count()}"
     assert gradient_accumulation_steps > 0, f"Gradient accumulation steps {gradient_accumulation_steps} is less than 1"
 
+    # NO_DUPLICATES keeps a batch free of repeated values, which MultipleNegativesRankingLoss
+    # needs so an anchor's own positive is never used as an in-batch negative. CoSENT is the
+    # opposite case: its loss is a comparison over the pairs that share a batch, and both pairs
+    # of a query repeat that query's text, so NO_DUPLICATES would place them in different
+    # batches and silently drop every within-query comparison.
+    batch_sampler = BatchSamplers[train_config["batch_sampler"]]
+    if config["training_style"] == TrainingStyle.COSENT.value and batch_sampler == BatchSamplers.NO_DUPLICATES:
+        print("cosent: overriding batch_sampler NO_DUPLICATES -> BATCH_SAMPLER")
+        batch_sampler = BatchSamplers.BATCH_SAMPLER
+
     training_args = SentenceTransformerTrainingArguments(
         # Required parameter:
         output_dir=train_config["output_dir"],
@@ -609,7 +630,7 @@ def main():
         lr_scheduler_type=train_config["lr_scheduler_type"],
         # fp16=True,  # Set to False if you get an error that your GPU can't run on FP16
         bf16=train_config["bf16"],  # Set to True if you have a GPU that supports BF16
-        batch_sampler=BatchSamplers[train_config["batch_sampler"]],  # MultipleNegativesRankingLoss benefits from no duplicate samples in a batch
+        batch_sampler=batch_sampler,
         # Optional tracking/debugging parameters:
         eval_strategy=train_config["eval_strategy"],
         save_strategy=train_config["save_strategy"],

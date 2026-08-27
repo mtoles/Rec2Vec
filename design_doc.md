@@ -112,3 +112,12 @@ After each time you make a substantial new edit, do:
 1. Run the code to check that it works (its ok if it crashes on features we haven't discussed yet)
 2. If it doesn't work, try to fix it 
 3. Once you have fixed it, provide proof that it is fixed, such as a summary of results
+
+
+# To Do
+
+Stuff we should consider doing before publishing the paper
+
+## Additional CoSENT baselines
+
+- Run additional CoSENT baselines where we better control batching to ensure pairs are entirely comparing within the same query

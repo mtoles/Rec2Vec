@@ -563,16 +563,26 @@ def main():
         return
 
     if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
+        # CoSENT scores every pair in a batch against every other, so the positive shared by a
+        # triple's two rows (hard negative, easy negative) would count twice. Emit it from the
+        # hard row only. CosineSimilarityLoss scores pairs independently and is left as it was.
+        dedup_positive = (
+            config["training_style"] == TrainingStyle.COSENT.value
+            and "negative_example_source" in train_dataset.column_names
+        )
+
         def to_pairs(batch):
             anchors = []
             others = []
             labels = []
-            for anchor, positive, negative, label in zip(
-                batch["anchor"], batch["positive"], batch["negative"], batch["label"]
+            sources = batch.get("negative_example_source", [None] * len(batch["anchor"]))
+            for anchor, positive, negative, label, source in zip(
+                batch["anchor"], batch["positive"], batch["negative"], batch["label"], sources
             ):
-                anchors.append(anchor)
-                others.append(positive)
-                labels.append(1.0)
+                if not (dedup_positive and source == "random"):
+                    anchors.append(anchor)
+                    others.append(positive)
+                    labels.append(1.0)
                 anchors.append(anchor)
                 others.append(negative)
                 labels.append(1.0 - label)
@@ -609,6 +619,14 @@ def main():
     if gradient_accumulation_steps <= 0:
         raise ValueError("gradient_accumulation_steps must be >= 1")
 
+    # CoSENT's loss compares the pairs that share a batch, and both pairs of a query repeat
+    # that query's text, so NO_DUPLICATES would split them apart and drop every within-query
+    # comparison. MultipleNegativesRankingLoss still wants NO_DUPLICATES.
+    batch_sampler = BatchSamplers[train_config["batch_sampler"]]
+    if config["training_style"] == TrainingStyle.COSENT.value and batch_sampler == BatchSamplers.NO_DUPLICATES:
+        print("cosent: overriding batch_sampler NO_DUPLICATES -> BATCH_SAMPLER")
+        batch_sampler = BatchSamplers.BATCH_SAMPLER
+
     training_args = SentenceTransformerTrainingArguments(
         output_dir=train_config["output_dir"],
         num_train_epochs=train_config["num_train_epochs"],
@@ -619,7 +637,7 @@ def main():
         warmup_ratio=train_config["warmup_ratio"],
         lr_scheduler_type=train_config["lr_scheduler_type"],
         bf16=train_config["bf16"],
-        batch_sampler=BatchSamplers[train_config["batch_sampler"]],
+        batch_sampler=batch_sampler,
         eval_strategy=train_config["eval_strategy"],
         save_strategy=train_config["save_strategy"],
         save_total_limit=train_config["save_total_limit"],
