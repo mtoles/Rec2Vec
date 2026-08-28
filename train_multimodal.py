@@ -24,6 +24,9 @@ import wandb
 import yaml
 
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
+from utils.distance_labels import (
+    DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
+)
 from utils.run_naming import build_output_dir, build_run_name
 
 
@@ -32,6 +35,13 @@ logger = logging.getLogger(__name__)
 
 # Easy negatives carry this instead of a measured feature distance (see preprocess_*.py).
 EASY_NEGATIVE_SENTINEL = -1
+
+# Which dataset column each query kind trains on.
+QUERY_COLUMNS = {
+    "original": "original_query",
+    "synthetic": "nl_query",
+    "rephrased": "rephrased_query",
+}
 
 
 class TrainingStyle(Enum):
@@ -284,7 +294,10 @@ def parse_bool(value: str) -> bool:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default=None, help="Path to processed image dataset directory")
-    parser.add_argument("--use-synthetic-data", nargs="?", const=True, type=parse_bool, default=True)
+    parser.add_argument("--use-synthetic-data", nargs="?", const=True, type=parse_bool, default=True,
+                        help="Deprecated shorthand for --query-kind synthetic")
+    parser.add_argument("--query-kind", choices=["original", "synthetic", "rephrased"], default=None,
+                        help="query column to train on: original = the real ESCI search query, synthetic = the generated conjunctive query, rephrased = the same constraints reworded")
     parser.add_argument("--use-rephrased-query", nargs="?", const=True, type=parse_bool, default=False)
     parser.add_argument("--training-style", type=str, default=None, help="baseline-triplet, ours-mse, ours-mse-reversed, or classic-mse")
     parser.add_argument("--config", type=str, default="config.yaml")
@@ -403,7 +416,8 @@ def load_config(args: argparse.Namespace) -> Dict[str, Any]:
 def select_query_key(args: argparse.Namespace) -> str:
     if args.use_rephrased_query:
         return "rephrased_query"
-    return "nl_query" if args.use_synthetic_data else "original_query"
+    kind = args.query_kind or ("synthetic" if args.use_synthetic_data else "original")
+    return QUERY_COLUMNS[kind]
 
 
 def split_dataset_by_query(dataset: Dataset, seed: int = 42):
@@ -500,7 +514,9 @@ def main():
     dataset = dataset.filter(lambda x: x["positive"] != x["negative"] and bool(x["anchor"]))
 
     V = config.get("V", 20)
-    easy_negative_value = int(config.get("easy_negative_value", 10))
+    # Easy negatives sit beyond the measured scale; to_training_labels enforces that.
+    easy_negative_value = float(
+        config.get("easy_negative_value") or default_easy_negative_distance(DEFAULT_MAX_DISTANCE))
     distance_transform = config.get("distance_transform", DistanceTransform.LINEAR.value)
     distance_transform_alpha = float(config.get("distance_transform_alpha", 5.0))
     if V <= 0:
@@ -518,20 +534,12 @@ def main():
         TrainingStyle.CLASSIC_MSE.value,
         TrainingStyle.COSENT.value,
     ]:
-        dataset = dataset.rename_column("query_distance", "label")
-        # -1 is the easy-negative sentinel, not a real distance; map it to the distance
-        # we actually want easy negatives trained toward.
-        dataset = dataset.map(
-            lambda x: {"label": easy_negative_value if x["label"] == EASY_NEGATIVE_SENTINEL else x["label"]}
-        )
-        dataset = dataset.map(
-            lambda x: {
-                "label": transform_normalized_distance(
-                    x["label"] / V,
-                    distance_transform,
-                    distance_transform_alpha,
-                )
-            }
+        dataset, _ = to_training_labels(
+            dataset,
+            V=V,
+            easy_negative_distance=easy_negative_value,
+            transform=distance_transform,
+            transform_alpha=distance_transform_alpha,
         )
         dataset = dataset.cast_column("label", Value("float"))
     else:

@@ -39,7 +39,9 @@ RANDOM_SEED = 42
 # Sentinel, not a real distance: easy negatives are unrelated, so there is no feature
 # distance to measure. Training remaps it to `easy_negative_value`. Kept identical to the
 # text pipeline so both datasets use one convention.
-EASY_NEGATIVE_DISTANCE = -1.0
+# A random negative's violation count was never measured; it is absent, not small. Keep it
+# null so negative_example_source stays the only marker for an easy negative.
+EASY_NEGATIVE_DISTANCE = None
 HARD_NEGATIVE_DISTANCE = 1.0
 
 logger = logging.getLogger(__name__)
@@ -666,7 +668,8 @@ def save_processed_dataset(examples: List[Dict[str, Any]], output_dir: str) -> N
             "positive_category": example["positive_category"],
             "negative_category": example["easy_negative_category"],
             "negative_example_source": "random",
-            "query_distance": float(example["easy_negative_query_distance"]),
+            "query_distance": (None if example["easy_negative_query_distance"] is None
+                               else float(example["easy_negative_query_distance"])),
             "distance_source": "easy_negative_constant",
             "selected_pos_features": example.get("selected_pos_features", []),
             "selected_neg_features": example.get("selected_neg_features", []),

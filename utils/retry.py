@@ -1,18 +1,32 @@
 import json
 import logging
 import os
+import random
+import time
 from typing import List, Dict, Callable, Any, Optional, Tuple
 from joblib import Memory
 import openai
 from dotenv import load_dotenv
 from copy import deepcopy
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 # Load environment variables from .env file
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+# google-genai logs an automatic-function-calling notice on every generate_content call, which
+# would otherwise scroll a long run's progress bar off the screen.
+logging.getLogger("google_genai").setLevel(logging.ERROR)
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 memory = Memory(".cache", verbose=0)  # cache dir
+BACKOFF_BASE_SECONDS = float(os.getenv("BACKOFF_BASE_SECONDS", "2"))
+# Gemini 2.5 bills thinking tokens at the output rate, and on short rewriting/extraction tasks
+# they run 20-40x the visible answer. 0 disables thinking; -1 lets the model decide.
+GEMINI_THINKING_BUDGET = int(os.getenv("GEMINI_THINKING_BUDGET", "0"))
+# Sampling temperature for Gemini calls. 1.0 is the API default and gives the rewriting tasks
+# some variety; set GEMINI_TEMPERATURE=0 for deterministic extraction runs.
+GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "1.0"))
 
 # Cost tracking
 total_tokens_used = 0
@@ -131,7 +145,7 @@ def _gemini_api_call(messages: List[Dict[str, str]], model_id: str) -> Tuple[str
     if not api_key:
         raise ValueError("GEMINI_API_KEY not found in environment variables")
     
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     
     # Convert OpenAI format messages to Gemini format
     # Gemini expects a single string or a list of content parts
@@ -152,22 +166,22 @@ def _gemini_api_call(messages: List[Dict[str, str]], model_id: str) -> Tuple[str
                 prompt_parts.append(f"System: {content}")
         prompt = "\n".join(prompt_parts)
     
-    # Generate content using Gemini with JSON response format
-    model = genai.GenerativeModel(model_id)
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.0,
-            max_output_tokens=2048,
-            response_mime_type="application/json",
-        )
+    config = genai_types.GenerateContentConfig(
+        temperature=GEMINI_TEMPERATURE,
+        max_output_tokens=8192,
+        response_mime_type="application/json",
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=GEMINI_THINKING_BUDGET),
     )
+    response = client.models.generate_content(model=model_id, contents=prompt, config=config)
     
     logger.debug(f"Gemini call completed ({model_id})")
     
-    # Extract token counts from response metadata
-    input_tokens = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
-    output_tokens = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+    # Thinking tokens are billed at the output rate but are reported separately, so add them in.
+    usage = response.usage_metadata
+    input_tokens = usage.prompt_token_count if usage else 0
+    output_tokens = 0
+    if usage:
+        output_tokens = (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
     
     return response.text, input_tokens, output_tokens
 
@@ -226,6 +240,15 @@ def _cached_api_call(messages_json: str, model_id: str) -> str:
     return _make_api_call(messages_json, model_id)
 
 
+@memory.cache
+def _cached_retry_call(messages_json: str, model_id: str, attempt_no: int) -> str:
+    """Same call as _cached_api_call, but attempt_no varies the cache key so a retry after a
+    bad response actually reaches the API instead of replaying it. attempt_no is otherwise
+    unused."""
+    logger.debug(f"Cached retry call ({model_id}, attempt {attempt_no})")
+    return _make_api_call(messages_json, model_id)
+
+
 def _uncached_api_call(messages_json: str, model_id: str) -> str:
     """Raw OpenAI call without caching."""
     return _make_api_call(messages_json, model_id)
@@ -235,27 +258,27 @@ def retry_with_fallback(
     messages: List[Dict[str, str]],
     validation_func: Callable[[str], bool],
     model_id: str,
-    max_retries: int = 5,
+    max_retries: int = 3,
     fallback_value: Any = None,
 ) -> Any:
 
     # Check environment variable for cache setting (defaults to True)
     use_cache = os.getenv("USE_CACHE", "True").lower() in ("true", "1", "yes")
-    original_messages = deepcopy(messages)
+    messages_json = make_hashable(deepcopy(messages))
     for attempt in range(max_retries):
-        messages = deepcopy(original_messages)
-        if attempt > 0:
-            messages[0]["content"] += f"\n\n(attempt no. {attempt + 1})"
-        else:
-            pass
-        messages_json = make_hashable(messages)
         try:
-            if use_cache:
+            if not use_cache:
+                content = _uncached_api_call(messages_json, model_id)
+            elif attempt == 0:
                 content = _cached_api_call(messages_json, model_id)
             else:
-                content = _uncached_api_call(messages_json, model_id)
+                content = _cached_retry_call(messages_json, model_id, attempt)
         except Exception as e:
             logger.error(f"API call failed on attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                delay = BACKOFF_BASE_SECONDS * (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"backing off {delay:.1f}s before attempt {attempt+2}")
+                time.sleep(delay)
             continue
 
         logger.debug(f"Response on attempt {attempt+1}: type={type(content)}, content={repr(content[:200]) if content else 'None'}...")

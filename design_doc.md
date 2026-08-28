@@ -114,7 +114,10 @@ After each time you make a substantial new edit, do:
 3. Once you have fixed it, provide proof that it is fixed, such as a summary of results
 
 
-# To Do
+# To Do (immediate, critical)
+regenerate  
+
+# To Do (maybe)
 
 Stuff we should consider doing before publishing the paper
 

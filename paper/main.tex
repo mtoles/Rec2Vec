@@ -169,23 +169,38 @@ We evaluate the resulting formulation in both textual and image-based product re
 
 \subsection{Background}
 
-Formally, following \citep{lu2025multiconir}, let query $q_k$ be composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., \red{K}\}$.
+Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product similarity is defined as
+
+% \begin{equation}
+%     \mathcal{L}{q, x^+, x^-} = \Big( \inner{f(q)}{f(x^+)} - \inner{f(q)}{f(x^-)} \Big)^2
+% \end{equation}
+\begin{equation}
+    \label{eq:trad-mse}
+    \mathcal{L}(q, x^+, x^-) = \Big( \inner{f(q)}{f(x^+) - f(x^-)} - y \Big)^2 .
+\end{equation}
+
+Where $q$ is a query, $x^+$ is a relevant document, $x^-$ is a less relevant document, and $y$ is a scalar representing the margin between their relevance as determined by a teacher model.
+$f$ is a function mapping queries or documents to their embeddings.
+
+Formally, following \citep{lu2025multiconir}, let query $q_k$ be a query composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., \red{K}\}$.
 We say a document $x$ is a positive document, $x^+$, with respect to $q_k$ if $x^+ \models C$, i.e., $x^+$ satisfies all $k$ conditions.
 Otherwise, we say the document $x^-$ is negative with respect to $q_k$.
 
 
-\subsection{Loss Function}
+\subsection{Attribute Hamming Loss Function}
 
-We introduce attribute Hamming loss.
-Training operates on triples $(q_k, x^+, x^-)$ in which the positive satisfies every condition of the query, and the predicted margin between the positive and negative similarities is regressed onto the number of query constraints the negative violates:
+We introduce Attribute Hamming Loss, which is a form of Margin-MSE loss designed to distil knowledge from generative models rather than teacher embedding models.
+Attribute Hamming Loss replaces the distillation target $y$ with an integer representing the number of constraints in the query violated by $x^-$, rescaled by a constant $V$.
+% Training operates on triples $(q_k, x^+, x^-)$ in which the positive satisfies every condition of the query, and the predicted margin between the positive and negative similarities is regressed onto the number of query constraints the negative violates:
 
 \begin{equation}
 \label{eq:hamming}
-    \mathcal{L}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \tfrac{1}{V} \sum_{i=1}^{k} \ind{x^- \not\models c_i} \Big)^2 ,
+    \mathcal{L}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \tfrac{1}{V} \underbrace{\sum_{i=1}^{k} \ind{x^- \not\models c_i}}_{\text{\# of constraints violated by } x^-} \Big)^2 ,
 \end{equation}
 
-where $f$ maps texts to their embeddings and $V$ is a fixed label scale.
-The target is zero when the negative satisfies every constraint and grows by $1/V$ per violated constraint, so partial satisfaction is graded rather than binary.
+In Section \ref{???} we describe a data synthesis pipeline to construct training triples with known target values of $\sum_{i=1}^{k} \ind{x^- \not\models c_i}$.
+The target value is zero when the negative satisfies every constraint and grows by $1/V$ per violated constraint.
+This contrasts with binary classification training regimes, such as traditional triplet loss, where examples are either strictly correct or incorrect.
 
 One can imagine this loss function attempting to approximating bit-wise filtering on a table of $n$ documents and arbitrarily many columns of attributes. 
 Because for any given query $q_k$, only the $k$ attributes present in the query are relevant, the space requirement of this dataset can be bounded by $\mathcal{O}(nk)$.
@@ -211,6 +226,13 @@ Under the Linear Representation Hypothesis, we say a feature is $(\epsilon, S)-$
 \end{equation}
 
 for all $\ell \in S$
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{figs/embedding_fig.pdf}
+    \caption{An idealized embedding space containing three documents with the attributes red, cotton, and zipper, respectively, as well as query vector with attributes red and zipper. The query vector acts as a linear probe for all three vectors simultaneously, with $x_{red}$ and $x_{zipper}$ simultaneously}
+    \label{fig:embedding}
+\end{figure}
 
 \section{Experiment}
 
@@ -373,6 +395,7 @@ under the squared loss $\mathcal{L}(q_C, x^+, x^-) = \big( M(q_C, x^+, x^-) - y(
 The trainer in fact regresses onto $y / V$ for a fixed constant $V > 0$.
 The change of variables $g = V f(q_C)$ turns the $V$-scaled loss into $V^{-2} \big( \inner{g}{\Delta f} - y \big)^2$, so the two objectives share minimizers and we set $V = 1$ throughout.
 Under a unit-norm constraint this change of variables is unavailable.
+\red{Remark~\ref{rem:unitnorm} handles the unit-norm case.}
 
 \begin{definition}[Linear recovery, after \citealp{garg2026many}]
 \label{def:rec}
@@ -607,6 +630,25 @@ For such a pair Eq.~\eqref{eq:app-diff} reads
 By the definition of $\beta_i$ in Eq.~\eqref{eq:app-probe} we have $\inner{b_i}{f(x_0)} - z_i(x_0) = -\beta_i$, so the quantity inside is $-\big( \inner{b_i}{f(x)} + \beta_i - z_i(x) \big)$, whose absolute value is unchanged by the sign.
 Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \in S$, which is Eq.~\eqref{eq:app-rec} with $\epsilon = 2\delta$.
 \end{proof}
+
+{\color{red}% unit-norm remark
+\begin{remark}[Unit-norm embeddings]
+\label{rem:unitnorm}
+Suppose the embeddings are constrained to unit norm, $\|f(\ell)\| = 1$ for all $\ell \in L$, and the objective regresses onto the scaled targets $y/V$.
+Let $U = \operatorname{span}\{f(x) : x \in S\}$ and assume $U \neq \mathbb{R}^d$.
+Replacing each $b_i$ by its projection onto $U$ preserves Eq.~\eqref{eq:app-rec}, and if $V \ge \big\|\sum_{i \in C} s_i b_i\big\|$ then
+\begin{equation}
+\label{eq:app-unitq}
+    f(q_C) = \frac{1}{V} \Big( \sum_{i \in C} s_i b_i + w \Big) ,
+    \qquad
+    w \perp U ,
+    \quad
+    \|w\|^2 = V^2 - \Big\| \sum_{i \in C} s_i b_i \Big\|^2 ,
+\end{equation}
+is a unit vector whose margins are those of Theorem~\ref{thm:forward} divided by $V$; the proof of the theorem then gives $\mathcal{L} < (2k\epsilon/V)^2$ against the targets $y/V$.
+In the converse direction, multiplying Eq.~\eqref{eq:app-agg} by $V$ shows that Theorem~\ref{thm:back} and Corollary~\ref{cor:delete} hold for the targets $y/V$ with the probe of Eq.~\eqref{eq:app-probe} scaled by $V$ and $\epsilon = 2V\delta$.
+\end{remark}
+}
 
 % \subsection{Remarks}
 

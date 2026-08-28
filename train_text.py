@@ -24,12 +24,22 @@ from tqdm import tqdm
 import torch.distributed as dist
 import torch
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
+from utils.distance_labels import (
+    DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
+)
 from utils.run_naming import build_output_dir, build_run_name
 
 tqdm.pandas()
 
 # Easy negatives carry this instead of a measured feature distance (see preprocess_*.py).
 EASY_NEGATIVE_SENTINEL = -1
+
+# Which dataset column each query kind trains on.
+QUERY_COLUMNS = {
+    "original": "original_query",
+    "synthetic": "nl_query",
+    "rephrased": "rephrased_query",
+}
 
 
 class TrainingStyle(Enum):
@@ -333,7 +343,9 @@ def prepare_dataset_for_trainer(dataset, swap_pos_neg=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default=None, help="Path to processed dataset directory")
-    parser.add_argument("--use-synthetic-data", nargs='?', const=True, type=lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes'], default=False, help="Use synthetic data (nl_query) instead of original_query")
+    parser.add_argument("--use-synthetic-data", nargs='?', const=True, type=lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes'], default=False, help="Deprecated shorthand for --query-kind synthetic")
+    parser.add_argument("--query-kind", choices=["original", "synthetic", "rephrased"], default=None,
+                        help="query column to train on: original = the real ESCI search query, synthetic = the generated conjunctive query, rephrased = the same constraints reworded")
     parser.add_argument("--training-style", type=str, default=None, help="Training style: baseline-triplet, ours-mse, ours-mse-reversed, or classic-mse")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to configuration file")
     parser.add_argument("--easy-negative-value", type=int, default=None, help="Value for easy negatives")
@@ -418,7 +430,8 @@ def main():
         if arg_value is not None:
             config["training_args"][key] = arg_value
 
-    query_kind = "synthetic" if args.use_synthetic_data else "original"
+    # --query-kind supersedes --use-synthetic-data; the boolean is kept for older commands.
+    query_kind = args.query_kind or ("synthetic" if args.use_synthetic_data else "original")
     name_extras = {
         "multiplier": config.get("hard_negative_multiplier"),
         "easy": config.get("easy_negative_value"),
@@ -447,7 +460,7 @@ def main():
     # Disable wandb model upload
     os.environ["WANDB_LOG_MODEL"] = "false"
 
-    query_key = "nl_query" if args.use_synthetic_data else "original_query"
+    query_key = QUERY_COLUMNS[query_kind]
 
     # 1. Load a model to finetune with
     model = SentenceTransformer(config["model_name"])
@@ -458,10 +471,9 @@ def main():
     
     # Rename query column and apply training style transformations
     dataset = dataset.rename_column(query_key, "query")
-    if "original_query" in dataset.column_names:
-        dataset = dataset.remove_columns(["original_query"])
-    if "nl_query" in dataset.column_names:
-        dataset = dataset.remove_columns(["nl_query"])
+    for column in QUERY_COLUMNS.values():
+        if column in dataset.column_names:
+            dataset = dataset.remove_columns([column])
     
     dataset = dataset.rename_column("query", "anchor")
     dataset = dataset.rename_column("positive_example", "positive")
@@ -471,7 +483,9 @@ def main():
     dataset = dataset.filter(lambda x: x["positive"] != x["negative"])
 
     V = config.get("V", 25)
-    easy_negative_value = int(config.get("easy_negative_value", 15))
+    # Easy negatives sit beyond the measured scale; to_training_labels enforces that.
+    easy_negative_value = float(
+        config.get("easy_negative_value") or default_easy_negative_distance(DEFAULT_MAX_DISTANCE))
     distance_transform = config.get("distance_transform", DistanceTransform.LINEAR.value)
     distance_transform_alpha = float(config.get("distance_transform_alpha", 5.0))
     
@@ -485,21 +499,12 @@ def main():
             cols_to_keep.append("split")
         dataset = dataset.select_columns(cols_to_keep)
     elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
-        dataset = dataset.rename_column("query_distance", "label")
-        # -1 is the easy-negative sentinel in both pipelines, not a real distance.
-        # Map it to the actual distance we want easy negatives trained toward.
-        n_easy = sum(1 for v in dataset["label"] if v == EASY_NEGATIVE_SENTINEL)
-        print(f"Remapping {n_easy}/{len(dataset)} easy-negative labels to {easy_negative_value}")
-        dataset = dataset.map(lambda x: {"label": easy_negative_value if x["label"] == EASY_NEGATIVE_SENTINEL else x["label"]})
-        # scale, then shape the normalized distance (linear leaves it untouched)
-        dataset = dataset.map(
-            lambda x: {
-                "label": transform_normalized_distance(
-                    x["label"] / V,
-                    distance_transform,
-                    distance_transform_alpha,
-                )
-            }
+        dataset, _ = to_training_labels(
+            dataset,
+            V=V,
+            easy_negative_distance=easy_negative_value,
+            transform=distance_transform,
+            transform_alpha=distance_transform_alpha,
         )
         dataset = dataset.cast_column("label", Value("float"))
     else:
