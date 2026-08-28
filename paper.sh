@@ -86,8 +86,9 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 # Condition table — the living list of everything the paper needs.
 # Columns: modality  style  query_kind  V  extra
 #   modality: text | multimodal
-#   style:    untrained | baseline-triplet | infonce | classic-mse | ours-mse
-#             (| cosent | ours-mse-reversed)
+#   style:    untrained | baseline-triplet | infonce | cosent | classic-mse | ours-mse
+#             | ours-mse-batched (ours over the full in-batch candidate pool)
+#             (| ours-mse-reversed)
 #   V:        distance normalizer, '-' = not applicable (untrained, triplet, infonce,
 #             and cosent -- all baselines that never see the measured distance)
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>
@@ -113,9 +114,12 @@ text        cosent            rephrased  -   -
 text        classic-mse       original   40  -
 text        classic-mse       synthetic  40  -
 text        classic-mse       rephrased  40  -
-# text        ours-mse          original   40  -
-# text        ours-mse          synthetic  40  -
-# text        ours-mse          rephrased  40  -
+text        ours-mse          original   40  -
+text        ours-mse          synthetic  40  -
+text        ours-mse          rephrased  40  -
+text        ours-mse-batched  original   40  -
+text        ours-mse-batched  synthetic  40  -
+text        ours-mse-batched  rephrased  40  -
 # The image dataset has no real search queries (original_query is empty for all 12,957 rows),
 # so multimodal runs synthetic and rephrased only.
 multimodal  untrained         synthetic  -   -
@@ -128,21 +132,23 @@ multimodal  cosent            synthetic  -   -
 multimodal  cosent            rephrased  -   -
 multimodal  classic-mse       synthetic  40  -
 multimodal  classic-mse       rephrased  40  -
-# multimodal  ours-mse          synthetic  40  -
-# multimodal  ours-mse          rephrased  40  -
+multimodal  ours-mse          synthetic  40  -
+multimodal  ours-mse          rephrased  40  -
+multimodal  ours-mse-batched  synthetic  40  -
+multimodal  ours-mse-batched  rephrased  40  -
 
 # ---------------------------------------------------------------------------
-# V ablation. Not part of the main grid: these sweep the distance normalizer on
-# synthetic queries only, and are what V=40 above was selected from.
+# V ablation: 20/40/60 on synthetic queries for both ours variants. The V=40 point
+# is the main-grid row above, so it is not repeated here.
 # ---------------------------------------------------------------------------
-# text        ours-mse          synthetic  10  -
-# text        ours-mse          synthetic  20  -
-# text        ours-mse          synthetic  25  -
-# text        ours-mse          synthetic  30  -
-# multimodal  ours-mse          synthetic  10  -
-# multimodal  ours-mse          synthetic  20  -
-# multimodal  ours-mse          synthetic  25  -
-# multimodal  ours-mse          synthetic  30  -
+text        ours-mse          synthetic  20  -
+text        ours-mse          synthetic  60  -
+text        ours-mse-batched  synthetic  20  -
+text        ours-mse-batched  synthetic  60  -
+multimodal  ours-mse          synthetic  20  -
+multimodal  ours-mse          synthetic  60  -
+multimodal  ours-mse-batched  synthetic  20  -
+multimodal  ours-mse-batched  synthetic  60  -
 "
 
 # ---------------------------------------------------------------------------
@@ -371,7 +377,7 @@ for key in "${KEYS[@]}"; do
   # column is empty -- multimodal then died on "Need at least 3 unique queries" and text
   # silently wrote preds for one empty query.
   dataset=$(dataset_for "$modality" "${K_QK[$key]}")
-  test_script=$([[ $modality == text ]] && echo test_text.py || echo test_multimodal.py)
+  test_script=test.py
 
   if [[ $style == untrained ]]; then
     model_path=$(model_for "$modality")
@@ -399,7 +405,7 @@ for key in "${KEYS[@]}"; do
   fi
 
   launch test "$key" "test  $key" "$LOG_DIR/$key.test.log" \
-    $PY -u "$test_script" --model-path "$model_path" --dataset "$dataset" \
+    $PY -u "$test_script" --modality "$modality" --model-path "$model_path" --dataset "$dataset" \
     --query-kind "${K_QK[$key]}" --run-dir "$run_dir" --top-k "$TOP_K"
 done
 drain

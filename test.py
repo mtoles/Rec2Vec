@@ -1,20 +1,21 @@
-"""Offline test-set inference for text models.
+"""Offline test-set inference for both modalities.
 
-Reconstructs the exact test split used by train_text.py (leakage-free `split` column
-when present, otherwise the legacy 80/10/10 query split with seed 42), encodes the
-test corpus and queries with one model, and writes predictions to <run-dir>/preds/
-so all analysis can run offline. See utils/test_inference.py for the file formats.
+Reconstructs the exact test split used by train.py -- the split logic is imported from
+train.py rather than copied, so it cannot drift -- encodes the test corpus and queries
+with one model, and writes predictions to <run-dir>/preds/ so all analysis can run
+offline. See utils/test_inference.py for the file formats.
+
+Supersedes test_text.py and test_multimodal.py.
 """
 
 import argparse
 import os
 
-import pandas as pd
 import torch
 from datasets import load_from_disk
 from sentence_transformers import SentenceTransformer
-from sklearn.model_selection import train_test_split
 
+from train import QUERY_COLUMNS, encode_documents, split_dataset
 from utils.test_inference import (
     build_corpus_and_queries,
     normalize,
@@ -26,58 +27,70 @@ from utils.test_inference import (
 )
 
 # Metadata columns copied verbatim into triplets.jsonl when the dataset has them.
-PASSTHROUGH_COLUMNS = ["query_distance", "negative_example_source", "item", "positive_id", "negative_id"]
+PASSTHROUGH_COLUMNS = [
+    "query_distance", "negative_example_source", "item",
+    "positive_id", "negative_id",
+    "positive_product_id", "negative_product_id", "positive_category", "negative_category",
+]
+
+DEFAULT_BATCH_SIZES = {"text": 256, "multimodal": 64}
+
+# corpus.jsonl names its payload field by content type, matching what the old
+# per-modality scripts wrote and what existing preds consumers read.
+CORPUS_FIELDS = {"text": "text", "multimodal": "image_path"}
 
 
-def load_test_split(dataset_path, query_key):
-    """Mirror of train_text.py's dataset preparation: rename, filter, split, take test."""
+def load_test_split(dataset_path, query_key, split_seed):
+    """Mirror of train.py's dataset preparation: rename, filter, split, take test."""
     dataset = load_from_disk(dataset_path)
-    dataset = dataset.rename_column(query_key, "query")
-    for column in ["original_query", "nl_query", "rephrased_query"]:
+    if query_key not in dataset.column_names:
+        raise ValueError(f"Requested query field '{query_key}' not found in columns: {dataset.column_names}")
+
+    dataset = dataset.rename_column(query_key, "anchor")
+    for column in QUERY_COLUMNS.values():
         if column in dataset.column_names:
             dataset = dataset.remove_columns([column])
-    dataset = dataset.rename_column("query", "anchor")
     dataset = dataset.rename_column("positive_example", "positive")
     dataset = dataset.rename_column("negative_example", "negative")
-    dataset = dataset.filter(lambda x: x["positive"] != x["negative"])
+    dataset = dataset.filter(lambda x: x["positive"] != x["negative"] and bool(x["anchor"]))
 
-    if "split" in dataset.column_names:
-        return dataset.filter(lambda x: x["split"] == "test")
-
-    # Legacy query-only split (same seeds/sizes as train_text.py)
-    unique_queries = pd.Series(dataset["anchor"]).drop_duplicates().tolist()
-    _, temp_queries = train_test_split(unique_queries, test_size=0.2, random_state=42)
-    _, test_queries = train_test_split(temp_queries, test_size=0.5, random_state=42)
-    test_queries_set = set(test_queries)
-    return dataset.filter(lambda x: x["anchor"] in test_queries_set)
+    _, _, test_dataset = split_dataset(dataset, seed=split_seed)
+    return test_dataset
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-path", type=str, required=True, help="Model dir (…/final) or HF model name")
+    parser.add_argument("--modality", choices=["text", "multimodal"], required=True)
+    parser.add_argument("--model-path", type=str, required=True, help="Model dir (.../final) or HF model name")
     parser.add_argument("--dataset", type=str, required=True, help="Processed dataset directory")
-    parser.add_argument("--query-kind", choices=["original", "synthetic", "rephrased"], default="original")
+    parser.add_argument("--query-kind", choices=["original", "synthetic", "rephrased"], required=True)
     parser.add_argument("--run-dir", type=str, required=True, help="Run directory; preds are written to <run-dir>/preds")
     parser.add_argument("--top-k", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help=f"Default per modality: {DEFAULT_BATCH_SIZES}")
+    parser.add_argument("--split-seed", type=int, default=42)
     args = parser.parse_args()
 
+    modality = args.modality
+    batch_size = args.batch_size if args.batch_size is not None else DEFAULT_BATCH_SIZES[modality]
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    query_key = {"original": "original_query", "synthetic": "nl_query", "rephrased": "rephrased_query"}[args.query_kind]
 
-    test_dataset = load_test_split(args.dataset, query_key)
+    test_dataset = load_test_split(args.dataset, QUERY_COLUMNS[args.query_kind], args.split_seed)
     print(f"Test split: {len(test_dataset):,} rows")
 
     corpus, corpus_to_idx, queries, query_to_qid, positives = build_corpus_and_queries(test_dataset)
-    print(f"Corpus: {len(corpus):,} unique product texts | Queries: {len(queries):,}")
+    print(f"Corpus: {len(corpus):,} unique items | Queries: {len(queries):,}")
 
     print(f"Loading model {args.model_path}")
-    model = SentenceTransformer(args.model_path, device=device)
-    encode = lambda texts: normalize(
-        model.encode(texts, convert_to_tensor=True, batch_size=args.batch_size, show_progress_bar=True)
+    model = SentenceTransformer(
+        args.model_path, device=device, trust_remote_code=(modality == "multimodal")
     )
-    corpus_embeddings = encode(corpus)
-    query_embeddings = encode(queries)
+    corpus_embeddings = normalize(
+        encode_documents(model, corpus, modality, batch_size, show_progress_bar=True)
+    )
+    query_embeddings = normalize(
+        model.encode(queries, convert_to_tensor=True, batch_size=batch_size, show_progress_bar=True)
+    )
 
     top_ids, top_scores = rank_top_k(query_embeddings, corpus_embeddings, args.top_k)
 
@@ -91,8 +104,9 @@ def main():
     preds_dir = os.path.join(args.run_dir, "preds")
     os.makedirs(preds_dir, exist_ok=True)
 
+    corpus_field = CORPUS_FIELDS[modality]
     write_jsonl(os.path.join(preds_dir, "corpus.jsonl"),
-                [{"corpus_id": i, "text": text} for i, text in enumerate(corpus)])
+                [{"corpus_id": i, corpus_field: item} for i, item in enumerate(corpus)])
     write_jsonl(os.path.join(preds_dir, "queries.jsonl"), [
         {
             "query_id": qid,
@@ -119,7 +133,7 @@ def main():
     metrics = quick_metrics(top_ids, positives)
     print("Quick metrics:", metrics)
     write_meta(preds_dir, args, {
-        "modality": "text",
+        "modality": modality,
         "n_test_rows": len(test_dataset),
         "n_corpus": len(corpus),
         "n_queries": len(queries),
