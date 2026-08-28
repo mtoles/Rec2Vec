@@ -21,6 +21,7 @@ import numpy as np
 import re
 from multiprocessing import Pool
 
+from utils.query_render import choose_feature_counts, render_query
 from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model, get_cost_summary, update_cost_from_summary, reset_cost_tracking
 from langdetect import detect, LangDetectException
 
@@ -318,19 +319,14 @@ def generate_example(
     query_distance = randint(1, max_distance)
     # features_indices = random.sample(list(range(len(pos_bin_features))), query_distance)
     # sample query_distance features from pos_bin_features and negations of neg_bin_features
-    n_pos_features = min(randint(0, query_distance), len(unique_pos_features))
-    n_neg_features = min(query_distance - n_pos_features, len(unique_neg_features))
-    n_common_features = min(randint(0, query_distance), len(common_features))
-    n_neither_features = min(randint(0, query_distance), len(neither_features))
-
-    # Ensure at least one positive/common and one negative/neither feature is selected
-    if not (n_pos_features or n_common_features):
-        n_pos_features = 1 if unique_pos_features else 0
-        n_common_features = 1 if not n_pos_features and common_features else 0
-
-    if not (n_neg_features or n_neither_features):
-        n_neg_features = 1 if unique_neg_features else 0
-        n_neither_features = 1 if not n_neg_features and neither_features else 0
+    n_pos_features, n_neg_features, n_common_features, n_neither_features = choose_feature_counts(
+        query_distance,
+        len(unique_pos_features),
+        len(unique_neg_features),
+        len(common_features),
+        len(neither_features),
+        randint,
+    )
 
     selected_pos_features_indices    = random.sample(list(range(len(unique_pos_features))), n_pos_features)
     selected_neg_features_indices    = random.sample(list(range(len(unique_neg_features))), n_neg_features)
@@ -347,7 +343,11 @@ def generate_example(
     # common_features = [common_features[i] for i in features_indices]
     # query_fn, source_code, seq = generate_random_sat_fn(query_len)
     # query_fn, source_code, seq = generate_simple_sat_fn(pos_features=pos_features, neg_features=neg_features, common_features=common_features)
-    nl_query = f"I am looking for: \"{item}\" that has: {', '.join(selected_pos_features + selected_common_features)}; and does not have: {', '.join(selected_neg_features + selected_neither_features)}"
+    nl_query = render_query(
+        item,
+        selected_pos_features + selected_common_features,
+        selected_neg_features + selected_neither_features,
+    )
 
     return {
         "item": item,
@@ -429,6 +429,9 @@ def process_single_example(example: Dict[str, Any], max_distance: int, model_id:
         example["positive_product"], example["hard_neg_product"], model_id=model_id
     )
     if common_features is None or unique_pos_features is None or unique_neg_features is None or neither_features is None:
+        return None
+    if not (unique_pos_features or unique_neg_features):
+        # No unique features on either side: no query can separate the pair.
         return None
     generated_example = generate_example(
         item=query_item,

@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 # Easy negatives carry this instead of a measured feature distance (see preprocess_*.py).
-EASY_NEGATIVE_SENTINEL = -1
 
 # Which dataset column each query kind trains on.
 QUERY_COLUMNS = {
@@ -522,7 +521,7 @@ def main():
     if V <= 0:
         raise ValueError(f"V must be > 0, got {V}")
 
-    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.INFONCE.value):
+    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.INFONCE.value, TrainingStyle.COSENT.value):
         cols_to_keep = ["anchor", "positive", "negative"]
         for column in ["query_distance", "negative_example_source"]:
             if column in dataset.column_names:
@@ -532,7 +531,6 @@ def main():
         TrainingStyle.OURS_MSE.value,
         TrainingStyle.OURS_MSE_REVERSED.value,
         TrainingStyle.CLASSIC_MSE.value,
-        TrainingStyle.COSENT.value,
     ]:
         dataset, _ = to_training_labels(
             dataset,
@@ -571,21 +569,25 @@ def main():
         return
 
     if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
-        # CoSENT scores every pair in a batch against every other, so the positive shared by a
-        # triple's two rows (hard negative, easy negative) would count twice. Emit it from the
-        # hard row only. CosineSimilarityLoss scores pairs independently and is left as it was.
-        dedup_positive = (
-            config["training_style"] == TrainingStyle.COSENT.value
-            and "negative_example_source" in train_dataset.column_names
-        )
+        # CoSENT is a baseline and never sees the measured distance: its negatives are
+        # labelled 0, so only the positive/negative split reaches the loss. classic-mse
+        # regresses the graded label and does read the distance.
+        is_cosent = config["training_style"] == TrainingStyle.COSENT.value
+        # CoSENT scores every pair in a batch against every other, so a duplicated positive
+        # pair counts twice in the comparison set. The dataset holds two rows per triple
+        # (hard negative, easy negative) sharing one positive, so emit it from the hard row
+        # only. CosineSimilarityLoss scores each pair independently and is left as it was.
+        dedup_positive = is_cosent and "negative_example_source" in train_dataset.column_names
 
         def to_pairs(batch):
+            n = len(batch["anchor"])
+            sources = batch.get("negative_example_source", [None] * n)
+            neg_labels = [0.0] * n if is_cosent else [1.0 - l for l in batch["label"]]
             anchors = []
             others = []
             labels = []
-            sources = batch.get("negative_example_source", [None] * len(batch["anchor"]))
-            for anchor, positive, negative, label, source in zip(
-                batch["anchor"], batch["positive"], batch["negative"], batch["label"], sources
+            for anchor, positive, negative, neg_label, source in zip(
+                batch["anchor"], batch["positive"], batch["negative"], neg_labels, sources
             ):
                 if not (dedup_positive and source == "random"):
                     anchors.append(anchor)
@@ -593,7 +595,7 @@ def main():
                     labels.append(1.0)
                 anchors.append(anchor)
                 others.append(negative)
-                labels.append(1.0 - label)
+                labels.append(neg_label)
             return {"sentence_A": anchors, "sentence_B": others, "label": labels}
 
         train_dataset = train_dataset.map(to_pairs, batched=True, remove_columns=train_dataset.column_names)
@@ -609,7 +611,8 @@ def main():
         # Standard contrastive objective: cross-entropy over in-batch negatives.
         loss = losses.MultipleNegativesRankingLoss(model=model)
     elif config["training_style"] == TrainingStyle.COSENT.value:
-        # Same graded label as ours-mse, used ordinally instead of regressed.
+        # Baseline: binary pair labels, so every positive pair must outscore every
+        # negative pair in the batch. No graded supervision.
         loss = losses.CoSENTLoss(model=model)
     elif config["training_style"] in [TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value]:
         loss = losses.MarginMSELoss(model=model, similarity_fct=util.pairwise_cos_sim)
@@ -627,9 +630,9 @@ def main():
     if gradient_accumulation_steps <= 0:
         raise ValueError("gradient_accumulation_steps must be >= 1")
 
-    # CoSENT's loss compares the pairs that share a batch, and both pairs of a query repeat
-    # that query's text, so NO_DUPLICATES would split them apart and drop every within-query
-    # comparison. MultipleNegativesRankingLoss still wants NO_DUPLICATES.
+    # After to_pairs an anchor appears in both its positive and its negative pair, so
+    # NO_DUPLICATES would admit only one of the two per batch.
+    # MultipleNegativesRankingLoss still wants NO_DUPLICATES.
     batch_sampler = BatchSamplers[train_config["batch_sampler"]]
     if config["training_style"] == TrainingStyle.COSENT.value and batch_sampler == BatchSamplers.NO_DUPLICATES:
         print("cosent: overriding batch_sampler NO_DUPLICATES -> BATCH_SAMPLER")

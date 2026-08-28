@@ -283,7 +283,9 @@ def retry_with_fallback(
 
         logger.debug(f"Response on attempt {attempt+1}: type={type(content)}, content={repr(content[:200]) if content else 'None'}...")
         
-        if validation_func(content):
+        # Gemini can return an empty candidate (response.text is None); that is an invalid
+        # response to retry, not a value to hand to the validator.
+        if content is not None and validation_func(content):
             return content
         else:
             logger.warning(f"Invalid response on attempt {attempt+1}, retrying...")
@@ -335,3 +337,63 @@ def reset_cost_tracking():
     total_tokens_used = 0
     total_api_calls = 0
     total_cost = 0.0
+
+
+def _gemini_vlm_api_call(prompt: str, image_paths: List[str], model_id: str) -> Tuple[str, int, int]:
+    """Gemini call with inline images. Returns (response_text, input_tokens, output_tokens)."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not found in environment variables")
+    client = genai.Client(api_key=api_key)
+
+    mime_by_ext = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+    parts = [prompt]
+    for path in image_paths:
+        ext = os.path.splitext(path)[1].lower()
+        with open(path, "rb") as f:
+            parts.append(genai_types.Part.from_bytes(data=f.read(), mime_type=mime_by_ext.get(ext, "image/jpeg")))
+
+    config = genai_types.GenerateContentConfig(
+        temperature=GEMINI_TEMPERATURE,
+        max_output_tokens=8192,
+        response_mime_type="application/json",
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=GEMINI_THINKING_BUDGET),
+    )
+    response = client.models.generate_content(model=model_id, contents=parts, config=config)
+
+    usage = response.usage_metadata
+    input_tokens = usage.prompt_token_count if usage else 0
+    output_tokens = 0
+    if usage:
+        output_tokens = (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
+    return response.text, input_tokens, output_tokens
+
+
+def retry_vlm_with_fallback(
+    prompt: str,
+    image_paths: List[str],
+    validation_func: Callable[[str], bool],
+    model_id: str,
+    max_retries: int = 3,
+    fallback_value: Any = None,
+) -> Any:
+    """Multimodal counterpart of retry_with_fallback: same backoff, validation, and cost
+    tracking, with images attached to the prompt."""
+    for attempt in range(max_retries):
+        try:
+            content, input_tokens, output_tokens = _gemini_vlm_api_call(prompt, image_paths, model_id)
+            _track_api_cost(input_tokens, output_tokens, model_id)
+        except Exception as e:
+            logger.error(f"VLM call failed on attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                delay = BACKOFF_BASE_SECONDS * (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"backing off {delay:.1f}s before attempt {attempt+2}")
+                time.sleep(delay)
+            continue
+
+        if content and validation_func(content):
+            return content
+        logger.warning(f"Invalid VLM response on attempt {attempt+1}, retrying...")
+
+    logger.error(f"VLM call failed after {max_retries} attempts")
+    return fallback_value

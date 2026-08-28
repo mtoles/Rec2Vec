@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 from jsonschema import ValidationError, validate
 from tqdm import tqdm
 
+from utils.query_render import choose_feature_counts, render_query
 from utils.retry import get_cost_summary, print_cost_report
 
 
@@ -71,6 +72,17 @@ def derive_product_id(item_id: str) -> str:
     value = str(item_id)
     # Examples: MEN_Denim_id_00000080_01_1_front -> MEN_Denim_id_00000080_01
     return re.sub(r"_\d+_(front|side|back|full|flat|additional)$", "", value)
+
+
+def derive_garment_id(product_id: str) -> str:
+    """Strip the colorway suffix so all colorways of one garment design group together.
+
+    MEN_Denim_id_00000080_01 -> MEN_Denim_id_00000080. DeepFashion metadata (color,
+    description) is shared across every colorway of a garment, and a colorway of the anchor
+    is visually the same design -- neither is an "actually different product", so hard
+    negatives must come from a different garment id, not merely a different product id.
+    """
+    return re.sub(r"_\d+$", "", str(product_id))
 
 
 def record_category(record: Dict[str, Any], category_key: str) -> str:
@@ -225,13 +237,16 @@ def choose_negative(
     prefer_same_category: bool,
     match_color_for_hard_negative: bool,
 ) -> Optional[Dict[str, Any]]:
-    anchor_product = str(anchor["product_id"])
+    anchor_garment = derive_garment_id(anchor["product_id"])
     anchor_category = record_category(anchor, category_key)
     anchor_color = str(anchor.get("color", "unknown")).lower()
 
     candidates = []
     for row in records:
-        if str(row["product_id"]) == anchor_product:
+        # Same garment id covers same product AND its other colorways; DeepFashion shares
+        # one color/description string across all colorways, so a colorway variant is not a
+        # different product.
+        if derive_garment_id(row["product_id"]) == anchor_garment:
             continue
         same_category = record_category(row, category_key) == anchor_category
         if prefer_same_category != same_category:
@@ -413,27 +428,23 @@ def generate_visual_distance_example(
     rng: random.Random,
 ) -> Dict[str, Any]:
     query_distance = rng.randint(1, max_distance)
-    n_pos_features = min(rng.randint(0, query_distance), len(unique_pos_features))
-    n_neg_features = min(query_distance - n_pos_features, len(unique_neg_features))
-    n_common_features = min(rng.randint(0, query_distance), len(common_features))
-    n_neither_features = min(rng.randint(0, query_distance), len(neither_features))
-
-    if not (n_pos_features or n_common_features):
-        n_pos_features = 1 if unique_pos_features else 0
-        n_common_features = 1 if not n_pos_features and common_features else 0
-
-    if not (n_neg_features or n_neither_features):
-        n_neg_features = 1 if unique_neg_features else 0
-        n_neither_features = 1 if not n_neg_features and neither_features else 0
+    n_pos_features, n_neg_features, n_common_features, n_neither_features = choose_feature_counts(
+        query_distance,
+        len(unique_pos_features),
+        len(unique_neg_features),
+        len(common_features),
+        len(neither_features),
+        rng.randint,
+    )
 
     selected_pos_features = rng.sample(unique_pos_features, n_pos_features)
     selected_neg_features = rng.sample(unique_neg_features, n_neg_features)
     selected_common_features = rng.sample(common_features, n_common_features)
     selected_neither_features = rng.sample(neither_features, n_neither_features)
-    nl_query = (
-        f'I am looking for: "{item}" that has: '
-        f"{', '.join(selected_pos_features + selected_common_features)}; "
-        f"and does not have: {', '.join(selected_neg_features + selected_neither_features)}"
+    nl_query = render_query(
+        item,
+        selected_pos_features + selected_common_features,
+        selected_neg_features + selected_neither_features,
     )
 
     return {
@@ -473,6 +484,11 @@ def apply_vlm_distances(
             continue
 
         common_features, unique_pos_features, unique_neg_features, neither_features = features
+        if not (unique_pos_features or unique_neg_features):
+            # No unique features on either side: no query can separate the pair.
+            if keep_failures:
+                scored_examples.append(example)
+            continue
         generated = generate_visual_distance_example(
             item=example["item"],
             common_features=common_features,

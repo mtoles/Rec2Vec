@@ -32,7 +32,6 @@ from utils.run_naming import build_output_dir, build_run_name
 tqdm.pandas()
 
 # Easy negatives carry this instead of a measured feature distance (see preprocess_*.py).
-EASY_NEGATIVE_SENTINEL = -1
 
 # Which dataset column each query kind trains on.
 QUERY_COLUMNS = {
@@ -145,14 +144,14 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
         label_key = "label" if "label" in dataset.column_names else "query_distance"
         if label_key in dataset.column_names:
             labels_list = dataset[label_key]
-            labels_tensor = torch.tensor(labels_list, device=neg_cosine_scores.device, dtype=torch.float)
             if label_key == "query_distance":
-                # Raw distances: easy negatives still carry the sentinel.
-                easy_mask = torch.isclose(labels_tensor, torch.tensor(float(EASY_NEGATIVE_SENTINEL), device=labels_tensor.device))
+                # Raw distances: an easy negative's distance was never measured, so it is null.
+                easy_mask = torch.tensor([v is None for v in labels_list],
+                                         device=neg_cosine_scores.device)
             else:
                 # Already remapped/scaled: easy negatives sit at the largest target distance.
-                max_label_tensor = torch.max(labels_tensor)
-                easy_mask = labels_tensor >= max_label_tensor - 1e-5
+                labels_tensor = torch.tensor(labels_list, device=neg_cosine_scores.device, dtype=torch.float)
+                easy_mask = labels_tensor >= torch.max(labels_tensor) - 1e-5
             hard_mask = ~easy_mask
 
     if easy_mask is not None and torch.any(easy_mask):
@@ -201,9 +200,9 @@ def evaluate_model(model, dataset, split_name="test", log_predictions_table_name
             has_label = "label" in dataset.column_names
             label_key = "label" if has_label else "query_distance"
             
-            # Easy negatives are the sentinel in the raw column, and the largest target
-            # distance once labels have been remapped/scaled.
-            easy_label = EASY_NEGATIVE_SENTINEL if label_key == "query_distance" else max(dataset[label_key])
+            # Easy negatives are null in the raw column, and the largest target distance
+            # once labels have been remapped/scaled.
+            easy_label = None if label_key == "query_distance" else max(dataset[label_key])
 
             for row in dataset:
                 q = row["anchor"]
@@ -489,7 +488,7 @@ def main():
     distance_transform = config.get("distance_transform", DistanceTransform.LINEAR.value)
     distance_transform_alpha = float(config.get("distance_transform_alpha", 5.0))
     
-    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.INFONCE.value):
+    if config["training_style"] in (TrainingStyle.BASELINE_TRIPLET.value, TrainingStyle.INFONCE.value, TrainingStyle.COSENT.value):
         cols_to_keep = ["anchor", "positive", "negative"]
         if "query_distance" in dataset.column_names:
             cols_to_keep.append("query_distance")
@@ -498,7 +497,7 @@ def main():
         if "split" in dataset.column_names:
             cols_to_keep.append("split")
         dataset = dataset.select_columns(cols_to_keep)
-    elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
+    elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value, TrainingStyle.CLASSIC_MSE.value):
         dataset, _ = to_training_labels(
             dataset,
             V=V,
@@ -549,40 +548,33 @@ def main():
     raw_eval_dataset = eval_dataset
 
     if config["training_style"] in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value):
+        # CoSENT is a baseline and never sees the measured distance: its negatives are
+        # labelled 0, so only the positive/negative split reaches the loss. classic-mse
+        # regresses the graded label and does read the distance.
+        is_cosent = config["training_style"] == TrainingStyle.COSENT.value
         # CoSENT scores every pair in a batch against every other, so a duplicated positive
         # pair counts twice in the comparison set. The dataset holds two rows per triple
         # (hard negative, easy negative) sharing one positive, so emit it from the hard row
         # only. CosineSimilarityLoss scores each pair independently and is left as it was.
-        dedup_positive = (
-            config["training_style"] == TrainingStyle.COSENT.value
-            and "negative_example_source" in train_dataset.column_names
-        )
+        dedup_positive = is_cosent and "negative_example_source" in train_dataset.column_names
 
         def to_pairs(batch):
+            n = len(batch["anchor"])
+            sources = batch.get("negative_example_source", [None] * n)
+            neg_labels = [0.0] * n if is_cosent else [1.0 - l for l in batch["label"]]
             anchors = []
             others = []
             labels = []
-            # iterate over batch size
-            n = len(batch['anchor'])
-            for i in range(n):
-                a = batch['anchor'][i]
-                p = batch['positive'][i]
-                neg = batch['negative'][i]
-                l = batch['label'][i]
-                is_easy = dedup_positive and batch['negative_example_source'][i] == "random"
-
-                # Positive pair: (anchor, positive) -> sim 1.0
-                if not is_easy:
-                    anchors.append(a)
-                    others.append(p)
+            for anchor, positive, negative, neg_label, source in zip(
+                batch["anchor"], batch["positive"], batch["negative"], neg_labels, sources
+            ):
+                if not (dedup_positive and source == "random"):
+                    anchors.append(anchor)
+                    others.append(positive)
                     labels.append(1.0)
-                
-                # Negative pair: (anchor, negative) -> sim 1.0 - label
-                # (Assuming label is distance-based scaled [0,1])
-                anchors.append(a)
-                others.append(neg)
-                labels.append(1.0 - l)
-            
+                anchors.append(anchor)
+                others.append(negative)
+                labels.append(neg_label)
             return {"sentence_A": anchors, "sentence_B": others, "label": labels}
 
         train_dataset = train_dataset.map(to_pairs, batched=True, remove_columns=train_dataset.column_names)
@@ -595,9 +587,8 @@ def main():
         # our labeled hard negative as the extra column. Ordering only, no graded signal.
         loss = losses.MultipleNegativesRankingLoss(model=model)
     elif config["training_style"] == TrainingStyle.COSENT.value:
-        # Consumes the same graded label as ours-mse but ordinally: every pair with a
-        # higher label must score higher. Separates "graded supervision" from
-        # "margin regression" as the source of any gain.
+        # Baseline: binary pair labels, so every positive pair must outscore every
+        # negative pair in the batch. No graded supervision.
         loss = losses.CoSENTLoss(model=model)
     elif config["training_style"] in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value):
         loss = losses.MarginMSELoss(model=model,similarity_fct=util.pairwise_cos_sim)
@@ -614,9 +605,8 @@ def main():
 
     # NO_DUPLICATES keeps a batch free of repeated values, which MultipleNegativesRankingLoss
     # needs so an anchor's own positive is never used as an in-batch negative. CoSENT is the
-    # opposite case: its loss is a comparison over the pairs that share a batch, and both pairs
-    # of a query repeat that query's text, so NO_DUPLICATES would place them in different
-    # batches and silently drop every within-query comparison.
+    # opposite case: after to_pairs an anchor appears in both its positive and its negative
+    # pair, so NO_DUPLICATES would admit only one of the two per batch.
     batch_sampler = BatchSamplers[train_config["batch_sampler"]]
     if config["training_style"] == TrainingStyle.COSENT.value and batch_sampler == BatchSamplers.NO_DUPLICATES:
         print("cosent: overriding batch_sampler NO_DUPLICATES -> BATCH_SAMPLER")
