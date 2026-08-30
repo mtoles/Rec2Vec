@@ -36,7 +36,7 @@ import wandb
 import yaml
 
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
-from utils.graded_losses import BatchGradedMarginMSELoss
+from utils.graded_losses import BatchGradedMarginMSELoss, GradedInfoNCELoss
 from utils.distance_labels import (
     DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
 )
@@ -62,6 +62,7 @@ class TrainingStyle(Enum):
     COSENT = "cosent"
     OURS_MSE = "ours-mse"
     OURS_MSE_BATCHED = "ours-mse-batched"
+    OURS_INFONCE = "ours-infonce"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
 
@@ -75,6 +76,7 @@ TRIPLET_STYLES = (
 LABELED_STYLES = (
     TrainingStyle.OURS_MSE.value,
     TrainingStyle.OURS_MSE_BATCHED.value,
+    TrainingStyle.OURS_INFONCE.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
     TrainingStyle.CLASSIC_MSE.value,
 )
@@ -431,6 +433,10 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # ours-mse over the whole batch: every in-batch candidate is a comparison, the
         # cross-row ones targeted at the easy-negative label. See utils/graded_losses.py.
         return BatchGradedMarginMSELoss(model=model, easy_label=easy_label)
+    if training_style == TrainingStyle.OURS_INFONCE.value:
+        # infonce-mined with soft targets: the own hard negative holds target mass
+        # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
+        return GradedInfoNCELoss(model=model)
     if training_style == TrainingStyle.CLASSIC_MSE.value:
         return losses.CosineSimilarityLoss(model=model)
     raise ValueError(f"Invalid training style: {training_style}")
@@ -661,10 +667,11 @@ def main():
     # opposite case: after to_pairs an anchor appears in both its positive and its negative
     # pair, so NO_DUPLICATES would admit only one of the two per batch.
     batch_sampler = BatchSamplers[train_config["batch_sampler"]]
-    if training_style == TrainingStyle.OURS_MSE_BATCHED.value and batch_sampler != BatchSamplers.NO_DUPLICATES:
-        # The batched loss labels every cross-row candidate as an easy negative; a batch
-        # holding both rows of one query would mislabel the twin's positive (distance 0).
-        raise ValueError("ours-mse-batched requires batch_sampler NO_DUPLICATES")
+    if (training_style in (TrainingStyle.OURS_MSE_BATCHED.value, TrainingStyle.OURS_INFONCE.value)
+            and batch_sampler != BatchSamplers.NO_DUPLICATES):
+        # Both batch-wide graded losses treat every cross-row candidate as an easy negative;
+        # a batch holding both rows of one query would mislabel the twin's positive (distance 0).
+        raise ValueError(f"{training_style} requires batch_sampler NO_DUPLICATES")
     if training_style == TrainingStyle.COSENT.value and batch_sampler == BatchSamplers.NO_DUPLICATES:
         print("cosent: overriding batch_sampler NO_DUPLICATES -> BATCH_SAMPLER")
         batch_sampler = BatchSamplers.BATCH_SAMPLER

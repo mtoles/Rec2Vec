@@ -1,0 +1,134 @@
+"""Batch-graded margin MSE: ours-mse extended over in-batch candidates.
+
+ours-mse (MarginMSELoss) extracts one comparison per row: the margin between the
+positive and the row's own hard negative, regressed onto the measured distance.
+InfoNCE gets its strength from comparing each anchor against every candidate in the
+batch. This loss does both: every candidate in the batch is compared against every
+anchor, and every comparison has a distance target -- the measured one for the
+anchor's own hard negative, the easy-negative distance for everything else.
+"""
+
+import torch
+from torch import nn
+
+from sentence_transformers import SentenceTransformer, util
+
+
+class BatchGradedMarginMSELoss(nn.Module):
+
+    def __init__(self, model: SentenceTransformer, easy_label: float, hard_weight: float = 0.5):
+        """
+        easy_label: the training label of an unmeasured (random) negative, on the same
+            scale as the dataset's label column. With linear transform and V=40 this is
+            easy_negative_distance / V = 20/40 = 0.5. Passed in rather than recomputed so
+            the loss stays consistent with whatever V / transform the run uses.
+        hard_weight: fraction of the loss carried by the measured-distance term. Each
+            anchor has 1 graded comparison but 2B-2 easy ones; a plain mean over all
+            terms would weight the graded signal 1:(2B-2), burying the thing this loss
+            exists to use. 0.5 gives the two kinds of supervision equal say.
+        """
+        super().__init__()
+        self.model = model
+        self.easy_label = easy_label
+        self.hard_weight = hard_weight
+
+    def forward(self, sentence_features, labels):
+        # One feature dict per dataset column, in column order: (anchor, positive,
+        # negative). Each tower pass yields pooled embeddings, shape [B, dim]. For
+        # multimodal runs the positive/negative features are already image tensors --
+        # the collator handled that -- so this works for both modalities.
+        anchors, positives, negatives = [
+            self.model(features)["sentence_embedding"] for features in sentence_features
+        ]
+        B = anchors.shape[0]
+
+        # Candidate pool = all positives then all negatives, exactly MNRL's layout:
+        #   column j       (j <  B): row j's positive
+        #   column B + j:            row j's hard negative
+        # One matmul gives every anchor-candidate cosine.
+        candidates = torch.cat([positives, negatives], dim=0)      # [2B, dim]
+        S = util.cos_sim(anchors, candidates)                      # [B, 2B]
+
+        # Margin of every candidate against the anchor's own positive. S[i, i] is
+        # cos(anchor_i, positive_i) because column i < B holds row i's positive.
+        # M[i, j] = how much worse candidate j scores than the true positive.
+        own_pos = S.diagonal().unsqueeze(1)                        # [B, 1]
+        M = own_pos - S                                            # [B, 2B]
+
+        # Target distance for every cell of M:
+        #   own positive (column i):    0 -- it is the reference point
+        #   own negative (column B+i):  the dataset label (measured d/V; easy-negative
+        #                               rows already carry easy_label here)
+        #   everything else:            easy_label -- a cross-row candidate is a random
+        #                               product w.r.t. this anchor, i.e. an easy negative
+        idx = torch.arange(B, device=S.device)
+        targets = labels.to(S.dtype)
+        D = torch.full_like(S, self.easy_label)
+        D[idx, idx] = 0.0
+        D[idx, B + idx] = targets
+
+        # Graded term: the one comparison per anchor with a measured distance.
+        hard_term = ((M[idx, B + idx] - targets) ** 2).mean()
+
+        # Easy term: all cross-row comparisons. Excluded cells:
+        #   - own positive: M and D are both exactly 0 there; including it would only
+        #     dilute the mean with guaranteed-zero error terms;
+        #   - own hard negative: that is the hard term, already counted.
+        # This assumes no other row in the batch shares this anchor's positive. The two
+        # dataset rows of one query share anchor AND positive, so a batch holding both
+        # would label the twin's positive easy_label when its true distance is 0.
+        # BatchSamplers.NO_DUPLICATES guarantees this cannot happen; train.py refuses to
+        # construct this loss under any other sampler.
+        easy_mask = torch.ones_like(S, dtype=torch.bool)
+        easy_mask[idx, idx] = False
+        easy_mask[idx, B + idx] = False
+        easy_term = ((M - D)[easy_mask] ** 2).mean()
+
+        return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term
+
+
+class GradedInfoNCELoss(nn.Module):
+    """Softmax cross-entropy over in-batch candidates with distance-graded soft targets.
+
+    infonce-mined with the one-hot target replaced by a per-row distribution built from
+    the measured distances. Unnormalized target weight per candidate:
+        own positive:      1                (distance 0)
+        own hard negative: 1 - label        (label = transformed d/V, so a near-miss
+                                             keeps most of its weight, d = V keeps none)
+        cross-row:         easy_weight      (default 0: still in the softmax denominator,
+                                             so they are pushed down exactly as in
+                                             infonce-mined, but hold no target mass)
+    Each row is normalized to sum to 1, and the loss is -sum(T * log_softmax(S)).
+    With every label at 1 and easy_weight 0 this is exactly infonce-mined.
+    """
+
+    def __init__(self, model: SentenceTransformer, scale: float = 20.0, easy_weight: float = 0.0):
+        super().__init__()
+        self.model = model
+        self.scale = scale
+        self.easy_weight = easy_weight
+
+    def forward(self, sentence_features, labels):
+        anchors, positives, negatives = [
+            self.model(features)["sentence_embedding"] for features in sentence_features
+        ]
+        B = anchors.shape[0]
+
+        # Same candidate layout as MNRL and BatchGradedMarginMSELoss:
+        # column j < B is row j's positive, column B + j is row j's hard negative.
+        candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
+        S = util.cos_sim(anchors, candidates) * self.scale             # [B, 2B]
+
+        targets = labels.to(S.dtype)
+        assert bool((targets >= 0).all() and (targets <= 1).all()), targets
+
+        idx = torch.arange(B, device=S.device)
+        W = torch.full_like(S, self.easy_weight)
+        W[idx, idx] = 1.0
+        W[idx, B + idx] = 1.0 - targets
+        T = W / W.sum(dim=1, keepdim=True)
+
+        # Shares the twin-positive hazard of BatchGradedMarginMSELoss: a batch holding both
+        # rows of one query would give the twin's positive target weight easy_weight when it
+        # deserves 1. train.py refuses to construct this loss without NO_DUPLICATES.
+        return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
