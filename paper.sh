@@ -86,13 +86,13 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 # Condition table — the living list of everything the paper needs.
 # Columns: modality  style  query_kind  V  extra
 #   modality: text | multimodal
-#   style:    untrained | baseline-triplet | infonce | infonce-mined | cosent | classic-mse
-#             | ours-mse | ours-mse-batched | ours-infonce
+#   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | cosent
+#             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
 #             infonce is the standard 2-column objective (in-batch negatives only);
 #             infonce-mined adds our labeled hard negative as a third column.
 #             | ours-mse-batched (ours over the full in-batch candidate pool)
 #             (| ours-mse-reversed)
-#   V:        distance normalizer, '-' = not applicable (untrained, triplet, infonce,
+#   V:        distance normalizer, '-' = not applicable (untrained, triplet, infonce/-mined, siglip-mined,
 #             and cosent -- all baselines that never see the measured distance)
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>
 # The image dataset only has synthetic (nl_query) queries, so multimodal rows are
@@ -110,10 +110,13 @@ text        baseline-triplet  synthetic  -   -
 text        baseline-triplet  rephrased  -   -
 text        infonce           original   -   -
 text        infonce-mined     original   -   -
+text        siglip-mined      original   -   -
 text        infonce           synthetic  -   -
 text        infonce-mined     synthetic  -   -
+text        siglip-mined      synthetic  -   -
 text        infonce           rephrased  -   -
 text        infonce-mined     rephrased  -   -
+text        siglip-mined      rephrased  -   -
 text        cosent            original   -   -
 text        cosent            synthetic  -   -
 text        cosent            rephrased  -   -
@@ -122,10 +125,13 @@ text        classic-mse       synthetic  40  -
 text        classic-mse       rephrased  40  -
 text        ours-mse          original   40  -
 text        ours-infonce      original   40  -
+text        ours-siglip       original   40  -
 text        ours-mse          synthetic  40  -
 text        ours-infonce      synthetic  40  -
+text        ours-siglip       synthetic  40  -
 text        ours-mse          rephrased  40  -
 text        ours-infonce      rephrased  40  -
+text        ours-siglip       rephrased  40  -
 text        ours-mse-batched  original   40  -
 text        ours-mse-batched  synthetic  40  -
 text        ours-mse-batched  rephrased  40  -
@@ -137,16 +143,20 @@ multimodal  baseline-triplet  synthetic  -   -
 multimodal  baseline-triplet  rephrased  -   -
 multimodal  infonce           synthetic  -   -
 multimodal  infonce-mined     synthetic  -   -
+multimodal  siglip-mined      synthetic  -   -
 multimodal  infonce           rephrased  -   -
 multimodal  infonce-mined     rephrased  -   -
+multimodal  siglip-mined      rephrased  -   -
 multimodal  cosent            synthetic  -   -
 multimodal  cosent            rephrased  -   -
 multimodal  classic-mse       synthetic  40  -
 multimodal  classic-mse       rephrased  40  -
 multimodal  ours-mse          synthetic  40  -
 multimodal  ours-infonce      synthetic  40  -
+multimodal  ours-siglip       synthetic  40  -
 multimodal  ours-mse          rephrased  40  -
 multimodal  ours-infonce      rephrased  40  -
+multimodal  ours-siglip       rephrased  40  -
 multimodal  ours-mse-batched  synthetic  40  -
 multimodal  ours-mse-batched  rephrased  40  -
 

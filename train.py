@@ -36,7 +36,7 @@ import wandb
 import yaml
 
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
-from utils.graded_losses import BatchGradedMarginMSELoss, GradedInfoNCELoss
+from utils.graded_losses import BatchGradedMarginMSELoss, GradedInfoNCELoss, GradedSigLIPLoss
 from utils.distance_labels import (
     DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
 )
@@ -59,10 +59,12 @@ class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
     INFONCE = "infonce"
     INFONCE_MINED = "infonce-mined"
+    SIGLIP_MINED = "siglip-mined"
     COSENT = "cosent"
     OURS_MSE = "ours-mse"
     OURS_MSE_BATCHED = "ours-mse-batched"
     OURS_INFONCE = "ours-infonce"
+    OURS_SIGLIP = "ours-siglip"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
 
@@ -71,12 +73,14 @@ TRIPLET_STYLES = (
     TrainingStyle.BASELINE_TRIPLET.value,
     TrainingStyle.INFONCE.value,
     TrainingStyle.INFONCE_MINED.value,
+    TrainingStyle.SIGLIP_MINED.value,
     TrainingStyle.COSENT.value,
 )
 LABELED_STYLES = (
     TrainingStyle.OURS_MSE.value,
     TrainingStyle.OURS_MSE_BATCHED.value,
     TrainingStyle.OURS_INFONCE.value,
+    TrainingStyle.OURS_SIGLIP.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
     TrainingStyle.CLASSIC_MSE.value,
 )
@@ -437,6 +441,14 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # infonce-mined with soft targets: the own hard negative holds target mass
         # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
         return GradedInfoNCELoss(model=model)
+    if training_style == TrainingStyle.OURS_SIGLIP.value:
+        # Per-pair sigmoid BCE: every in-batch cell fit to its own graded similarity
+        # target, no softmax competition. See utils/graded_losses.py.
+        return GradedSigLIPLoss(model=model, easy_label=easy_label)
+    if training_style == TrainingStyle.SIGLIP_MINED.value:
+        # ours-siglip's binary ablation: same layout, scale/bias and weighting, but
+        # one-hot targets -- the mined negative is just 0, no graded signal.
+        return GradedSigLIPLoss(model=model, easy_label=None, binary=True)
     if training_style == TrainingStyle.CLASSIC_MSE.value:
         return losses.CosineSimilarityLoss(model=model)
     raise ValueError(f"Invalid training style: {training_style}")

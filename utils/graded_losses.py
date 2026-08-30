@@ -132,3 +132,77 @@ class GradedInfoNCELoss(nn.Module):
         # rows of one query would give the twin's positive target weight easy_weight when it
         # deserves 1. train.py always trains this loss under NO_DUPLICATES.
         return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
+
+
+class GradedSigLIPLoss(nn.Module):
+    """Per-pair sigmoid BCE over in-batch candidates with distance-graded soft labels.
+
+    The absolute-placement counterpart of GradedInfoNCELoss: no softmax, no competition.
+    Every (anchor, candidate) cell is an independent prediction sigma(s * cos + b) fit to
+    its own target similarity:
+        own positive:      1
+        own hard negative: 1 - label          (label = transformed d/V)
+        cross-row:         1 - easy_label     (a random product sits at the easy distance,
+                                               the same target as the row's own random
+                                               negative -- 0.5 for linear V=40)
+    s and b are learnable (the SigLIP recipe); the trainer optimizes loss parameters
+    alongside the model. b starts at 0 rather than SigLIP's -10: that init suits one-hot
+    targets where nearly every cell wants 0, but here most cells want 1 - easy_label, and
+    sigma(0) = 0.5 already sits there. At the optimum sigma(s*cos+b) = target for every
+    pair. Ranking by sigma(s*cos+b) is ranking by cos, so inference is unchanged.
+    """
+
+    def __init__(self, model: SentenceTransformer, easy_label: float | None,
+                 hard_weight: float = 0.5, init_scale: float = 10.0, init_bias: float = 0.0,
+                 binary: bool = False):
+        """
+        easy_label: as in BatchGradedMarginMSELoss. Unused in binary mode.
+        hard_weight: fraction of the loss carried by the 2B labeled cells (own positive +
+            own hard negative). Each row has 2 labeled cells but 2B-2 cross-row ones; a
+            plain mean would weight the per-row signal 2:(2B-2). 0.5 gives the two kinds
+            of supervision equal say, matching BatchGradedMarginMSELoss.
+        binary: the siglip-mined baseline -- identical layout, scale/bias and weighting,
+            but one-hot targets (own positive 1, every other cell 0) and no use of the
+            label column. The graded/binary comparison then differs in targets only.
+        """
+        super().__init__()
+        assert binary or easy_label is not None
+        self.model = model
+        self.easy_label = easy_label
+        self.hard_weight = hard_weight
+        self.binary = binary
+        self.logit_scale = nn.Parameter(torch.tensor(float(init_scale)).log())
+        self.logit_bias = nn.Parameter(torch.tensor(float(init_bias)))
+
+    def forward(self, sentence_features, labels):
+        anchors, positives, negatives = [
+            self.model(features)["sentence_embedding"] for features in sentence_features
+        ]
+        B = anchors.shape[0]
+
+        # Same candidate layout as the other batch-wide losses:
+        # column j < B is row j's positive, column B + j is row j's hard negative.
+        candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
+        Z = util.cos_sim(anchors, candidates) * self.logit_scale.exp() + self.logit_bias
+
+        idx = torch.arange(B, device=Z.device)
+        if self.binary:
+            T = torch.zeros_like(Z)
+            T[idx, idx] = 1.0
+        else:
+            targets = labels.to(Z.dtype)
+            assert bool((targets >= 0).all() and (targets <= 1).all()), targets
+            T = torch.full_like(Z, 1.0 - self.easy_label)
+            T[idx, idx] = 1.0
+            T[idx, B + idx] = 1.0 - targets
+
+        # Twin-positive hazard as in the other batch-wide losses: train.py always trains
+        # this loss under NO_DUPLICATES.
+        cell_loss = nn.functional.binary_cross_entropy_with_logits(Z, T, reduction="none")
+
+        labeled_mask = torch.zeros_like(Z, dtype=torch.bool)
+        labeled_mask[idx, idx] = True
+        labeled_mask[idx, B + idx] = True
+        hard_term = cell_loss[labeled_mask].mean()
+        easy_term = cell_loss[~labeled_mask].mean()
+        return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term

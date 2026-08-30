@@ -18,3 +18,4 @@ tmp/
 logs/
 claude.md
 *.pdf
+.env
