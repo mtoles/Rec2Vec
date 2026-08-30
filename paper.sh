@@ -86,7 +86,10 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 # Condition table — the living list of everything the paper needs.
 # Columns: modality  style  query_kind  V  extra
 #   modality: text | multimodal
-#   style:    untrained | baseline-triplet | infonce | cosent | classic-mse | ours-mse
+#   style:    untrained | baseline-triplet | infonce | infonce-mined | cosent | classic-mse
+#             | ours-mse | ours-mse-batched
+#             infonce is the standard 2-column objective (in-batch negatives only);
+#             infonce-mined adds our labeled hard negative as a third column.
 #             | ours-mse-batched (ours over the full in-batch candidate pool)
 #             (| ours-mse-reversed)
 #   V:        distance normalizer, '-' = not applicable (untrained, triplet, infonce,
@@ -106,8 +109,11 @@ text        baseline-triplet  original   -   -
 text        baseline-triplet  synthetic  -   -
 text        baseline-triplet  rephrased  -   -
 text        infonce           original   -   -
+text        infonce-mined     original   -   -
 text        infonce           synthetic  -   -
+text        infonce-mined     synthetic  -   -
 text        infonce           rephrased  -   -
+text        infonce-mined     rephrased  -   -
 text        cosent            original   -   -
 text        cosent            synthetic  -   -
 text        cosent            rephrased  -   -
@@ -127,7 +133,9 @@ multimodal  untrained         rephrased  -   -
 multimodal  baseline-triplet  synthetic  -   -
 multimodal  baseline-triplet  rephrased  -   -
 multimodal  infonce           synthetic  -   -
+multimodal  infonce-mined     synthetic  -   -
 multimodal  infonce           rephrased  -   -
+multimodal  infonce-mined     rephrased  -   -
 multimodal  cosent            synthetic  -   -
 multimodal  cosent            rephrased  -   -
 multimodal  classic-mse       synthetic  40  -

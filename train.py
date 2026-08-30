@@ -58,6 +58,7 @@ DEFAULT_MODELS = {
 class TrainingStyle(Enum):
     BASELINE_TRIPLET = "baseline-triplet"
     INFONCE = "infonce"
+    INFONCE_MINED = "infonce-mined"
     COSENT = "cosent"
     OURS_MSE = "ours-mse"
     OURS_MSE_BATCHED = "ours-mse-batched"
@@ -68,6 +69,7 @@ class TrainingStyle(Enum):
 TRIPLET_STYLES = (
     TrainingStyle.BASELINE_TRIPLET.value,
     TrainingStyle.INFONCE.value,
+    TrainingStyle.INFONCE_MINED.value,
     TrainingStyle.COSENT.value,
 )
 LABELED_STYLES = (
@@ -319,6 +321,18 @@ def prepare_dataset_for_trainer(dataset: Dataset, swap_pos_neg: bool = False) ->
     return dataset
 
 
+def drop_mined_negative(dataset: Dataset) -> Dataset:
+    """(anchor, positive, negative) -> (anchor, positive), for plain infonce.
+
+    MultipleNegativesRankingLoss pools every column after the anchor into one softmax, so
+    keeping `negative` is what turns the standard objective into the hard-negative-mined one.
+    The baseline must see in-batch negatives only, which means the column has to go before the
+    trainer sees it. The evaluator reads raw_eval_dataset and still has its negatives.
+    """
+    assert {"anchor", "positive"} <= set(dataset.column_names), dataset.column_names
+    return dataset.select_columns(["anchor", "positive"])
+
+
 def split_dataset(dataset: Dataset, seed: int):
     """Precomputed leakage-free `split` column when present, seeded query split otherwise."""
     if "split" in dataset.column_names:
@@ -399,9 +413,13 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         return losses.TripletLoss(
             model=model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2
         )
-    if training_style == TrainingStyle.INFONCE.value:
-        # The standard bi-encoder objective: cross-entropy over in-batch negatives, with
-        # our labeled hard negative as the extra column. Ordering only, no graded signal.
+    if training_style in (TrainingStyle.INFONCE.value, TrainingStyle.INFONCE_MINED.value):
+        # Cross-entropy over in-batch candidates. The loss object is the same for both;
+        # what differs is how many columns reach it (see drop_mined_negative):
+        #   infonce       (anchor, positive)           -> B candidates, all in-batch
+        #   infonce-mined (anchor, positive, negative) -> 2B candidates, adding our labeled
+        #                                                 hard negative for every row
+        # Either way the target is one-hot, so this is ordering only, no graded signal.
         return losses.MultipleNegativesRankingLoss(model=model)
     if training_style == TrainingStyle.COSENT.value:
         # Baseline: binary pair labels, so every positive pair must outscore every
@@ -673,8 +691,17 @@ def main():
     train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset, swap_pos_neg=swap_pos_neg)
     eval_dataset_for_trainer = prepare_dataset_for_trainer(eval_dataset, swap_pos_neg=swap_pos_neg)
 
+    if training_style == TrainingStyle.INFONCE.value:
+        train_dataset_for_trainer = drop_mined_negative(train_dataset_for_trainer)
+        eval_dataset_for_trainer = drop_mined_negative(eval_dataset_for_trainer)
+
     if modality == "multimodal":
-        image_columns = ["sentence_B"] if training_style in PAIR_STYLES else ["positive", "negative"]
+        if training_style in PAIR_STYLES:
+            image_columns = ["sentence_B"]
+        elif training_style == TrainingStyle.INFONCE.value:
+            image_columns = ["positive"]
+        else:
+            image_columns = ["positive", "negative"]
         train_dataset_for_trainer = add_image_transform(train_dataset_for_trainer, image_columns)
         eval_dataset_for_trainer = add_image_transform(eval_dataset_for_trainer, image_columns)
         # SentenceTransformers tries to auto-build text-only model-card widgets from the
