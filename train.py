@@ -481,7 +481,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-ratio", type=float, default=None)
     parser.add_argument("--lr-scheduler-type", type=str, default=None)
     parser.add_argument("--bf16", type=parse_bool, default=None)
-    parser.add_argument("--batch-sampler", type=str, default=None)
     parser.add_argument("--eval-strategy", type=str, default=None)
     parser.add_argument("--save-strategy", type=str, default=None)
     parser.add_argument("--save-total-limit", type=int, default=None)
@@ -513,7 +512,7 @@ def load_config(args: argparse.Namespace, query_kind: str) -> Dict[str, Any]:
 
     training_arg_keys = [
         "output_dir", "num_train_epochs", "global_batch_size", "per_device_max_batch_size",
-        "learning_rate", "warmup_ratio", "lr_scheduler_type", "bf16", "batch_sampler",
+        "learning_rate", "warmup_ratio", "lr_scheduler_type", "bf16",
         "eval_strategy", "save_strategy", "save_total_limit", "logging_steps", "report_to",
     ]
     for key in training_arg_keys:
@@ -662,19 +661,16 @@ def main():
     if gradient_accumulation_steps <= 0:
         raise ValueError("gradient_accumulation_steps must be >= 1")
 
-    # NO_DUPLICATES keeps a batch free of repeated values, which MultipleNegativesRankingLoss
-    # needs so an anchor's own positive is never used as an in-batch negative. CoSENT is the
-    # opposite case: after to_pairs an anchor appears in both its positive and its negative
-    # pair, so NO_DUPLICATES would admit only one of the two per batch.
-    batch_sampler = BatchSamplers[train_config["batch_sampler"]]
-    if (training_style in (TrainingStyle.OURS_MSE_BATCHED.value, TrainingStyle.OURS_INFONCE.value)
-            and batch_sampler != BatchSamplers.NO_DUPLICATES):
-        # Both batch-wide graded losses treat every cross-row candidate as an easy negative;
-        # a batch holding both rows of one query would mislabel the twin's positive (distance 0).
-        raise ValueError(f"{training_style} requires batch_sampler NO_DUPLICATES")
-    if training_style == TrainingStyle.COSENT.value and batch_sampler == BatchSamplers.NO_DUPLICATES:
-        print("cosent: overriding batch_sampler NO_DUPLICATES -> BATCH_SAMPLER")
+    # The sampler is a function of the training style, not a knob. Every in-batch-negative
+    # loss (infonce family, batch-wide graded losses) mislabels a duplicate: the dataset has
+    # two rows per query (hard + random negative), and a batch holding both would present the
+    # twin's identical positive as a negative with target 0. NO_DUPLICATES prevents that.
+    # CoSENT is the one exception: after to_pairs an anchor appears in both its positive and
+    # its negative pair, and NO_DUPLICATES would admit only one of the two per batch.
+    if training_style == TrainingStyle.COSENT.value:
         batch_sampler = BatchSamplers.BATCH_SAMPLER
+    else:
+        batch_sampler = BatchSamplers.NO_DUPLICATES
 
     training_args = SentenceTransformerTrainingArguments(
         output_dir=train_config["output_dir"],

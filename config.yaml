@@ -11,7 +11,6 @@ training_args:
   warmup_ratio: 0.1
   lr_scheduler_type: cosine
   bf16: true
-  batch_sampler: NO_DUPLICATES
   eval_strategy: epoch
   save_strategy: epoch
   save_total_limit: 2

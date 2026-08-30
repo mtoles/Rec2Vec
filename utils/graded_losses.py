@@ -77,8 +77,8 @@ class BatchGradedMarginMSELoss(nn.Module):
         # This assumes no other row in the batch shares this anchor's positive. The two
         # dataset rows of one query share anchor AND positive, so a batch holding both
         # would label the twin's positive easy_label when its true distance is 0.
-        # BatchSamplers.NO_DUPLICATES guarantees this cannot happen; train.py refuses to
-        # construct this loss under any other sampler.
+        # train.py always trains this loss under BatchSamplers.NO_DUPLICATES, which
+        # guarantees it cannot happen.
         easy_mask = torch.ones_like(S, dtype=torch.bool)
         easy_mask[idx, idx] = False
         easy_mask[idx, B + idx] = False
@@ -130,5 +130,5 @@ class GradedInfoNCELoss(nn.Module):
 
         # Shares the twin-positive hazard of BatchGradedMarginMSELoss: a batch holding both
         # rows of one query would give the twin's positive target weight easy_weight when it
-        # deserves 1. train.py refuses to construct this loss without NO_DUPLICATES.
+        # deserves 1. train.py always trains this loss under NO_DUPLICATES.
         return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
