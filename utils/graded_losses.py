@@ -8,6 +8,8 @@ anchor, and every comparison has a distance target -- the measured one for the
 anchor's own hard negative, the easy-negative distance for everything else.
 """
 
+import math
+
 import torch
 from torch import nn
 
@@ -82,7 +84,12 @@ class BatchGradedMarginMSELoss(nn.Module):
         easy_mask = torch.ones_like(S, dtype=torch.bool)
         easy_mask[idx, idx] = False
         easy_mask[idx, B + idx] = False
-        easy_term = ((M - D)[easy_mask] ** 2).mean()
+        easy_cells = (M - D)[easy_mask]
+        # A conflict-deferred tail batch can have B=1, leaving no cross-row cells; the
+        # mean of an empty tensor is NaN and one NaN backward destroys the model.
+        if easy_cells.numel() == 0:
+            return hard_term
+        easy_term = (easy_cells ** 2).mean()
 
         return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term
 
@@ -92,19 +99,28 @@ class GradedInfoNCELoss(nn.Module):
 
     infonce-mined with the one-hot target replaced by a per-row distribution built from
     the measured distances. Unnormalized target weight per candidate:
-        own positive:      1                (distance 0)
-        own hard negative: 1 - label        (label = transformed d/V, so a near-miss
+        own positive:        1              (distance 0)
+        own MEASURED negative: 1 - label    (label = transformed d/V, so a near-miss
                                              keeps most of its weight, d = V keeps none)
-        cross-row:         easy_weight      (default 0: still in the softmax denominator,
+        own random negative: easy_weight    (an unmeasured random product is no more a
+                                             match than the cross-row candidates, so it
+                                             gets the same weight they do; grading only
+                                             ever applies to measured distances)
+        cross-row:           easy_weight    (default 0: still in the softmax denominator,
                                              so they are pushed down exactly as in
                                              infonce-mined, but hold no target mass)
-    Each row is normalized to sum to 1, and the loss is -sum(T * log_softmax(S)).
-    With every label at 1 and easy_weight 0 this is exactly infonce-mined.
+    A row's negative is random iff its label equals easy_label -- to_training_labels
+    places the easy distance strictly above every measured one. Each row is normalized
+    to sum to 1, and the loss is -sum(T * log_softmax(S)). On random-negative rows this
+    is exactly infonce-mined; labels are produced by to_training_labels and are always
+    in [0, 1].
     """
 
-    def __init__(self, model: SentenceTransformer, scale: float = 20.0, easy_weight: float = 0.0):
+    def __init__(self, model: SentenceTransformer, easy_label: float,
+                 scale: float = 20.0, easy_weight: float = 0.0):
         super().__init__()
         self.model = model
+        self.easy_label = easy_label
         self.scale = scale
         self.easy_weight = easy_weight
 
@@ -120,12 +136,13 @@ class GradedInfoNCELoss(nn.Module):
         S = util.cos_sim(anchors, candidates) * self.scale             # [B, 2B]
 
         targets = labels.to(S.dtype)
-        assert bool((targets >= 0).all() and (targets <= 1).all()), targets
+        is_random = targets >= self.easy_label - 1e-6
 
         idx = torch.arange(B, device=S.device)
         W = torch.full_like(S, self.easy_weight)
         W[idx, idx] = 1.0
-        W[idx, B + idx] = 1.0 - targets
+        W[idx, B + idx] = torch.where(is_random, torch.full_like(targets, self.easy_weight),
+                                      1.0 - targets)
         T = W / W.sum(dim=1, keepdim=True)
 
         # Shares the twin-positive hazard of BatchGradedMarginMSELoss: a batch holding both
@@ -146,15 +163,16 @@ class GradedSigLIPLoss(nn.Module):
                                                the same target as the row's own random
                                                negative -- 0.5 for linear V=40)
     s and b are learnable (the SigLIP recipe); the trainer optimizes loss parameters
-    alongside the model. b starts at 0 rather than SigLIP's -10: that init suits one-hot
-    targets where nearly every cell wants 0, but here most cells want 1 - easy_label, and
-    sigma(0) = 0.5 already sits there. At the optimum sigma(s*cos+b) = target for every
-    pair. Ranking by sigma(s*cos+b) is ranking by cos, so inference is unchanged.
+    alongside the model. b starts at each mode's prior: -log(2B - 1) in binary mode
+    (sigma(b) = 1/2B, the chance a candidate is the match) and 0 in graded mode (most
+    cells want 1 - easy_label, and sigma(0) = 0.5 already sits there). At the optimum
+    sigma(s*cos+b) = target for every pair. Ranking by sigma(s*cos+b) is ranking by cos,
+    so inference is unchanged.
     """
 
     def __init__(self, model: SentenceTransformer, easy_label: float | None,
-                 hard_weight: float = 0.5, init_scale: float = 10.0, init_bias: float = 0.0,
-                 binary: bool = False):
+                 hard_weight: float = 0.5, init_scale: float = 10.0, init_bias: float | None = None,
+                 binary: bool = False, batch_size: int | None = None):
         """
         easy_label: as in BatchGradedMarginMSELoss. Unused in binary mode.
         hard_weight: fraction of the loss carried by the 2B labeled cells (own positive +
@@ -167,6 +185,16 @@ class GradedSigLIPLoss(nn.Module):
         """
         super().__init__()
         assert binary or easy_label is not None
+        if init_bias is None:
+            if binary:
+                # SigLIP's init principle scaled to this batch: sigma(b) = the prior
+                # probability that a candidate is the match, 1/2B (Zhai et al. 2023 use
+                # b = -10 at |B| ~ 16k by the same logic). Graded targets center at
+                # 1 - easy_label instead, and sigma(0) = 0.5 already sits there.
+                assert batch_size is not None
+                init_bias = -math.log(2 * batch_size - 1)
+            else:
+                init_bias = 0.0
         self.model = model
         self.easy_label = easy_label
         self.hard_weight = hard_weight
@@ -191,7 +219,6 @@ class GradedSigLIPLoss(nn.Module):
             T[idx, idx] = 1.0
         else:
             targets = labels.to(Z.dtype)
-            assert bool((targets >= 0).all() and (targets <= 1).all()), targets
             T = torch.full_like(Z, 1.0 - self.easy_label)
             T[idx, idx] = 1.0
             T[idx, B + idx] = 1.0 - targets
@@ -204,5 +231,9 @@ class GradedSigLIPLoss(nn.Module):
         labeled_mask[idx, idx] = True
         labeled_mask[idx, B + idx] = True
         hard_term = cell_loss[labeled_mask].mean()
-        easy_term = cell_loss[~labeled_mask].mean()
+        easy_cells = cell_loss[~labeled_mask]
+        # Same B=1 tail-batch hazard as BatchGradedMarginMSELoss.
+        if easy_cells.numel() == 0:
+            return hard_term
+        easy_term = easy_cells.mean()
         return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term

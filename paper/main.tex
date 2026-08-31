@@ -44,6 +44,7 @@
 
 %% Red text for drafting notes/highlights: \red{...}
 \newcommand{\red}[1]{\textcolor{red}{#1}}
+\newcommand{\green}[1]{\textcolor{green}{#1}}
 
 %% Dark blue for the Notes section
 \definecolor{darkblue}{RGB}{0,0,139}
@@ -69,7 +70,20 @@ Institution \\
 \maketitle
 
 \begin{abstract}
-\red{TODO: abstract.}
+% \red{TODO: abstract.}
+
+% Embedding-based dense retrieval is an important step in many search systems, including e-commerce product retrieval, image search, and others.
+As users refine search system queries, they tend to add requirements as conjunctions, making each query more specific than the last.
+Prior work has shown that embedding-based retrieval accuracy degrades as the number of conditions grows, motivating methods that remain robust under conjunctive queries.
+One limitation in existing training paradigms is the binary training objective; hard negatives that subtly conflict with the query are considered incorrect as easy, obviously irrelevant negatives.
+To leverage the wasted information, we present \green{Ours}, a strategy for training embedding systems to handle conjunctive queries.
+\green{Ours} combines two strategies to improve models' discrimination: a synthetic data pipeline to infer the number of conditions violated by hard negatives, and a loss function proportional to this count.
+We prove that under broad assumptions, our loss is driven to zero by a query vector formed as a superposition of linear probes, one per condition.
+In contrast, we show that binary relevance supervision does not confer this structure: embeddings can attain zero binary loss while leaving queried attributes linearly unrecoverable.
+\green{Ours} improves \red{baselines}, achieving state-of-the-art performance when combined with \red{InfoNCE(?)}.
+
+
+
 \end{abstract}
 
 \section{Introduction}
@@ -230,7 +244,7 @@ for all $\ell \in S$
 \begin{figure}
     \centering
     \includegraphics[width=0.6\linewidth]{figs/embedding_fig.pdf}
-    \caption{An idealized embedding space containing three documents with the attributes red, cotton, and zipper, respectively, as well as query vector with attributes red and zipper. The query vector acts as a linear probe for all three vectors simultaneously, with $x_{red}$ and $x_{zipper}$ simultaneously. }
+    \caption{An idealized embedding space. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed as orthonormal directions, and each direction is an exact linear probe for its attribute. The query requiring red and zipper embeds as the superposition $f(x_{\mathrm{red}}) + f(x_{\mathrm{zipper}})$ of its two probes; its inner product with a document counts the queried attributes the document satisfies: $1$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$.}
     \label{fig:embedding}
 \end{figure}
 
@@ -630,6 +644,39 @@ For such a pair Eq.~\eqref{eq:app-diff} reads
 By the definition of $\beta_i$ in Eq.~\eqref{eq:app-probe} we have $\inner{b_i}{f(x_0)} - z_i(x_0) = -\beta_i$, so the quantity inside is $-\big( \inner{b_i}{f(x)} + \beta_i - z_i(x) \big)$, whose absolute value is unchanged by the sign.
 Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < 2\delta$ for all $x \in S$, which is Eq.~\eqref{eq:app-rec} with $\epsilon = 2\delta$.
 \end{proof}
+
+{\color{purple}% binary supervision
+The graded label is what carries the per-attribute structure.
+Replacing it with the binary relevance target $\ind{x^- \not\models C}$ under the same squared loss still recovers each query's conjunction, but no longer its individual attributes: the deletion pair that suffices in Corollary~\ref{cor:delete} does not suffice here.
+
+\begin{proposition}[Binary supervision recovers conjunctions, not attributes]
+\label{prop:binary}
+Let $\mathcal{L}_{\mathrm{bin}}(q_C, x^+, x^-) = \big( M(q_C, x^+, x^-) - \ind{x^- \not\models C} \big)^2$.
+\begin{enumerate}
+    \item[(i)] If $\mathcal{L}_{\mathrm{bin}} < \delta^2$ for every triple with $x^+, x^- \in S$ and $x^+ \models C$, then the conjunction indicator $x \mapsto \ind{x \models C}$ is $(\delta, S)$-linearly recovered, in the sense of Eq.~\eqref{eq:app-rec}, by the probe $\big( f(q_C),\, 1 - \inner{f(q_C)}{f(x_0)} \big)$ for any $x_0 \in S$ with $x_0 \models C$.
+    \item[(ii)] There exist $S$, conditions $C = \{c_1, c_2\}$ of positive polarity, and an embedding with $d = 2$ attaining $\mathcal{L}_{\mathrm{bin}} = 0$ on every triple of $q_C$ and of $q_{C \setminus \{2\}}$, such that $z_2$ is not $(\epsilon, S)$-linearly recovered by any probe for any $\epsilon \le \tfrac{1}{2}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) Fix $x \in S$ and apply the hypothesis to the triple $(q_C, x_0, x)$, writing its label as $\ind{x \not\models C} = 1 - \ind{x \models C}$:
+\begin{equation}
+    \big| \inner{f(q_C)}{f(x_0) - f(x)} - 1 + \ind{x \models C} \big| < \delta .
+\end{equation}
+Negating the quantity inside the absolute value gives $\big| \inner{f(q_C)}{f(x)} + \big( 1 - \inner{f(q_C)}{f(x_0)} \big) - \ind{x \models C} \big| < \delta$, which is Eq.~\eqref{eq:app-rec} for the stated probe.
+
+(ii) Let $S$ contain four documents realizing the four values of $(z_1, z_2)$, let $e_1, e_2$ be orthonormal in $\mathbb{R}^2$, and set
+\begin{equation}
+    f(x) = \ind{x \models C} \, e_1 + \ind{x \models c_1} \, e_2 ,
+    \qquad
+    f(q_C) = e_1 ,
+    \qquad
+    f(q_{C \setminus \{2\}}) = e_2 .
+\end{equation}
+Since $x^+$ satisfies its query's conditions, the margin of any triple is $\ind{x^+ \models C} - \ind{x^- \models C} = 1 - \ind{x^- \models C}$ for $q_C$, and likewise $1 - \ind{x^- \models c_1}$ for $q_{C \setminus \{2\}}$: exactly the binary labels, so $\mathcal{L}_{\mathrm{bin}} = 0$ on every triple.
+The two documents with $z_1 = 0$ share the embedding $0$ but differ in $z_2$, so any probe $(b_2, \beta_2)$ assigns both the value $\beta_2$, and Eq.~\eqref{eq:app-rec} at the two documents requires $|\beta_2| < \epsilon$ and $|\beta_2 - 1| < \epsilon$; then $1 \le |\beta_2| + |\beta_2 - 1| < 2\epsilon$ forces $\epsilon > \tfrac{1}{2}$.
+\end{proof}
+}
 
 {\color{red}% unit-norm remark
 \begin{remark}[Unit-norm embeddings]

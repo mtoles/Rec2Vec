@@ -97,17 +97,25 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>
 # The image dataset only has synthetic (nl_query) queries, so multimodal rows are
 # synthetic-only. The V ablation runs on synthetic queries for both modalities.
+
+# Always hard code these. Do not rewrite. In general, comment out things we don't need to rerun; don't delete them.
+
 # ---------------------------------------------------------------------------
 CONDITIONS="
 # Main grid: {text, multimodal} x {original, synthetic, rephrased} x {baselines, ours}.
-# V=40 for every ours-mse row: it wins the validation sweep on both modalities
+# V=40 for every graded row: it wins the validation sweep on both modalities
 # (text ndcg@10 .7630 / acc@1 .6177; multimodal .1522 / .0640). See the ablation below.
-text        untrained         original   -   -
-text        untrained         synthetic  -   -
-text        untrained         rephrased  -   -
-text        baseline-triplet  original   -   -
-text        baseline-triplet  synthetic  -   -
-text        baseline-triplet  rephrased  -   -
+#
+# Rows commented out are up to date from the 2026-08-29 run and unchanged by anything
+# since (new styles + batch-sampler cleanup only; see git log). Re-enable a row to have
+# paper.sh check its freshness again.
+#
+# text        untrained         original   -   -
+# text        untrained         synthetic  -   -
+# text        untrained         rephrased  -   -
+# text        baseline-triplet  original   -   -
+# text        baseline-triplet  synthetic  -   -
+# text        baseline-triplet  rephrased  -   -
 text        infonce           original   -   -
 text        infonce-mined     original   -   -
 text        siglip-mined      original   -   -
@@ -117,61 +125,93 @@ text        siglip-mined      synthetic  -   -
 text        infonce           rephrased  -   -
 text        infonce-mined     rephrased  -   -
 text        siglip-mined      rephrased  -   -
-text        cosent            original   -   -
-text        cosent            synthetic  -   -
-text        cosent            rephrased  -   -
-text        classic-mse       original   40  -
-text        classic-mse       synthetic  40  -
-text        classic-mse       rephrased  40  -
-text        ours-mse          original   40  -
+# text        cosent            original   -   -
+# text        cosent            synthetic  -   -
+# text        cosent            rephrased  -   -
+# text        classic-mse       original   40  -
+# text        classic-mse       synthetic  40  -
+# text        classic-mse       rephrased  40  -
+# text        ours-mse          original   40  -
 text        ours-infonce      original   40  -
 text        ours-siglip       original   40  -
-text        ours-mse          synthetic  40  -
+# text        ours-mse          synthetic  40  -
 text        ours-infonce      synthetic  40  -
 text        ours-siglip       synthetic  40  -
-text        ours-mse          rephrased  40  -
+# text        ours-mse          rephrased  40  -
 text        ours-infonce      rephrased  40  -
 text        ours-siglip       rephrased  40  -
-text        ours-mse-batched  original   40  -
-text        ours-mse-batched  synthetic  40  -
-text        ours-mse-batched  rephrased  40  -
+# text        ours-mse-batched  original   40  -
+# text        ours-mse-batched  synthetic  40  -
+# text        ours-mse-batched  rephrased  40  -
 # The image dataset has no real search queries (original_query is empty for all 12,957 rows),
 # so multimodal runs synthetic and rephrased only.
-multimodal  untrained         synthetic  -   -
-multimodal  untrained         rephrased  -   -
-multimodal  baseline-triplet  synthetic  -   -
-multimodal  baseline-triplet  rephrased  -   -
+# multimodal  untrained         synthetic  -   -
+# multimodal  untrained         rephrased  -   -
+# multimodal  baseline-triplet  synthetic  -   -
+# multimodal  baseline-triplet  rephrased  -   -
 multimodal  infonce           synthetic  -   -
 multimodal  infonce-mined     synthetic  -   -
 multimodal  siglip-mined      synthetic  -   -
 multimodal  infonce           rephrased  -   -
 multimodal  infonce-mined     rephrased  -   -
 multimodal  siglip-mined      rephrased  -   -
-multimodal  cosent            synthetic  -   -
-multimodal  cosent            rephrased  -   -
-multimodal  classic-mse       synthetic  40  -
-multimodal  classic-mse       rephrased  40  -
-multimodal  ours-mse          synthetic  40  -
+# multimodal  cosent            synthetic  -   -
+# multimodal  cosent            rephrased  -   -
+# multimodal  classic-mse       synthetic  40  -
+# multimodal  classic-mse       rephrased  40  -
+# multimodal  ours-mse          synthetic  40  -
 multimodal  ours-infonce      synthetic  40  -
 multimodal  ours-siglip       synthetic  40  -
-multimodal  ours-mse          rephrased  40  -
+# multimodal  ours-mse          rephrased  40  -
 multimodal  ours-infonce      rephrased  40  -
 multimodal  ours-siglip       rephrased  40  -
-multimodal  ours-mse-batched  synthetic  40  -
-multimodal  ours-mse-batched  rephrased  40  -
+# multimodal  ours-mse-batched  synthetic  40  -
+# multimodal  ours-mse-batched  rephrased  40  -
 
 # ---------------------------------------------------------------------------
-# V ablation: 20/40/60 on synthetic queries for both ours variants. The V=40 point
+# V ablation: 20/40/60 on synthetic queries for every graded style. The V=40 point
 # is the main-grid row above, so it is not repeated here.
 # ---------------------------------------------------------------------------
-text        ours-mse          synthetic  20  -
-text        ours-mse          synthetic  60  -
-text        ours-mse-batched  synthetic  20  -
-text        ours-mse-batched  synthetic  60  -
-multimodal  ours-mse          synthetic  20  -
-multimodal  ours-mse          synthetic  60  -
-multimodal  ours-mse-batched  synthetic  20  -
-multimodal  ours-mse-batched  synthetic  60  -
+# text        ours-mse          synthetic  20  -
+# text        ours-mse          synthetic  60  -
+# text        ours-mse-batched  synthetic  20  -
+# text        ours-mse-batched  synthetic  60  -
+text        ours-infonce      synthetic  20  -
+text        ours-infonce      synthetic  60  -
+text        ours-siglip       synthetic  20  -
+text        ours-siglip       synthetic  60  -
+# multimodal  ours-mse          synthetic  20  -
+# multimodal  ours-mse          synthetic  60  -
+# multimodal  ours-mse-batched  synthetic  20  -
+# multimodal  ours-mse-batched  synthetic  60  -
+multimodal  ours-infonce      synthetic  20  -
+multimodal  ours-infonce      synthetic  60  -
+multimodal  ours-siglip       synthetic  20  -
+multimodal  ours-siglip       synthetic  60  -
+
+# ---------------------------------------------------------------------------
+# Easy-value ablation: where does the random-negative penalty sit on the scale?
+# easy=20 (label .5, the default) is the main-grid/V-ablation row for each style;
+# easy=30 (label .75) and easy=40 (label 1.0 = the scale maximum) decouple the easy
+# placement from V, which the V ablation alone conflates (easy label = 20/V there).
+# ours-infonce is exempt: its easy rows are one-hot regardless of the easy value.
+# ---------------------------------------------------------------------------
+text        classic-mse       synthetic  40  easy=30
+text        classic-mse       synthetic  40  easy=40
+text        ours-mse          synthetic  40  easy=30
+text        ours-mse          synthetic  40  easy=40
+text        ours-mse-batched  synthetic  40  easy=30
+text        ours-mse-batched  synthetic  40  easy=40
+text        ours-siglip       synthetic  40  easy=30
+text        ours-siglip       synthetic  40  easy=40
+multimodal  classic-mse       synthetic  40  easy=30
+multimodal  classic-mse       synthetic  40  easy=40
+multimodal  ours-mse          synthetic  40  easy=30
+multimodal  ours-mse          synthetic  40  easy=40
+multimodal  ours-mse-batched  synthetic  40  easy=30
+multimodal  ours-mse-batched  synthetic  40  easy=40
+multimodal  ours-siglip       synthetic  40  easy=30
+multimodal  ours-siglip       synthetic  40  easy=40
 "
 
 # ---------------------------------------------------------------------------
@@ -368,6 +408,21 @@ if ((${#MISSING_DATASETS[@]})); then
   printf '  %s\n' "${MISSING_DATASETS[@]}" >&2
   echo "Build them before running (rephrased datasets come from rephrase_dataset.sh)." >&2
   exit 1
+fi
+
+# Refuse to start a run the disk cannot hold: ~0.5G per text model, ~0.6G per image
+# model, plus 2G for preds and slack. Override with SKIP_DISK_CHECK=1.
+n_text_train=0 n_img_train=0
+for key in "${KEYS[@]}"; do
+  [[ ${K_TRAIN_ACTION[$key]} == train ]] || continue
+  [[ ${K_MODALITY[$key]} == text ]] && ((n_text_train += 1)) || ((n_img_train += 1))
+done
+need_gb=$(( (n_text_train * 5 + n_img_train * 6 + 20 + 9) / 10 ))
+free_gb=$(( $(df -Pk "$MODELS_ROOT" | awk 'NR==2{print $4}') / 1024 / 1024 ))
+echo "Disk: ${free_gb}G free, ~${need_gb}G needed for $((n_text_train + n_img_train)) trainings ($n_text_train text + $n_img_train image)"
+if [[ ${SKIP_DISK_CHECK:-0} != 1 && $free_gb -lt $need_gb ]]; then
+  echo "ERROR: not enough disk for this plan. Free space or SKIP_DISK_CHECK=1." >&2
+  [[ $DRY_RUN == 1 ]] || exit 1
 fi
 
 if [[ $DRY_RUN == 1 ]]; then

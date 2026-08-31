@@ -414,7 +414,8 @@ def build_pair_dataset(dataset: Dataset, is_cosent: bool) -> Dataset:
     return dataset.map(to_pairs, batched=True, remove_columns=dataset.column_names)
 
 
-def build_loss(model: SentenceTransformer, training_style: str, easy_label: float | None = None):
+def build_loss(model: SentenceTransformer, training_style: str, easy_label: float | None = None,
+               batch_size: int | None = None):
     if training_style == TrainingStyle.BASELINE_TRIPLET.value:
         return losses.TripletLoss(
             model=model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2
@@ -440,7 +441,7 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
     if training_style == TrainingStyle.OURS_INFONCE.value:
         # infonce-mined with soft targets: the own hard negative holds target mass
         # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
-        return GradedInfoNCELoss(model=model)
+        return GradedInfoNCELoss(model=model, easy_label=easy_label)
     if training_style == TrainingStyle.OURS_SIGLIP.value:
         # Per-pair sigmoid BCE: every in-batch cell fit to its own graded similarity
         # target, no softmax competition. See utils/graded_losses.py.
@@ -448,7 +449,7 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
     if training_style == TrainingStyle.SIGLIP_MINED.value:
         # ours-siglip's binary ablation: same layout, scale/bias and weighting, but
         # one-hot targets -- the mined negative is just 0, no graded signal.
-        return GradedSigLIPLoss(model=model, easy_label=None, binary=True)
+        return GradedSigLIPLoss(model=model, easy_label=None, binary=True, batch_size=batch_size)
     if training_style == TrainingStyle.CLASSIC_MSE.value:
         return losses.CosineSimilarityLoss(model=model)
     raise ValueError(f"Invalid training style: {training_style}")
@@ -622,6 +623,8 @@ def main():
             transform_alpha=float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
         )
         dataset = dataset.cast_column("label", Value("float"))
+        label_min, label_max = min(dataset["label"]), max(dataset["label"])
+        assert 0.0 <= label_min and label_max <= 1.0, (label_min, label_max)
     else:
         raise ValueError(f"Invalid training style: {training_style}")
 
@@ -652,18 +655,19 @@ def main():
         train_dataset = build_pair_dataset(train_dataset, is_cosent)
         eval_dataset = build_pair_dataset(eval_dataset, is_cosent)
 
-    easy_label = transform_normalized_distance(
-        easy_negative_value / V,
-        config["distance_transform"] if "distance_transform" in config else DistanceTransform.LINEAR.value,
-        float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
-    )
-    loss = build_loss(model, training_style, easy_label=easy_label)
-
     cuda_count = max(1, torch.cuda.device_count())
     per_device_train_batch_size = min(
         train_config["per_device_max_batch_size"],
         train_config["global_batch_size"] // cuda_count,
     )
+
+    easy_label = transform_normalized_distance(
+        easy_negative_value / V,
+        config["distance_transform"] if "distance_transform" in config else DistanceTransform.LINEAR.value,
+        float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
+    )
+    loss = build_loss(model, training_style, easy_label=easy_label,
+                      batch_size=per_device_train_batch_size)
     gradient_accumulation_steps = train_config["global_batch_size"] // (per_device_train_batch_size * cuda_count)
     if per_device_train_batch_size * cuda_count * gradient_accumulation_steps != train_config["global_batch_size"]:
         raise ValueError(
