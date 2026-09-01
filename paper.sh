@@ -88,6 +88,7 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   modality: text | multimodal
 #   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | cosent
 #             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
+#             | ours-infonce-margin (one-hot infonce-mined + distance-scheduled logit margins)
 #             infonce is the standard 2-column objective (in-batch negatives only);
 #             infonce-mined adds our labeled hard negative as a third column.
 #             | ours-mse-batched (ours over the full in-batch candidate pool)
@@ -134,12 +135,15 @@ text        siglip-mined      rephrased  -   -
 # text        ours-mse          original   40  -
 text        ours-infonce      original   40  -
 text        ours-siglip       original   40  -
+text        ours-infonce-margin original  40  -
 # text        ours-mse          synthetic  40  -
 text        ours-infonce      synthetic  40  -
 text        ours-siglip       synthetic  40  -
+text        ours-infonce-margin synthetic 40  -
 # text        ours-mse          rephrased  40  -
 text        ours-infonce      rephrased  40  -
 text        ours-siglip       rephrased  40  -
+text        ours-infonce-margin rephrased 40  -
 # text        ours-mse-batched  original   40  -
 # text        ours-mse-batched  synthetic  40  -
 # text        ours-mse-batched  rephrased  40  -
@@ -162,9 +166,11 @@ multimodal  siglip-mined      rephrased  -   -
 # multimodal  ours-mse          synthetic  40  -
 multimodal  ours-infonce      synthetic  40  -
 multimodal  ours-siglip       synthetic  40  -
+multimodal  ours-infonce-margin synthetic 40  -
 # multimodal  ours-mse          rephrased  40  -
 multimodal  ours-infonce      rephrased  40  -
 multimodal  ours-siglip       rephrased  40  -
+multimodal  ours-infonce-margin rephrased 40  -
 # multimodal  ours-mse-batched  synthetic  40  -
 # multimodal  ours-mse-batched  rephrased  40  -
 
@@ -180,6 +186,9 @@ text        ours-infonce      synthetic  20  -
 text        ours-infonce      synthetic  60  -
 text        ours-siglip       synthetic  20  -
 text        ours-siglip       synthetic  60  -
+text        ours-infonce-margin synthetic 10  -
+text        ours-infonce-margin synthetic 20  -
+text        ours-infonce-margin synthetic 60  -
 # multimodal  ours-mse          synthetic  20  -
 # multimodal  ours-mse          synthetic  60  -
 # multimodal  ours-mse-batched  synthetic  20  -
@@ -188,6 +197,9 @@ multimodal  ours-infonce      synthetic  20  -
 multimodal  ours-infonce      synthetic  60  -
 multimodal  ours-siglip       synthetic  20  -
 multimodal  ours-siglip       synthetic  60  -
+multimodal  ours-infonce-margin synthetic 10  -
+multimodal  ours-infonce-margin synthetic 20  -
+multimodal  ours-infonce-margin synthetic 60  -
 
 # ---------------------------------------------------------------------------
 # Easy-value ablation: where does the random-negative penalty sit on the scale?

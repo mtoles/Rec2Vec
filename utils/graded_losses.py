@@ -237,3 +237,73 @@ class GradedSigLIPLoss(nn.Module):
             return hard_term
         easy_term = easy_cells.mean()
         return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term
+
+
+class MarginInfoNCELoss(nn.Module):
+    """infonce-mined with distance-scheduled additive margins on the logits.
+
+    Plain mined InfoNCE over candidates c_1..c_2B (all positives then all negatives):
+
+        L_i = -log [ exp(s * cos(q_i, p_i)) / sum_j exp(s * cos(q_i, c_j)) ]
+
+    This loss adds a per-cell margin inside the exponent and changes nothing else:
+
+        Z_ij = s * (cos(q_i, c_j) + alpha * M_ij)
+        L_i  = -log softmax_j(Z_i)[i]                     (one-hot target, own positive)
+
+    M_ij is the minimum cosine gap candidate j must eventually sit below q_i's positive:
+
+        M_ii     = 0            the own positive is the reference point
+        M_i,B+i  = label_i      the own negative's transformed distance d_i/V; random
+                                negatives carry label == easy_label, so they fall through
+                                to the same margin as every other random product
+        elsewhere = easy_label  a cross-row candidate is a random product w.r.t. q_i
+
+    Because M_ii = 0, the numerator equals the j = i denominator term, so the bracket is a
+    genuine softmax over the boosted logits (rows sum to 1) and the loss is plain
+    cross-entropy on Z. The margins never enter the target and receive no gradient: a
+    negative is only ever pushed DOWN, and the push dies out once its real gap exceeds
+    alpha * M_ij (a candidate boosted by its margin no longer out-scores the positive).
+    Equilibrium geometry: gap proportional to labeled distance -- near-misses rest just
+    below the positive, random products at the easy gap -- while the ranking pressure is
+    exactly infonce-mined's, since the target stays one-hot.
+
+    alpha = 0 is bit-for-bit infonce-mined; alpha scales every margin together, and it
+    interacts with the temperature through s * alpha * M (equivalently the margins are
+    denominator importance weights e^{s * alpha * M_ij}).
+
+    Twin-positive hazard as in the other batch-wide losses (a batch holding both rows of
+    one query would give the twin's positive margin easy_label when it deserves 0):
+    train.py always trains this loss under NO_DUPLICATES.
+    """
+
+    def __init__(self, model: SentenceTransformer, easy_label: float,
+                 scale: float = 20.0, alpha: float = 1.0):
+        super().__init__()
+        self.model = model
+        self.easy_label = easy_label
+        self.scale = scale
+        self.alpha = alpha
+
+    def forward(self, sentence_features, labels):
+        anchors, positives, negatives = [
+            self.model(features)["sentence_embedding"] for features in sentence_features
+        ]
+        B = anchors.shape[0]
+
+        # Same candidate layout as every batch-wide loss here and as MNRL itself:
+        # column j < B is row j's positive, column B + j is row j's hard negative.
+        candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
+        S = util.cos_sim(anchors, candidates)                          # [B, 2B]
+
+        # M is constant per batch: built from the label column, detached by construction
+        # (labels carry no graph), so gradients flow only through S.
+        targets = labels.to(S.dtype)
+        idx = torch.arange(B, device=S.device)
+        M = torch.full_like(S, self.easy_label)
+        M[idx, idx] = 0.0
+        M[idx, B + idx] = targets
+
+        Z = self.scale * (S + self.alpha * M)
+        # One-hot cross-entropy: row i's correct class is column i, its own positive.
+        return nn.functional.cross_entropy(Z, idx)

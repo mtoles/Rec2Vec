@@ -1,9 +1,13 @@
-"""Offline test-set inference for both modalities.
+"""Offline held-out inference for both modalities.
 
-Reconstructs the exact test split used by train.py -- the split logic is imported from
-train.py rather than copied, so it cannot drift -- encodes the test corpus and queries
-with one model, and writes predictions to <run-dir>/preds/ so all analysis can run
-offline. See utils/test_inference.py for the file formats.
+Reconstructs the exact split used by train.py -- the split logic is imported from
+train.py rather than copied, so it cannot drift -- encodes that split's corpus and queries
+with one model, and writes predictions to <run-dir>/preds/ (test) or <run-dir>/preds_val/
+(validation) so all analysis can run offline. See utils/test_inference.py for the formats.
+
+--split validation is what every hyperparameter sweep must read: selecting V or the
+easy-negative value on test numbers tunes on the reported set. The main grid reports test;
+the ablations select on val.
 
 Supersedes test_text.py and test_multimodal.py.
 """
@@ -40,8 +44,8 @@ DEFAULT_BATCH_SIZES = {"text": 256, "multimodal": 64}
 CORPUS_FIELDS = {"text": "text", "multimodal": "image_path"}
 
 
-def load_test_split(dataset_path, query_key, split_seed):
-    """Mirror of train.py's dataset preparation: rename, filter, split, take test."""
+def load_eval_split(dataset_path, query_key, split_seed, split="test"):
+    """Mirror of train.py's dataset preparation: rename, filter, split, take one split."""
     dataset = load_from_disk(dataset_path)
     if query_key not in dataset.column_names:
         raise ValueError(f"Requested query field '{query_key}' not found in columns: {dataset.column_names}")
@@ -54,8 +58,8 @@ def load_test_split(dataset_path, query_key, split_seed):
     dataset = dataset.rename_column("negative_example", "negative")
     dataset = dataset.filter(lambda x: x["positive"] != x["negative"] and bool(x["anchor"]))
 
-    _, _, test_dataset = split_dataset(dataset, seed=split_seed)
-    return test_dataset
+    _, val_dataset, test_dataset = split_dataset(dataset, seed=split_seed)
+    return {"validation": val_dataset, "test": test_dataset}[split]
 
 
 def main():
@@ -64,7 +68,10 @@ def main():
     parser.add_argument("--model-path", type=str, required=True, help="Model dir (.../final) or HF model name")
     parser.add_argument("--dataset", type=str, required=True, help="Processed dataset directory")
     parser.add_argument("--query-kind", choices=["original", "synthetic", "rephrased"], required=True)
-    parser.add_argument("--run-dir", type=str, required=True, help="Run directory; preds are written to <run-dir>/preds")
+    parser.add_argument("--run-dir", type=str, required=True,
+                        help="Run directory; preds go to <run-dir>/preds (test) or <run-dir>/preds_val (validation)")
+    parser.add_argument("--split", choices=["validation", "test"], default="test",
+                        help="Which held-out split to score. Sweeps must use validation.")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=None,
                         help=f"Default per modality: {DEFAULT_BATCH_SIZES}")
@@ -75,8 +82,9 @@ def main():
     batch_size = args.batch_size if args.batch_size is not None else DEFAULT_BATCH_SIZES[modality]
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    test_dataset = load_test_split(args.dataset, QUERY_COLUMNS[args.query_kind], args.split_seed)
-    print(f"Test split: {len(test_dataset):,} rows")
+    test_dataset = load_eval_split(args.dataset, QUERY_COLUMNS[args.query_kind], args.split_seed,
+                                   split=args.split)
+    print(f"{args.split} split: {len(test_dataset):,} rows")
 
     corpus, corpus_to_idx, queries, query_to_qid, positives = build_corpus_and_queries(test_dataset)
     print(f"Corpus: {len(corpus):,} unique items | Queries: {len(queries):,}")
@@ -101,7 +109,7 @@ def main():
     sim_pos = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(pos_ids)])
     sim_neg = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(neg_ids)])
 
-    preds_dir = os.path.join(args.run_dir, "preds")
+    preds_dir = os.path.join(args.run_dir, "preds" if args.split == "test" else "preds_val")
     os.makedirs(preds_dir, exist_ok=True)
 
     corpus_field = CORPUS_FIELDS[modality]
@@ -134,6 +142,7 @@ def main():
     print("Quick metrics:", metrics)
     write_meta(preds_dir, args, {
         "modality": modality,
+        "split": args.split,
         "n_test_rows": len(test_dataset),
         "n_corpus": len(corpus),
         "n_queries": len(queries),

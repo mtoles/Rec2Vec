@@ -36,7 +36,9 @@ import wandb
 import yaml
 
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
-from utils.graded_losses import BatchGradedMarginMSELoss, GradedInfoNCELoss, GradedSigLIPLoss
+from utils.graded_losses import (
+    BatchGradedMarginMSELoss, GradedInfoNCELoss, GradedSigLIPLoss, MarginInfoNCELoss,
+)
 from utils.distance_labels import (
     DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
 )
@@ -65,6 +67,7 @@ class TrainingStyle(Enum):
     OURS_MSE_BATCHED = "ours-mse-batched"
     OURS_INFONCE = "ours-infonce"
     OURS_SIGLIP = "ours-siglip"
+    OURS_INFONCE_MARGIN = "ours-infonce-margin"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
 
@@ -81,6 +84,7 @@ LABELED_STYLES = (
     TrainingStyle.OURS_MSE_BATCHED.value,
     TrainingStyle.OURS_INFONCE.value,
     TrainingStyle.OURS_SIGLIP.value,
+    TrainingStyle.OURS_INFONCE_MARGIN.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
     TrainingStyle.CLASSIC_MSE.value,
 )
@@ -446,6 +450,11 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # Per-pair sigmoid BCE: every in-batch cell fit to its own graded similarity
         # target, no softmax competition. See utils/graded_losses.py.
         return GradedSigLIPLoss(model=model, easy_label=easy_label)
+    if training_style == TrainingStyle.OURS_INFONCE_MARGIN.value:
+        # infonce-mined plus distance-scheduled additive margins on the logits; the
+        # target stays one-hot, so the ranking pressure is unchanged and the grading
+        # only sets where each negative's push-down stops. See utils/graded_losses.py.
+        return MarginInfoNCELoss(model=model, easy_label=easy_label)
     if training_style == TrainingStyle.SIGLIP_MINED.value:
         # ours-siglip's binary ablation: same layout, scale/bias and weighting, but
         # one-hot targets -- the mined negative is just 0, no graded signal.
