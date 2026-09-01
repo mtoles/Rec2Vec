@@ -57,7 +57,7 @@ IMG_MODEL=sentence-transformers/clip-ViT-B-32
 if [[ $SMOKE == 1 ]]; then
   NOTE=${NOTE:-smoke}
   MODELS_ROOT=${MODELS_ROOT:-models/_smoke}
-  TEXT_DATASET=${TEXT_DATASET:-/local/data/mt/recall/dataset/processed/feature-distance-dataset_gemini-2.5-flash-lite_10000}
+  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek}
   IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000}
   IMG_TRAIN_EXTRA="--train-fraction 0.1"
   TOP_K=20
@@ -182,24 +182,24 @@ multimodal  ours-infonce-margin rephrased 40  -
 # text        ours-mse          synthetic  60  -
 # text        ours-mse-batched  synthetic  20  -
 # text        ours-mse-batched  synthetic  60  -
-text        ours-infonce      synthetic  20  -
-text        ours-infonce      synthetic  60  -
-text        ours-siglip       synthetic  20  -
-text        ours-siglip       synthetic  60  -
-text        ours-infonce-margin synthetic 10  -
-text        ours-infonce-margin synthetic 20  -
-text        ours-infonce-margin synthetic 60  -
+text        ours-infonce      synthetic  20  split=val
+text        ours-infonce      synthetic  60  split=val
+text        ours-siglip       synthetic  20  split=val
+text        ours-siglip       synthetic  60  split=val
+text        ours-infonce-margin synthetic 10  split=val
+text        ours-infonce-margin synthetic 20  split=val
+text        ours-infonce-margin synthetic 60  split=val
 # multimodal  ours-mse          synthetic  20  -
 # multimodal  ours-mse          synthetic  60  -
 # multimodal  ours-mse-batched  synthetic  20  -
 # multimodal  ours-mse-batched  synthetic  60  -
-multimodal  ours-infonce      synthetic  20  -
-multimodal  ours-infonce      synthetic  60  -
-multimodal  ours-siglip       synthetic  20  -
-multimodal  ours-siglip       synthetic  60  -
-multimodal  ours-infonce-margin synthetic 10  -
-multimodal  ours-infonce-margin synthetic 20  -
-multimodal  ours-infonce-margin synthetic 60  -
+multimodal  ours-infonce      synthetic  20  split=val
+multimodal  ours-infonce      synthetic  60  split=val
+multimodal  ours-siglip       synthetic  20  split=val
+multimodal  ours-siglip       synthetic  60  split=val
+multimodal  ours-infonce-margin synthetic 10  split=val
+multimodal  ours-infonce-margin synthetic 20  split=val
+multimodal  ours-infonce-margin synthetic 60  split=val
 
 # ---------------------------------------------------------------------------
 # Easy-value ablation: where does the random-negative penalty sit on the scale?
@@ -208,22 +208,110 @@ multimodal  ours-infonce-margin synthetic 60  -
 # placement from V, which the V ablation alone conflates (easy label = 20/V there).
 # ours-infonce is exempt: its easy rows are one-hot regardless of the easy value.
 # ---------------------------------------------------------------------------
-text        classic-mse       synthetic  40  easy=30
-text        classic-mse       synthetic  40  easy=40
-text        ours-mse          synthetic  40  easy=30
-text        ours-mse          synthetic  40  easy=40
-text        ours-mse-batched  synthetic  40  easy=30
-text        ours-mse-batched  synthetic  40  easy=40
-text        ours-siglip       synthetic  40  easy=30
-text        ours-siglip       synthetic  40  easy=40
-multimodal  classic-mse       synthetic  40  easy=30
-multimodal  classic-mse       synthetic  40  easy=40
-multimodal  ours-mse          synthetic  40  easy=30
-multimodal  ours-mse          synthetic  40  easy=40
-multimodal  ours-mse-batched  synthetic  40  easy=30
-multimodal  ours-mse-batched  synthetic  40  easy=40
-multimodal  ours-siglip       synthetic  40  easy=30
-multimodal  ours-siglip       synthetic  40  easy=40
+text        classic-mse       synthetic  40  easy=30,split=val
+text        classic-mse       synthetic  40  easy=40,split=val
+text        ours-mse          synthetic  40  easy=30,split=val
+text        ours-mse          synthetic  40  easy=40,split=val
+text        ours-mse-batched  synthetic  40  easy=30,split=val
+text        ours-mse-batched  synthetic  40  easy=40,split=val
+text        ours-siglip       synthetic  40  easy=30,split=val
+text        ours-siglip       synthetic  40  easy=40,split=val
+multimodal  classic-mse       synthetic  40  easy=30,split=val
+multimodal  classic-mse       synthetic  40  easy=40,split=val
+multimodal  ours-mse          synthetic  40  easy=30,split=val
+multimodal  ours-mse          synthetic  40  easy=40,split=val
+multimodal  ours-mse-batched  synthetic  40  easy=30,split=val
+multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
+multimodal  ours-siglip       synthetic  40  easy=30,split=val
+multimodal  ours-siglip       synthetic  40  easy=40,split=val
+
+# -------------------------------------------------------------------------
+# easy x V grid (2026-09-01). Selection sweep for the ours-* family: every combination
+# of the easy-negative distance and the distance normalizer, synthetic queries, scored on
+# VALIDATION (split=val -> preds_val/). Selecting hyperparameters on the test split would
+# tune on the reported numbers, so every row here reads val; the main grid above stays test.
+#
+# easy=10 sits at the top of the measured scale (hard distances run 1..10), so its label
+# equals that of the most distant hard negatives. The three batch-wide losses only FILL
+# cross-row cells with easy_label and are unaffected; ours-mse regresses the scalar label
+# and never compares. GradedInfoNCELoss (ours-infonce) DOES compare, and train.py refuses
+# that combination rather than silently retargeting those rows.
+#
+# ours-infonce is deprecated in favour of ours-infonce-margin and is deliberately absent:
+# no further ours-infonce runs unless something turns out to be badly wrong with margin.
+# -------------------------------------------------------------------------
+text        ours-mse          synthetic  20  easy=10,split=val
+text        ours-mse          synthetic  40  easy=10,split=val
+text        ours-mse          synthetic  80  easy=10,split=val
+text        ours-mse          synthetic  20  easy=20,split=val
+text        ours-mse          synthetic  40  easy=20,split=val
+text        ours-mse          synthetic  80  easy=20,split=val
+text        ours-mse          synthetic  20  easy=40,split=val
+text        ours-mse          synthetic  40  easy=40,split=val
+text        ours-mse          synthetic  80  easy=40,split=val
+text        ours-mse-batched  synthetic  20  easy=10,split=val
+text        ours-mse-batched  synthetic  40  easy=10,split=val
+text        ours-mse-batched  synthetic  80  easy=10,split=val
+text        ours-mse-batched  synthetic  20  easy=20,split=val
+text        ours-mse-batched  synthetic  40  easy=20,split=val
+text        ours-mse-batched  synthetic  80  easy=20,split=val
+text        ours-mse-batched  synthetic  20  easy=40,split=val
+text        ours-mse-batched  synthetic  40  easy=40,split=val
+text        ours-mse-batched  synthetic  80  easy=40,split=val
+text        ours-siglip       synthetic  20  easy=10,split=val
+text        ours-siglip       synthetic  40  easy=10,split=val
+text        ours-siglip       synthetic  80  easy=10,split=val
+text        ours-siglip       synthetic  20  easy=20,split=val
+text        ours-siglip       synthetic  40  easy=20,split=val
+text        ours-siglip       synthetic  80  easy=20,split=val
+text        ours-siglip       synthetic  20  easy=40,split=val
+text        ours-siglip       synthetic  40  easy=40,split=val
+text        ours-siglip       synthetic  80  easy=40,split=val
+text        ours-infonce-margin synthetic  20  easy=10,split=val
+text        ours-infonce-margin synthetic  40  easy=10,split=val
+text        ours-infonce-margin synthetic  80  easy=10,split=val
+text        ours-infonce-margin synthetic  20  easy=20,split=val
+text        ours-infonce-margin synthetic  40  easy=20,split=val
+text        ours-infonce-margin synthetic  80  easy=20,split=val
+text        ours-infonce-margin synthetic  20  easy=40,split=val
+text        ours-infonce-margin synthetic  40  easy=40,split=val
+text        ours-infonce-margin synthetic  80  easy=40,split=val
+multimodal  ours-mse          synthetic  20  easy=10,split=val
+multimodal  ours-mse          synthetic  40  easy=10,split=val
+multimodal  ours-mse          synthetic  80  easy=10,split=val
+multimodal  ours-mse          synthetic  20  easy=20,split=val
+multimodal  ours-mse          synthetic  40  easy=20,split=val
+multimodal  ours-mse          synthetic  80  easy=20,split=val
+multimodal  ours-mse          synthetic  20  easy=40,split=val
+multimodal  ours-mse          synthetic  40  easy=40,split=val
+multimodal  ours-mse          synthetic  80  easy=40,split=val
+multimodal  ours-mse-batched  synthetic  20  easy=10,split=val
+multimodal  ours-mse-batched  synthetic  40  easy=10,split=val
+multimodal  ours-mse-batched  synthetic  80  easy=10,split=val
+multimodal  ours-mse-batched  synthetic  20  easy=20,split=val
+multimodal  ours-mse-batched  synthetic  40  easy=20,split=val
+multimodal  ours-mse-batched  synthetic  80  easy=20,split=val
+multimodal  ours-mse-batched  synthetic  20  easy=40,split=val
+multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
+multimodal  ours-mse-batched  synthetic  80  easy=40,split=val
+multimodal  ours-siglip       synthetic  20  easy=10,split=val
+multimodal  ours-siglip       synthetic  40  easy=10,split=val
+multimodal  ours-siglip       synthetic  80  easy=10,split=val
+multimodal  ours-siglip       synthetic  20  easy=20,split=val
+multimodal  ours-siglip       synthetic  40  easy=20,split=val
+multimodal  ours-siglip       synthetic  80  easy=20,split=val
+multimodal  ours-siglip       synthetic  20  easy=40,split=val
+multimodal  ours-siglip       synthetic  40  easy=40,split=val
+multimodal  ours-siglip       synthetic  80  easy=40,split=val
+multimodal  ours-infonce-margin synthetic  20  easy=10,split=val
+multimodal  ours-infonce-margin synthetic  40  easy=10,split=val
+multimodal  ours-infonce-margin synthetic  80  easy=10,split=val
+multimodal  ours-infonce-margin synthetic  20  easy=20,split=val
+multimodal  ours-infonce-margin synthetic  40  easy=20,split=val
+multimodal  ours-infonce-margin synthetic  80  easy=20,split=val
+multimodal  ours-infonce-margin synthetic  20  easy=40,split=val
+multimodal  ours-infonce-margin synthetic  40  easy=40,split=val
+multimodal  ours-infonce-margin synthetic  80  easy=40,split=val
 "
 
 # ---------------------------------------------------------------------------
@@ -324,9 +412,11 @@ dataset_mtime() { # dataset_dir -> epoch seconds of newest payload file, 0 if no
 
 run_name_for() { # modality style query_kind V extra
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5
-  local model_short easy="" transform=""
+  local model_short easy="" transform="" split=test
   model_short=$(basename "$(model_for "$modality")")
-  parse_extra "$extra" easy transform
+  # split is parsed but deliberately NOT part of the name: a val row and its test twin
+  # share one model dir, and only their preds subdir differs.
+  parse_extra "$extra" easy transform split
   local name="${modality}__${model_short}__${style}__$(basename "$(dataset_for "$modality" "$qk")")__${qk}"
   # Token order must match build_run_name extras order: easy, V, transform, note.
   if [[ -n $easy ]]; then name+="__easy-${easy}"; fi
@@ -336,25 +426,30 @@ run_name_for() { # modality style query_kind V extra
   echo "$name"
 }
 
-parse_extra() { # extra_string easy_var transform_var
+parse_extra() { # extra_string easy_var transform_var split_var
   local extra=$1 token
-  local -n _easy=$2 _transform=$3
-  _easy="" _transform=""
+  local -n _easy=$2 _transform=$3 _split=$4
+  _easy="" _transform="" _split=test
   if [[ $extra == - ]]; then return 0; fi
   IFS=, read -ra tokens <<<"$extra"
   for token in "${tokens[@]}"; do
     case $token in
       easy=*) _easy=${token#easy=} ;;
       transform=*) _transform=${token#transform=} ;;
-      *) echo "Unsupported extra '$token' (supported: easy=, transform=)" >&2; exit 1 ;;
+      split=*) _split=${token#split=} ;;
+      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=)" >&2; exit 1 ;;
     esac
   done
+  case $_split in
+    test|val) ;;
+    *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
+  esac
 }
 
 train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full command
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5 run_dir=$6
-  local easy="" transform=""
-  parse_extra "$extra" easy transform
+  local easy="" transform="" split=test
+  parse_extra "$extra" easy transform split
   local cmd="$PY -u train.py --modality $modality --training-style $style --dataset $(dataset_for "$modality" "$qk") --output-dir $run_dir --note $NOTE --query-kind $qk $TRAIN_COMMON $REPORT_TO $WANDB_ARGS"
   if [[ $v != - ]]; then cmd+=" --V $v"; fi
   if [[ -n $easy ]]; then cmd+=" --easy-negative-value $easy"; fi
@@ -367,14 +462,22 @@ train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full com
 # Build the plan
 # ---------------------------------------------------------------------------
 KEYS=()
-declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=()
+declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=() K_SPLIT=() SEEN_RUN_DIR=()
 
 while read -r modality style qk v extra; do
   [[ -z $modality || $modality == \#* ]] && continue
-  key=$(run_name_for "$modality" "$style" "$qk" "$v" "$extra")
-  run_dir=$MODELS_ROOT/$key
+  run_name=$(run_name_for "$modality" "$style" "$qk" "$v" "$extra")
+  # The split is an evaluation choice, not a training one: a val row and its test twin are
+  # the same weights scored on a different split. The key carries the split so both can sit
+  # in the plan, while run_dir does not, so the second one reuses the first one's model.
+  row_split=""; row_easy=""; row_transform=""
+  parse_extra "$extra" row_easy row_transform row_split
+  key=$run_name
+  [[ $row_split == val ]] && key="$run_name@val"
+  run_dir=$MODELS_ROOT/$run_name
   KEYS+=("$key")
   RUN_DIRS[$key]=$run_dir
+  K_SPLIT[$key]=$row_split
   K_MODALITY[$key]=$modality K_STYLE[$key]=$style K_QK[$key]=$qk K_V[$key]=$v K_EXTRA[$key]=$extra
 
   if [[ $style == untrained ]]; then
@@ -382,6 +485,14 @@ while read -r modality style qk v extra; do
     TRAIN_STATUS[$key]="n/a"
     continue
   fi
+
+  # A val row whose model another key already trains must not queue that training twice.
+  if [[ -n ${SEEN_RUN_DIR[$run_name]:-} ]]; then
+    K_TRAIN_ACTION[$key]=none
+    TRAIN_STATUS[$key]="shared with ${SEEN_RUN_DIR[$run_name]}"
+    continue
+  fi
+  SEEN_RUN_DIR[$run_name]=$key
 
   marker=$run_dir/final/modules.json
   dataset=$(dataset_for "$modality" "$qk")
@@ -485,7 +596,12 @@ for key in "${KEYS[@]}"; do
     fi
   fi
 
-  meta=$run_dir/preds/meta.json
+  if [[ ${K_SPLIT[$key]} == val ]]; then
+    preds_subdir=preds_val; split_arg="--split validation"
+  else
+    preds_subdir=preds; split_arg="--split test"
+  fi
+  meta=$run_dir/$preds_subdir/meta.json
   if [[ $FORCE_TEST != 1 && -f $meta ]] \
      && [[ -z $model_marker || ! $model_marker -nt $meta ]] \
      && [[ ! $test_script -nt $meta ]] \
@@ -496,7 +612,7 @@ for key in "${KEYS[@]}"; do
 
   launch test "$key" "test  $key" "$LOG_DIR/$key.test.log" \
     $PY -u "$test_script" --modality "$modality" --model-path "$model_path" --dataset "$dataset" \
-    --query-kind "${K_QK[$key]}" --run-dir "$run_dir" --top-k "$TOP_K"
+    --query-kind "${K_QK[$key]}" --run-dir "$run_dir" --top-k "$TOP_K" $split_arg
 done
 drain
 echo "== Phase 2 done =="

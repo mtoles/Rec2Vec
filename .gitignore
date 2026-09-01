@@ -19,3 +19,12 @@ logs/
 claude.md
 *.pdf
 .env
+
+*.aux
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.log
+*.out
+*.bbl
+*.blg

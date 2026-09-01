@@ -5,8 +5,9 @@ datasets>=2.0.0
 jsonschema
 python-dotenv
 sentence-transformers>=2.2.0
-torch>=2.0.0
-vllm>=0.6.0
+torch==2.6.0
+torchvision==0.21.0
+pillow
 accelerate
 wandb
 google.generativeai

@@ -624,13 +624,26 @@ def main():
                 cols_to_keep.append(column)
         dataset = dataset.select_columns(cols_to_keep)
     elif training_style in LABELED_STYLES:
-        dataset, _ = to_training_labels(
+        dataset, label_stats = to_training_labels(
             dataset,
             V=V,
             easy_negative_distance=easy_negative_value,
             transform=config["distance_transform"] if "distance_transform" in config else DistanceTransform.LINEAR.value,
             transform_alpha=float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
         )
+        # ours-infonce is the one loss that recovers "this row's negative is random" by
+        # comparing the label to easy_label (GradedInfoNCELoss). With easy at the top of
+        # the measured scale the two are equal, so the most distant hard negatives would
+        # be silently retargeted to easy_weight. Every other graded loss only fills
+        # cross-row cells with easy_label and is unaffected.
+        if label_stats["easy_collides"] and training_style == TrainingStyle.OURS_INFONCE.value:
+            raise ValueError(
+                f"training-style {training_style} cannot use easy_negative_value="
+                f"{easy_negative_value}: it equals the largest measured hard-negative "
+                f"distance ({label_stats['max_hard_distance']}), and this loss identifies "
+                "random negatives by label equality, so those hard negatives would be "
+                "treated as random. Use easy_negative_value > "
+                f"{label_stats['max_hard_distance']}, or a different training style.")
         dataset = dataset.cast_column("label", Value("float"))
         label_min, label_max = min(dataset["label"]), max(dataset["label"])
         assert 0.0 <= label_min and label_max <= 1.0, (label_min, label_max)
