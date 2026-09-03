@@ -63,8 +63,10 @@ class TrainingStyle(Enum):
     INFONCE_MINED = "infonce-mined"
     SIGLIP_MINED = "siglip-mined"
     COSENT = "cosent"
+    OURS_COSENT = "ours-cosent"
     OURS_MSE = "ours-mse"
     OURS_MSE_BATCHED = "ours-mse-batched"
+    MSE_MINED = "mse-mined"
     OURS_INFONCE = "ours-infonce"
     OURS_SIGLIP = "ours-siglip"
     OURS_INFONCE_MARGIN = "ours-infonce-margin"
@@ -78,17 +80,20 @@ TRIPLET_STYLES = (
     TrainingStyle.INFONCE_MINED.value,
     TrainingStyle.SIGLIP_MINED.value,
     TrainingStyle.COSENT.value,
+    TrainingStyle.OURS_COSENT.value,
 )
 LABELED_STYLES = (
     TrainingStyle.OURS_MSE.value,
     TrainingStyle.OURS_MSE_BATCHED.value,
+    TrainingStyle.MSE_MINED.value,
     TrainingStyle.OURS_INFONCE.value,
     TrainingStyle.OURS_SIGLIP.value,
     TrainingStyle.OURS_INFONCE_MARGIN.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
     TrainingStyle.CLASSIC_MSE.value,
 )
-PAIR_STYLES = (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value)
+PAIR_STYLES = (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value,
+               TrainingStyle.OURS_COSENT.value)
 
 
 # ---------------------------------------------------------------------------
@@ -387,12 +392,16 @@ def select_query_fraction(dataset: Dataset, fraction: float, seed: int, split_na
     return selected
 
 
-def build_pair_dataset(dataset: Dataset, is_cosent: bool) -> Dataset:
+def build_pair_dataset(dataset: Dataset, is_cosent: bool, tiered: bool = False) -> Dataset:
     """(anchor, positive, negative[, label]) rows -> (sentence_A, sentence_B, label) pairs.
 
-    CoSENT is a baseline and never sees the measured distance: its negatives are labelled 0,
-    so only the positive/negative split reaches the loss. classic-mse regresses the graded
-    label. CoSENT also scores every pair in a batch against every other, so the shared
+    Negative labels by style. cosent: 0 for every negative, so only the positive/negative
+    split reaches the loss. ours-cosent (tiered): 0.5 for the mined hard negative, 0 for a
+    random one -- CoSENT reads label order only, so this is exactly the three-rank ordering
+    positive > hard > random and nothing more; no distance, V or easy is involved.
+    classic-mse regresses the graded label 1 - d/V.
+
+    The CoSENT family scores every pair in a batch against every other, so the shared
     positive is emitted from the hard row only; CosineSimilarityLoss scores each pair
     independently and keeps both copies.
     """
@@ -401,7 +410,12 @@ def build_pair_dataset(dataset: Dataset, is_cosent: bool) -> Dataset:
     def to_pairs(batch):
         n = len(batch["anchor"])
         sources = batch["negative_example_source"]
-        neg_labels = [0.0] * n if is_cosent else [1.0 - l for l in batch["label"]]
+        if tiered:
+            neg_labels = [0.0 if source == "random" else 0.5 for source in sources]
+        elif is_cosent:
+            neg_labels = [0.0] * n
+        else:
+            neg_labels = [1.0 - l for l in batch["label"]]
         anchors, others, labels = [], [], []
         for anchor, positive, negative, neg_label, source in zip(
             batch["anchor"], batch["positive"], batch["negative"], neg_labels, sources
@@ -436,12 +450,20 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # Baseline: binary pair labels, so every positive pair must outscore every
         # negative pair in the batch. No graded supervision.
         return losses.CoSENTLoss(model=model)
+    if training_style == TrainingStyle.OURS_COSENT.value:
+        # cosent with one more rank: positive > mined hard negative > random negative.
+        # Same loss, same pairs, same batches; only the hard negative's label differs.
+        return losses.CoSENTLoss(model=model)
     if training_style in (TrainingStyle.OURS_MSE.value, TrainingStyle.OURS_MSE_REVERSED.value):
         return losses.MarginMSELoss(model=model, similarity_fct=util.pairwise_cos_sim)
     if training_style == TrainingStyle.OURS_MSE_BATCHED.value:
         # ours-mse over the whole batch: every in-batch candidate is a comparison, the
         # cross-row ones targeted at the easy-negative label. See utils/graded_losses.py.
         return BatchGradedMarginMSELoss(model=model, easy_label=easy_label)
+    if training_style == TrainingStyle.MSE_MINED.value:
+        # ours-mse-batched's binary control: identical layout, weighting and batches; the
+        # mined negative is just another non-positive. Differs in one target cell only.
+        return BatchGradedMarginMSELoss(model=model, easy_label=easy_label, binary=True)
     if training_style == TrainingStyle.OURS_INFONCE.value:
         # infonce-mined with soft targets: the own hard negative holds target mass
         # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
@@ -673,9 +695,10 @@ def main():
         return
 
     if training_style in PAIR_STYLES:
-        is_cosent = training_style == TrainingStyle.COSENT.value
-        train_dataset = build_pair_dataset(train_dataset, is_cosent)
-        eval_dataset = build_pair_dataset(eval_dataset, is_cosent)
+        is_cosent = training_style in (TrainingStyle.COSENT.value, TrainingStyle.OURS_COSENT.value)
+        tiered = training_style == TrainingStyle.OURS_COSENT.value
+        train_dataset = build_pair_dataset(train_dataset, is_cosent, tiered)
+        eval_dataset = build_pair_dataset(eval_dataset, is_cosent, tiered)
 
     cuda_count = max(1, torch.cuda.device_count())
     per_device_train_batch_size = min(
@@ -705,7 +728,7 @@ def main():
     # twin's identical positive as a negative with target 0. NO_DUPLICATES prevents that.
     # CoSENT is the one exception: after to_pairs an anchor appears in both its positive and
     # its negative pair, and NO_DUPLICATES would admit only one of the two per batch.
-    if training_style == TrainingStyle.COSENT.value:
+    if training_style in (TrainingStyle.COSENT.value, TrainingStyle.OURS_COSENT.value):
         batch_sampler = BatchSamplers.BATCH_SAMPLER
     else:
         batch_sampler = BatchSamplers.NO_DUPLICATES

@@ -51,6 +51,14 @@ FORCE_TRAIN=${FORCE_TRAIN:-0}
 FORCE_TEST=${FORCE_TEST:-0}
 ALLOW_STALE=${ALLOW_STALE:-0}
 
+# Styles named here are scheduled ahead of everything else, in this order. The condition table
+# below is grouped by experiment, not by urgency, so this reorders the queue without moving any
+# rows out of the section they belong to. Order follows the protocol: each family's graded
+# member then its ungraded (mined) control, families in paper priority -- infonce, mse, siglip.
+# ours-cosent is cosent with a third rank (positive > hard > random); CoSENT reads label order
+# only, so it has no V/easy and no search -- main-grid rows only.
+PRIORITY_STYLES=(ours-infonce-margin infonce-mined ours-mse-batched mse-mined ours-cosent cosent ours-siglip siglip-mined)
+
 TEXT_MODEL=sentence-transformers/all-mpnet-base-v2
 IMG_MODEL=sentence-transformers/clip-ViT-B-32
 
@@ -86,7 +94,7 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 # Condition table — the living list of everything the paper needs.
 # Columns: modality  style  query_kind  V  extra
 #   modality: text | multimodal
-#   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | cosent
+#   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | mse-mined | cosent | ours-cosent
 #             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
 #             | ours-infonce-margin (one-hot infonce-mined + distance-scheduled logit margins)
 #             infonce is the standard 2-column objective (in-batch negatives only);
@@ -104,8 +112,12 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 # ---------------------------------------------------------------------------
 CONDITIONS="
 # Main grid: {text, multimodal} x {original, synthetic, rephrased} x {baselines, ours}.
-# V=40 for every graded row: it wins the validation sweep on both modalities
-# (text ndcg@10 .7630 / acc@1 .6177; multimodal .1522 / .0640). See the ablation below.
+# Graded rows carry the hparams chosen on the validation easy x V sweep (analysis.ipynb
+# section 2), so there is no single global V: easy=10 throughout, V=80 for
+# ours-infonce-margin and for every multimodal MSE row, V=40 for the text MSE rows --
+# text and image disagree on V for the MSE styles. ours-infonce keeps the old V=40 and
+# no easy override: it is deprecated, and easy=10 collides with its largest measured
+# label, which train.py refuses for that loss alone.
 #
 # Rows commented out are up to date from the 2026-08-29 run and unchanged by anything
 # since (new styles + batch-sampler cleanup only; see git log). Re-enable a row to have
@@ -126,27 +138,33 @@ text        siglip-mined      synthetic  -   -
 text        infonce           rephrased  -   -
 text        infonce-mined     rephrased  -   -
 text        siglip-mined      rephrased  -   -
-# text        cosent            original   -   -
-# text        cosent            synthetic  -   -
-# text        cosent            rephrased  -   -
+text        cosent            original   -   -
+text        cosent            synthetic  -   -
+text        cosent            rephrased  -   -
+text        ours-cosent       original   -   -
+text        ours-cosent       synthetic  -   -
+text        ours-cosent       rephrased  -   -
 # text        classic-mse       original   40  -
 # text        classic-mse       synthetic  40  -
 # text        classic-mse       rephrased  40  -
-# text        ours-mse          original   40  -
+text        ours-mse          original   40  easy=10
 text        ours-infonce      original   40  -
-text        ours-siglip       original   40  -
-text        ours-infonce-margin original  40  -
-# text        ours-mse          synthetic  40  -
+text        ours-siglip       original   20  easy=10
+text        ours-infonce-margin original  80  easy=10
+text        ours-mse          synthetic  40  easy=10
 text        ours-infonce      synthetic  40  -
-text        ours-siglip       synthetic  40  -
-text        ours-infonce-margin synthetic 40  -
-# text        ours-mse          rephrased  40  -
+text        ours-siglip       synthetic  20  easy=10
+text        ours-infonce-margin synthetic 80  easy=10
+text        ours-mse          rephrased  40  easy=10
 text        ours-infonce      rephrased  40  -
-text        ours-siglip       rephrased  40  -
-text        ours-infonce-margin rephrased 40  -
-# text        ours-mse-batched  original   40  -
-# text        ours-mse-batched  synthetic  40  -
-# text        ours-mse-batched  rephrased  40  -
+text        ours-siglip       rephrased  20  easy=10
+text        ours-infonce-margin rephrased 80  easy=10
+text        ours-mse-batched  original   40  easy=10
+text        ours-mse-batched  synthetic  40  easy=10
+text        ours-mse-batched  rephrased  40  easy=10
+text        mse-mined         original   40  easy=10
+text        mse-mined         synthetic  40  easy=10
+text        mse-mined         rephrased  40  easy=10
 # The image dataset has no real search queries (original_query is empty for all 12,957 rows),
 # so multimodal runs synthetic and rephrased only.
 # multimodal  untrained         synthetic  -   -
@@ -159,20 +177,24 @@ multimodal  siglip-mined      synthetic  -   -
 multimodal  infonce           rephrased  -   -
 multimodal  infonce-mined     rephrased  -   -
 multimodal  siglip-mined      rephrased  -   -
-# multimodal  cosent            synthetic  -   -
-# multimodal  cosent            rephrased  -   -
+multimodal  cosent            synthetic  -   -
+multimodal  cosent            rephrased  -   -
+multimodal  ours-cosent       synthetic  -   -
+multimodal  ours-cosent       rephrased  -   -
 # multimodal  classic-mse       synthetic  40  -
 # multimodal  classic-mse       rephrased  40  -
-# multimodal  ours-mse          synthetic  40  -
+multimodal  ours-mse          synthetic  80  easy=10
 multimodal  ours-infonce      synthetic  40  -
-multimodal  ours-siglip       synthetic  40  -
-multimodal  ours-infonce-margin synthetic 40  -
-# multimodal  ours-mse          rephrased  40  -
+multimodal  ours-siglip       synthetic  20  easy=10
+multimodal  ours-infonce-margin synthetic 80  easy=10
+multimodal  ours-mse          rephrased  80  easy=10
 multimodal  ours-infonce      rephrased  40  -
-multimodal  ours-siglip       rephrased  40  -
-multimodal  ours-infonce-margin rephrased 40  -
-# multimodal  ours-mse-batched  synthetic  40  -
-# multimodal  ours-mse-batched  rephrased  40  -
+multimodal  ours-siglip       rephrased  20  easy=10
+multimodal  ours-infonce-margin rephrased 80  easy=10
+multimodal  ours-mse-batched  synthetic  80  easy=10
+multimodal  ours-mse-batched  rephrased  80  easy=10
+multimodal  mse-mined         synthetic  80  easy=10
+multimodal  mse-mined         rephrased  80  easy=10
 
 # ---------------------------------------------------------------------------
 # V ablation: 20/40/60 on synthetic queries for every graded style. The V=40 point
@@ -184,8 +206,8 @@ multimodal  ours-infonce-margin rephrased 40  -
 # text        ours-mse-batched  synthetic  60  -
 text        ours-infonce      synthetic  20  split=val
 text        ours-infonce      synthetic  60  split=val
-text        ours-siglip       synthetic  20  split=val
-text        ours-siglip       synthetic  60  split=val
+# text        ours-siglip       synthetic  20  split=val
+# text        ours-siglip       synthetic  60  split=val
 text        ours-infonce-margin synthetic 10  split=val
 text        ours-infonce-margin synthetic 20  split=val
 text        ours-infonce-margin synthetic 60  split=val
@@ -195,8 +217,8 @@ text        ours-infonce-margin synthetic 60  split=val
 # multimodal  ours-mse-batched  synthetic  60  -
 multimodal  ours-infonce      synthetic  20  split=val
 multimodal  ours-infonce      synthetic  60  split=val
-multimodal  ours-siglip       synthetic  20  split=val
-multimodal  ours-siglip       synthetic  60  split=val
+# multimodal  ours-siglip       synthetic  20  split=val
+# multimodal  ours-siglip       synthetic  60  split=val
 multimodal  ours-infonce-margin synthetic 10  split=val
 multimodal  ours-infonce-margin synthetic 20  split=val
 multimodal  ours-infonce-margin synthetic 60  split=val
@@ -214,16 +236,16 @@ text        ours-mse          synthetic  40  easy=30,split=val
 text        ours-mse          synthetic  40  easy=40,split=val
 text        ours-mse-batched  synthetic  40  easy=30,split=val
 text        ours-mse-batched  synthetic  40  easy=40,split=val
-text        ours-siglip       synthetic  40  easy=30,split=val
-text        ours-siglip       synthetic  40  easy=40,split=val
+# text        ours-siglip       synthetic  40  easy=30,split=val
+# text        ours-siglip       synthetic  40  easy=40,split=val
 multimodal  classic-mse       synthetic  40  easy=30,split=val
 multimodal  classic-mse       synthetic  40  easy=40,split=val
 multimodal  ours-mse          synthetic  40  easy=30,split=val
 multimodal  ours-mse          synthetic  40  easy=40,split=val
 multimodal  ours-mse-batched  synthetic  40  easy=30,split=val
 multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
-multimodal  ours-siglip       synthetic  40  easy=30,split=val
-multimodal  ours-siglip       synthetic  40  easy=40,split=val
+# multimodal  ours-siglip       synthetic  40  easy=30,split=val
+# multimodal  ours-siglip       synthetic  40  easy=40,split=val
 
 # -------------------------------------------------------------------------
 # easy x V grid (2026-09-01). Selection sweep for the ours-* family: every combination
@@ -267,6 +289,15 @@ text        ours-siglip       synthetic  80  easy=20,split=val
 text        ours-siglip       synthetic  20  easy=40,split=val
 text        ours-siglip       synthetic  40  easy=40,split=val
 text        ours-siglip       synthetic  80  easy=40,split=val
+# text        ours-siglip       synthetic  20  easy=10,split=val
+# text        ours-siglip       synthetic  40  easy=10,split=val
+# text        ours-siglip       synthetic  80  easy=10,split=val
+# text        ours-siglip       synthetic  20  easy=20,split=val
+# text        ours-siglip       synthetic  40  easy=20,split=val
+# text        ours-siglip       synthetic  80  easy=20,split=val
+# text        ours-siglip       synthetic  20  easy=40,split=val
+# text        ours-siglip       synthetic  40  easy=40,split=val
+# text        ours-siglip       synthetic  80  easy=40,split=val
 text        ours-infonce-margin synthetic  20  easy=10,split=val
 text        ours-infonce-margin synthetic  40  easy=10,split=val
 text        ours-infonce-margin synthetic  80  easy=10,split=val
@@ -303,6 +334,15 @@ multimodal  ours-siglip       synthetic  80  easy=20,split=val
 multimodal  ours-siglip       synthetic  20  easy=40,split=val
 multimodal  ours-siglip       synthetic  40  easy=40,split=val
 multimodal  ours-siglip       synthetic  80  easy=40,split=val
+# multimodal  ours-siglip       synthetic  20  easy=10,split=val
+# multimodal  ours-siglip       synthetic  40  easy=10,split=val
+# multimodal  ours-siglip       synthetic  80  easy=10,split=val
+# multimodal  ours-siglip       synthetic  20  easy=20,split=val
+# multimodal  ours-siglip       synthetic  40  easy=20,split=val
+# multimodal  ours-siglip       synthetic  80  easy=20,split=val
+# multimodal  ours-siglip       synthetic  20  easy=40,split=val
+# multimodal  ours-siglip       synthetic  40  easy=40,split=val
+# multimodal  ours-siglip       synthetic  80  easy=40,split=val
 multimodal  ours-infonce-margin synthetic  20  easy=10,split=val
 multimodal  ours-infonce-margin synthetic  40  easy=10,split=val
 multimodal  ours-infonce-margin synthetic  80  easy=10,split=val
@@ -517,6 +557,22 @@ while read -r modality style qk v extra; do
     K_TRAIN_ACTION[$key]=skip; TRAIN_STATUS[$key]="reused"
   fi
 done <<<"$CONDITIONS"
+
+# Phase 1 and 2 both launch in KEYS order, so priority is applied once, here. The sort is
+# stable on the original index, so conditions of equal priority keep their table order.
+style_priority() {
+  local i
+  for i in "${!PRIORITY_STYLES[@]}"; do
+    [[ ${PRIORITY_STYLES[i]} == "$1" ]] && { echo "$i"; return; }
+  done
+  echo "${#PRIORITY_STYLES[@]}"
+}
+
+mapfile -t KEYS < <(
+  for i in "${!KEYS[@]}"; do
+    printf '%s\t%06d\t%s\n' "$(style_priority "${K_STYLE[${KEYS[i]}]}")" "$i" "${KEYS[i]}"
+  done | sort -k1,1n -k2,2n | cut -f3-
+)
 
 echo
 echo "== Plan (NOTE=$NOTE, root=$MODELS_ROOT, GPUS=$GPUS) =="

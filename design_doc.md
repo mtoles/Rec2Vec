@@ -124,3 +124,10 @@ Stuff we should consider doing before publishing the paper
 ## Additional CoSENT baselines
 
 - Run additional CoSENT baselines where we better control batching to ensure pairs are entirely comparing within the same query
+
+# Experiment ordering
+
+To demonstrate the effectiveness of our method, we must show that grading hard negatives improves over ungraded hard negatives while keeping the total examples viewed by the model and the total comparisons constant. 
+Thus, our experimental protocol for all strategies (MSE, CoSENT, InfoNCE, etc) should be:
+1. perform ablation on hyperparameters for ours on the validation set
+2. compare recall on the test set between ours graded vs ungraded (mined) on the test set

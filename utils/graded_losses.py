@@ -18,7 +18,8 @@ from sentence_transformers import SentenceTransformer, util
 
 class BatchGradedMarginMSELoss(nn.Module):
 
-    def __init__(self, model: SentenceTransformer, easy_label: float, hard_weight: float = 0.5):
+    def __init__(self, model: SentenceTransformer, easy_label: float, hard_weight: float = 0.5,
+                 binary: bool = False):
         """
         easy_label: the training label of an unmeasured (random) negative, on the same
             scale as the dataset's label column. With linear transform and V=40 this is
@@ -28,11 +29,15 @@ class BatchGradedMarginMSELoss(nn.Module):
             anchor has 1 graded comparison but 2B-2 easy ones; a plain mean over all
             terms would weight the graded signal 1:(2B-2), burying the thing this loss
             exists to use. 0.5 gives the two kinds of supervision equal say.
+        binary: the mse-mined control. The mined negative is targeted at easy_label like
+            every other non-positive, so the graded/binary pair differs in that one cell
+            only -- same layout, same hard_weight, same batches, same seen examples.
         """
         super().__init__()
         self.model = model
         self.easy_label = easy_label
         self.hard_weight = hard_weight
+        self.binary = binary
 
     def forward(self, sentence_features, labels):
         # One feature dict per dataset column, in column order: (anchor, positive,
@@ -64,7 +69,8 @@ class BatchGradedMarginMSELoss(nn.Module):
         #   everything else:            easy_label -- a cross-row candidate is a random
         #                               product w.r.t. this anchor, i.e. an easy negative
         idx = torch.arange(B, device=S.device)
-        targets = labels.to(S.dtype)
+        targets = (torch.full_like(labels, self.easy_label, dtype=S.dtype) if self.binary
+                   else labels.to(S.dtype))
         D = torch.full_like(S, self.easy_label)
         D[idx, idx] = 0.0
         D[idx, B + idx] = targets
