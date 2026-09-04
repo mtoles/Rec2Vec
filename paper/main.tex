@@ -140,6 +140,7 @@ Dense bi-encoders enable efficient first-stage retrieval by mapping queries and 
 % Their effectiveness, however, depends strongly on the selection and supervision of negative examples.
 Methods such as ANCE and RocketQA improve training by retrieving challenging negatives, sharing negatives across batches, or denoising mined candidates~\cite{xiong2020approximate,qu-etal-2021-rocketqa}.
 Other approaches move beyond uniform positive--negative separation by distilling continuous teacher-score differences, as in MarginMSE and TAS-Balanced~\cite{hofstatter2020improving,hofstatter2021tas}, or by using relevance- and attribute-dependent margins in metric-learning objectives~\cite{zhou2020ladder,Jeong_2021_ICCV,Zhao2019}.
+\red{todo: discuss ColBERTv2 KL distillation over mined candidates (https://arxiv.org/abs/2112.01488), BGE/C-Pack rank-window ANN mining (https://arxiv.org/abs/2309.07597), NV-Retriever positive-aware negative filtering (https://arxiv.org/abs/2407.15831)}
 % These methods demonstrate the value of informative negatives and graded training signals, but generally derive the degree of separation from teacher scores, relevance labels, or broad semantic relationships.
 % In contrast, we derive supervision from the discrete structure of the query: candidates are graded by the number of query-relevant feature edits required to make them satisfy its constraints.
 
@@ -162,6 +163,7 @@ CoN-CLIP and NegationCLIP improve sensitivity to negated concepts, while CoLLM u
 \paragraph{Synthetic supervision for retrieval.}
 Large language models have increasingly been used to generate targeted supervision for dense retrieval.
 Syntriever and SyNeg generate queries, relevant examples, or challenging negatives that expose distinctions absent from conventional training data~\cite{kim-baek-2025-syntriever,li2024syneg}.
+\red{todo: discuss LLM-generated negatives in Promptagator (https://arxiv.org/abs/2209.11755), E5-mistral synthetic data (https://arxiv.org/abs/2401.00368), Gecko (https://arxiv.org/abs/2403.20327)}
 In product retrieval, Agapaki and Gill combine structured product information with LLM-based relevance assessment to identify difficult training examples~\cite{agapaki2026negative}.
 % These approaches show that synthetic data can control which distinctions a retriever encounters during training.
 % Our use of generated information differs in an important respect: generated feature annotations specify the candidate structure, but do not directly determine the supervision target.
