@@ -157,6 +157,59 @@ class GradedInfoNCELoss(nn.Module):
         return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
 
 
+class GradedExponentialInfoNCELoss(nn.Module):
+    """GradedInfoNCELoss with the hard negative's target mass put through the exponential.
+
+    Same candidate layout, same normalization, same treatment of random and cross-row
+    candidates as GradedInfoNCELoss; the one difference is the own measured negative's
+    unnormalized target weight:
+        GradedInfoNCELoss (ours-infonce):             1 - label
+        this loss         (infonce-ours-v3):          exp(-scale * label)
+
+    Why it matters: cross-entropy is minimised when the softmax equals the target, so at the
+    optimum exp(scale * (cos(q,p) - cos(q,n))) equals the positive/negative mass ratio and
+    the gap is log(1 / weight) / scale. With 1 - label that is log(1 / (1 - label)) / scale,
+    about label / scale: the negative is held nearly level with the positive (ours-infonce
+    measured below untrained on text). With exp(-scale * label) it is exactly label: the
+    mass goes through the same exponential the softmax takes the log of, so the label comes
+    back out as the gap. Derivation in tmp/infonce_bounds.tex, Point 4. Both are two-sided:
+    a negative pushed below its gap holds less probability than its target and is pushed
+    back up. label -> 1 gives weight exp(-scale), numerically one-hot infonce-mined.
+
+    Random rows are identified by label == easy_label exactly as in GradedInfoNCELoss, and
+    train.py applies the same easy-collision refusal to both. Twin-positive hazard as in
+    the other batch-wide losses: train.py always trains this loss under NO_DUPLICATES.
+    """
+
+    def __init__(self, model: SentenceTransformer, easy_label: float,
+                 scale: float = 20.0, easy_weight: float = 0.0):
+        super().__init__()
+        self.model = model
+        self.easy_label = easy_label
+        self.scale = scale
+        self.easy_weight = easy_weight
+
+    def forward(self, sentence_features, labels):
+        anchors, positives, negatives = [
+            self.model(features)["sentence_embedding"] for features in sentence_features
+        ]
+        B = anchors.shape[0]
+
+        candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
+        S = util.cos_sim(anchors, candidates) * self.scale             # [B, 2B]
+
+        targets = labels.to(S.dtype)
+        is_random = targets >= self.easy_label - 1e-6
+
+        idx = torch.arange(B, device=S.device)
+        W = torch.full_like(S, self.easy_weight)
+        W[idx, idx] = 1.0
+        W[idx, B + idx] = torch.where(is_random, torch.full_like(targets, self.easy_weight),
+                                      torch.exp(-self.scale * targets))
+        T = W / W.sum(dim=1, keepdim=True)
+        return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
+
+
 class GradedSigLIPLoss(nn.Module):
     """Per-pair sigmoid BCE over in-batch candidates with distance-graded soft labels.
 

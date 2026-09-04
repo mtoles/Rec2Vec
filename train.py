@@ -37,7 +37,8 @@ import yaml
 
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
 from utils.graded_losses import (
-    BatchGradedMarginMSELoss, GradedInfoNCELoss, GradedSigLIPLoss, MarginInfoNCELoss,
+    BatchGradedMarginMSELoss, GradedExponentialInfoNCELoss, GradedInfoNCELoss, GradedSigLIPLoss,
+    MarginInfoNCELoss,
 )
 from utils.distance_labels import (
     DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
@@ -70,6 +71,7 @@ class TrainingStyle(Enum):
     OURS_INFONCE = "ours-infonce"
     OURS_SIGLIP = "ours-siglip"
     OURS_INFONCE_MARGIN = "ours-infonce-margin"
+    INFONCE_OURS_V3 = "infonce-ours-v3"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
 
@@ -89,6 +91,7 @@ LABELED_STYLES = (
     TrainingStyle.OURS_INFONCE.value,
     TrainingStyle.OURS_SIGLIP.value,
     TrainingStyle.OURS_INFONCE_MARGIN.value,
+    TrainingStyle.INFONCE_OURS_V3.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
     TrainingStyle.CLASSIC_MSE.value,
 )
@@ -468,6 +471,11 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # infonce-mined with soft targets: the own hard negative holds target mass
         # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
         return GradedInfoNCELoss(model=model, easy_label=easy_label)
+    if training_style == TrainingStyle.INFONCE_OURS_V3.value:
+        # ours-infonce with the hard negative's target mass exp(-s * label) instead of
+        # 1 - label, so the gap at the optimum is the label itself rather than
+        # log(1 / (1 - label)) / s. See utils/graded_losses.py; tmp/infonce_bounds.tex, Point 4.
+        return GradedExponentialInfoNCELoss(model=model, easy_label=easy_label)
     if training_style == TrainingStyle.OURS_SIGLIP.value:
         # Per-pair sigmoid BCE: every in-batch cell fit to its own graded similarity
         # target, no softmax competition. See utils/graded_losses.py.
@@ -653,12 +661,13 @@ def main():
             transform=config["distance_transform"] if "distance_transform" in config else DistanceTransform.LINEAR.value,
             transform_alpha=float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
         )
-        # ours-infonce is the one loss that recovers "this row's negative is random" by
-        # comparing the label to easy_label (GradedInfoNCELoss). With easy at the top of
+        # ours-infonce and infonce-ours-v3 (both GradedInfoNCELoss) recover "this row's
+        # negative is random" by comparing the label to easy_label. With easy at the top of
         # the measured scale the two are equal, so the most distant hard negatives would
         # be silently retargeted to easy_weight. Every other graded loss only fills
         # cross-row cells with easy_label and is unaffected.
-        if label_stats["easy_collides"] and training_style == TrainingStyle.OURS_INFONCE.value:
+        if label_stats["easy_collides"] and training_style in (
+                TrainingStyle.OURS_INFONCE.value, TrainingStyle.INFONCE_OURS_V3.value):
             raise ValueError(
                 f"training-style {training_style} cannot use easy_negative_value="
                 f"{easy_negative_value}: it equals the largest measured hard-negative "

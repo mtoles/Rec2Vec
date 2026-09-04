@@ -57,7 +57,7 @@ ALLOW_STALE=${ALLOW_STALE:-0}
 # member then its ungraded (mined) control, families in paper priority -- infonce, mse, siglip.
 # ours-cosent is cosent with a third rank (positive > hard > random); CoSENT reads label order
 # only, so it has no V/easy and no search -- main-grid rows only.
-PRIORITY_STYLES=(ours-infonce-margin infonce-mined ours-mse-batched mse-mined ours-cosent cosent ours-siglip siglip-mined)
+PRIORITY_STYLES=(infonce-ours-v3 ours-infonce-margin infonce-mined ours-mse-batched mse-mined ours-cosent cosent ours-siglip siglip-mined)
 
 TEXT_MODEL=sentence-transformers/all-mpnet-base-v2
 IMG_MODEL=sentence-transformers/clip-ViT-B-32
@@ -97,6 +97,7 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | mse-mined | cosent | ours-cosent
 #             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
 #             | ours-infonce-margin (one-hot infonce-mined + distance-scheduled logit margins)
+#             | infonce-ours-v3 (infonce-mined with soft target mass e^{-s d/V} on the hard negative)
 #             infonce is the standard 2-column objective (in-batch negatives only);
 #             infonce-mined adds our labeled hard negative as a third column.
 #             | ours-mse-batched (ours over the full in-batch candidate pool)
@@ -113,7 +114,8 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 CONDITIONS="
 # Main grid: {text, multimodal} x {original, synthetic, rephrased} x {baselines, ours}.
 # Graded rows carry the hparams chosen on the validation easy x V sweep (analysis.ipynb
-# section 2), so there is no single global V: easy=10 throughout, V=80 for
+# section 2; selection metric Recall@5 for text since 2026-09-03 -- Recall@10 had
+# saturated -- and Recall@20 for image), so there is no single global V: easy=10 throughout, V=80 for
 # ours-infonce-margin and for every multimodal MSE row, V=40 for the text MSE rows --
 # text and image disagree on V for the MSE styles. ours-infonce keeps the old V=40 and
 # no easy override: it is deprecated, and easy=10 collides with its largest measured
@@ -352,6 +354,117 @@ multimodal  ours-infonce-margin synthetic  80  easy=20,split=val
 multimodal  ours-infonce-margin synthetic  20  easy=40,split=val
 multimodal  ours-infonce-margin synthetic  40  easy=40,split=val
 multimodal  ours-infonce-margin synthetic  80  easy=40,split=val
+
+# -------------------------------------------------------------------------
+# infonce-ours-v3 (2026-09-03): ours-infonce with the hard negative's target mass put through
+# the exponential, e^{-s d/V} in place of 1 - d/V, so the gap at the optimum is d/V itself
+# rather than d/(sV) (tmp/infonce_bounds.tex, Point 4). Two-sided: a negative pushed past its
+# gap holds less probability than its target and is pushed back up.
+#
+# The sweep is one-dimensional. easy plays no part in this loss -- random products hold target
+# mass 0 whatever easy is; the label only identifies them -- so there is no easy axis. It stays
+# at the default (20): easy=10 collides with d=10 and this loss, like ours-infonce, identifies
+# random rows by label equality, which train.py refuses. (At V=10 the d=10 label clips to 1.0
+# and meets the easy label anyway; those rows then get mass 0 instead of e^{-20}, no difference.)
+#
+# V sets the target odds ratio per violated constraint, e^{-s/V}: 0.14 at V=10, 0.37 at 20,
+# 0.61 at 40, 0.78 at 80. The note's Section 6 measured the margin loss's natural gaps at about
+# d/V for V ~ 20, so the grid brackets that. Scored on VALIDATION. The two infonce-mined rows
+# put the ungraded control on the same split (models exist; inference only); ours-infonce-margin
+# at its selected V=80/easy=10 is already scored there by the easy x V grid above.
+# -------------------------------------------------------------------------
+text        infonce-ours-v3   synthetic  10  split=val
+text        infonce-ours-v3   synthetic  20  split=val
+text        infonce-ours-v3   synthetic  40  split=val
+text        infonce-ours-v3   synthetic  80  split=val
+multimodal  infonce-ours-v3   synthetic  10  split=val
+multimodal  infonce-ours-v3   synthetic  20  split=val
+multimodal  infonce-ours-v3   synthetic  40  split=val
+multimodal  infonce-ours-v3   synthetic  80  split=val
+text        infonce-mined     synthetic  -   split=val
+multimodal  infonce-mined     synthetic  -   split=val
+# Main-grid rows at the V selected on the sweep (analysis.ipynb section 2): text V=20 (Recall@5;
+# V=10 and V=20 tie to 2e-4, and the V=10 rows were trained once before the metric changed),
+# image V=10 (Recall@20). Fill V in, then
+# uncomment; the synthetic rows share their model with the sweep and are inference only.
+text        infonce-ours-v3   original   10  -
+text        infonce-ours-v3   synthetic  10  -
+text        infonce-ours-v3   rephrased  10  -
+multimodal  infonce-ours-v3   synthetic  10  -
+multimodal  infonce-ours-v3   rephrased  10  -
+# -------------------------------------------------------------------------
+# Per-query-kind hparam search (2026-09-04). The grids above select on synthetic val and
+# transfer that choice to the original/rephrased core rows. These sweep the same grid on
+# every training distribution a core row uses, so each core row is selected on its own
+# val split. Text is scored at recall@5, image at recall@20 (analysis.ipynb K_TEXT/K_IMAGE).
+# Cells that coincide with a current core row share its model and are inference only.
+# -------------------------------------------------------------------------
+text        ours-siglip       original   20  easy=10,split=val
+text        ours-siglip       original   40  easy=10,split=val
+text        ours-siglip       original   80  easy=10,split=val
+text        ours-siglip       original   20  easy=20,split=val
+text        ours-siglip       original   40  easy=20,split=val
+text        ours-siglip       original   80  easy=20,split=val
+text        ours-siglip       original   20  easy=40,split=val
+text        ours-siglip       original   40  easy=40,split=val
+text        ours-siglip       original   80  easy=40,split=val
+text        ours-siglip       rephrased  20  easy=10,split=val
+text        ours-siglip       rephrased  40  easy=10,split=val
+text        ours-siglip       rephrased  80  easy=10,split=val
+text        ours-siglip       rephrased  20  easy=20,split=val
+text        ours-siglip       rephrased  40  easy=20,split=val
+text        ours-siglip       rephrased  80  easy=20,split=val
+text        ours-siglip       rephrased  20  easy=40,split=val
+text        ours-siglip       rephrased  40  easy=40,split=val
+text        ours-siglip       rephrased  80  easy=40,split=val
+multimodal  ours-siglip       rephrased  20  easy=10,split=val
+multimodal  ours-siglip       rephrased  40  easy=10,split=val
+multimodal  ours-siglip       rephrased  80  easy=10,split=val
+multimodal  ours-siglip       rephrased  20  easy=20,split=val
+multimodal  ours-siglip       rephrased  40  easy=20,split=val
+multimodal  ours-siglip       rephrased  80  easy=20,split=val
+multimodal  ours-siglip       rephrased  20  easy=40,split=val
+multimodal  ours-siglip       rephrased  40  easy=40,split=val
+multimodal  ours-siglip       rephrased  80  easy=40,split=val
+text        ours-mse-batched  original   20  easy=10,split=val
+text        ours-mse-batched  original   40  easy=10,split=val
+text        ours-mse-batched  original   80  easy=10,split=val
+text        ours-mse-batched  original   20  easy=20,split=val
+text        ours-mse-batched  original   40  easy=20,split=val
+text        ours-mse-batched  original   80  easy=20,split=val
+text        ours-mse-batched  original   20  easy=40,split=val
+text        ours-mse-batched  original   40  easy=40,split=val
+text        ours-mse-batched  original   80  easy=40,split=val
+text        ours-mse-batched  rephrased  20  easy=10,split=val
+text        ours-mse-batched  rephrased  40  easy=10,split=val
+text        ours-mse-batched  rephrased  80  easy=10,split=val
+text        ours-mse-batched  rephrased  20  easy=20,split=val
+text        ours-mse-batched  rephrased  40  easy=20,split=val
+text        ours-mse-batched  rephrased  80  easy=20,split=val
+text        ours-mse-batched  rephrased  20  easy=40,split=val
+text        ours-mse-batched  rephrased  40  easy=40,split=val
+text        ours-mse-batched  rephrased  80  easy=40,split=val
+multimodal  ours-mse-batched  rephrased  20  easy=10,split=val
+multimodal  ours-mse-batched  rephrased  40  easy=10,split=val
+multimodal  ours-mse-batched  rephrased  80  easy=10,split=val
+multimodal  ours-mse-batched  rephrased  20  easy=20,split=val
+multimodal  ours-mse-batched  rephrased  40  easy=20,split=val
+multimodal  ours-mse-batched  rephrased  80  easy=20,split=val
+multimodal  ours-mse-batched  rephrased  20  easy=40,split=val
+multimodal  ours-mse-batched  rephrased  40  easy=40,split=val
+multimodal  ours-mse-batched  rephrased  80  easy=40,split=val
+text        infonce-ours-v3   original   10  split=val
+text        infonce-ours-v3   original   20  split=val
+text        infonce-ours-v3   original   40  split=val
+text        infonce-ours-v3   original   80  split=val
+text        infonce-ours-v3   rephrased  10  split=val
+text        infonce-ours-v3   rephrased  20  split=val
+text        infonce-ours-v3   rephrased  40  split=val
+text        infonce-ours-v3   rephrased  80  split=val
+multimodal  infonce-ours-v3   rephrased  10  split=val
+multimodal  infonce-ours-v3   rephrased  20  split=val
+multimodal  infonce-ours-v3   rephrased  40  split=val
+multimodal  infonce-ours-v3   rephrased  80  split=val
 "
 
 # ---------------------------------------------------------------------------
