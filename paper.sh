@@ -23,6 +23,8 @@
 #   DRY_RUN=1      print the plan and exit
 #   FORCE_TRAIN=1  retrain even if fresh      FORCE_TEST=1  re-infer even if fresh
 #   ALLOW_STALE=1  keep models older than their dataset
+#   ONLY=<regex>   plan only the rows whose run name matches (e.g. ONLY=_mined- to run the
+#                  retrieval-mined baseline beside another instance without re-queuing its rows)
 
 set -euo pipefail
 
@@ -50,6 +52,7 @@ DRY_RUN=${DRY_RUN:-0}
 FORCE_TRAIN=${FORCE_TRAIN:-0}
 FORCE_TEST=${FORCE_TEST:-0}
 ALLOW_STALE=${ALLOW_STALE:-0}
+ONLY=${ONLY:-}
 
 # Styles named here are scheduled ahead of everything else, in this order. The condition table
 # below is grouped by experiment, not by urgency, so this reorders the queue without moving any
@@ -104,7 +107,8 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #             (| ours-mse-reversed)
 #   V:        distance normalizer, '-' = not applicable (untrained, triplet, infonce/-mined, siglip-mined,
 #             and cosent -- all baselines that never see the measured distance)
-#   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>
+#   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>,
+#             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset)
 # The image dataset only has synthetic (nl_query) queries, so multimodal rows are
 # synthetic-only. The V ablation runs on synthetic queries for both modalities.
 
@@ -191,10 +195,12 @@ multimodal  ours-siglip       synthetic  20  easy=10
 multimodal  ours-infonce-margin synthetic 80  easy=10
 multimodal  ours-mse          rephrased  80  easy=10
 multimodal  ours-infonce      rephrased  40  -
-multimodal  ours-siglip       rephrased  20  easy=10
+# multimodal  ours-siglip       rephrased  20  easy=10   # synthetic-val pick; per-query-kind val (2026-09-05) selects V=40
+multimodal  ours-siglip       rephrased  40  easy=10
 multimodal  ours-infonce-margin rephrased 80  easy=10
 multimodal  ours-mse-batched  synthetic  80  easy=10
-multimodal  ours-mse-batched  rephrased  80  easy=10
+# multimodal  ours-mse-batched  rephrased  80  easy=10   # synthetic-val pick; per-query-kind val (2026-09-05) selects V=20
+multimodal  ours-mse-batched  rephrased  20  easy=10
 multimodal  mse-mined         synthetic  80  easy=10
 multimodal  mse-mined         rephrased  80  easy=10
 
@@ -388,8 +394,10 @@ multimodal  infonce-mined     synthetic  -   split=val
 # image V=10 (Recall@20). Fill V in, then
 # uncomment; the synthetic rows share their model with the sweep and are inference only.
 text        infonce-ours-v3   original   10  -
-text        infonce-ours-v3   synthetic  10  -
-text        infonce-ours-v3   rephrased  10  -
+# text        infonce-ours-v3   synthetic  10  -         # recall@10 pick; recall@5 val (2026-09-05) selects V=20
+text        infonce-ours-v3   synthetic  20  -
+# text        infonce-ours-v3   rephrased  10  -         # synthetic-val pick; per-query-kind val (2026-09-05) selects V=20
+text        infonce-ours-v3   rephrased  20  -
 multimodal  infonce-ours-v3   synthetic  10  -
 multimodal  infonce-ours-v3   rephrased  10  -
 # -------------------------------------------------------------------------
@@ -465,6 +473,24 @@ multimodal  infonce-ours-v3   rephrased  10  split=val
 multimodal  infonce-ours-v3   rephrased  20  split=val
 multimodal  infonce-ours-v3   rephrased  40  split=val
 multimodal  infonce-ours-v3   rephrased  80  split=val
+
+# -------------------------------------------------------------------------
+# Retrieval-mined negatives (2026-09-04): the standard hard-negative baseline. Datasets are
+# the mine_hard_negs.py siblings (<dataset>_mined-<kind>): same rows and split, but every
+# train-split hard negative is the product a frozen teacher (e5-mistral-7b-instruct for text,
+# clip-ViT-L-14 for image) retrieves under NV-Retriever's positive-aware rule -- top-100,
+# drop candidates above 95% of the positive's score, keep the best survivor (Moreira et al.,
+# CIKM 2025). Val and test rows are untouched, so these score on the same corpus as every
+# other row. infonce-mined is the strongest ungraded loss in the protocol figure, so it alone
+# carries the best-miner-plus-strongest-standard-loss control; the graded losses cannot run on
+# these rows until a labeling pass measures each mined negative's distance.
+# Uncomment once the five mined datasets exist; a missing dataset aborts the plan.
+# -------------------------------------------------------------------------
+text        infonce-mined     original   -   negs=mined
+text        infonce-mined     synthetic  -   negs=mined
+text        infonce-mined     rephrased  -   negs=mined
+multimodal  infonce-mined     synthetic  -   negs=mined
+multimodal  infonce-mined     rephrased  -   negs=mined
 "
 
 # ---------------------------------------------------------------------------
@@ -537,12 +563,16 @@ drain() {
 # Per-condition derivations
 # ---------------------------------------------------------------------------
 model_for()   { [[ $1 == text ]] && echo "$TEXT_MODEL" || echo "$IMG_MODEL"; }
-dataset_for() { # modality [query_kind] -> dataset dir
+dataset_for() { # modality [query_kind] [negs] -> dataset dir
   local base
   [[ $1 == text ]] && base=$TEXT_DATASET || base=$IMG_DATASET
   # The rephrased queries live in a sibling dataset built by rephrase_dataset.py; it carries the
   # same rows, split column and labels, with rephrased_query filled in.
-  [[ ${2:-} == rephrased ]] && echo "${base}_rephrased" || echo "$base"
+  [[ ${2:-} == rephrased ]] && base="${base}_rephrased"
+  # negs=mined: the sibling built by mine_hard_negs.py for this query kind. Same rows and
+  # split; only the train split's hard negatives differ (retrieval-mined, unmeasured distance).
+  [[ ${3:-labeled} == mined ]] && base="${base}_mined-${2}"
+  echo "$base"
 }
 
 file_mtime() { # path -> epoch seconds, 0 if absent
@@ -565,12 +595,13 @@ dataset_mtime() { # dataset_dir -> epoch seconds of newest payload file, 0 if no
 
 run_name_for() { # modality style query_kind V extra
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5
-  local model_short easy="" transform="" split=test
+  local model_short easy="" transform="" split=test negs=labeled
   model_short=$(basename "$(model_for "$modality")")
   # split is parsed but deliberately NOT part of the name: a val row and its test twin
-  # share one model dir, and only their preds subdir differs.
-  parse_extra "$extra" easy transform split
-  local name="${modality}__${model_short}__${style}__$(basename "$(dataset_for "$modality" "$qk")")__${qk}"
+  # share one model dir, and only their preds subdir differs. negs is not a token either:
+  # it selects the dataset, whose tag already carries the _mined-<kind> suffix.
+  parse_extra "$extra" easy transform split negs
+  local name="${modality}__${model_short}__${style}__$(basename "$(dataset_for "$modality" "$qk" "$negs")")__${qk}"
   # Token order must match build_run_name extras order: easy, V, transform, note.
   if [[ -n $easy ]]; then name+="__easy-${easy}"; fi
   if [[ $v != - ]]; then name+="__V-${v}"; fi
@@ -579,10 +610,10 @@ run_name_for() { # modality style query_kind V extra
   echo "$name"
 }
 
-parse_extra() { # extra_string easy_var transform_var split_var
+parse_extra() { # extra_string easy_var transform_var split_var negs_var
   local extra=$1 token
-  local -n _easy=$2 _transform=$3 _split=$4
-  _easy="" _transform="" _split=test
+  local -n _easy=$2 _transform=$3 _split=$4 _negs=$5
+  _easy="" _transform="" _split=test _negs=labeled
   if [[ $extra == - ]]; then return 0; fi
   IFS=, read -ra tokens <<<"$extra"
   for token in "${tokens[@]}"; do
@@ -590,20 +621,25 @@ parse_extra() { # extra_string easy_var transform_var split_var
       easy=*) _easy=${token#easy=} ;;
       transform=*) _transform=${token#transform=} ;;
       split=*) _split=${token#split=} ;;
-      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=)" >&2; exit 1 ;;
+      negs=*) _negs=${token#negs=} ;;
+      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=, negs=)" >&2; exit 1 ;;
     esac
   done
   case $_split in
     test|val) ;;
     *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
   esac
+  case $_negs in
+    labeled|mined) ;;
+    *) echo "Unsupported negs '$_negs' (supported: labeled, mined)" >&2; exit 1 ;;
+  esac
 }
 
 train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full command
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5 run_dir=$6
-  local easy="" transform="" split=test
-  parse_extra "$extra" easy transform split
-  local cmd="$PY -u train.py --modality $modality --training-style $style --dataset $(dataset_for "$modality" "$qk") --output-dir $run_dir --note $NOTE --query-kind $qk $TRAIN_COMMON $REPORT_TO $WANDB_ARGS"
+  local easy="" transform="" split=test negs=labeled
+  parse_extra "$extra" easy transform split negs
+  local cmd="$PY -u train.py --modality $modality --training-style $style --dataset $(dataset_for "$modality" "$qk" "$negs") --output-dir $run_dir --note $NOTE --query-kind $qk $TRAIN_COMMON $REPORT_TO $WANDB_ARGS"
   if [[ $v != - ]]; then cmd+=" --V $v"; fi
   if [[ -n $easy ]]; then cmd+=" --easy-negative-value $easy"; fi
   if [[ -n $transform ]]; then cmd+=" --distance-transform $transform"; fi
@@ -615,22 +651,24 @@ train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full com
 # Build the plan
 # ---------------------------------------------------------------------------
 KEYS=()
-declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=() K_SPLIT=() SEEN_RUN_DIR=()
+declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=() K_SPLIT=() K_NEGS=() SEEN_RUN_DIR=()
 
 while read -r modality style qk v extra; do
   [[ -z $modality || $modality == \#* ]] && continue
   run_name=$(run_name_for "$modality" "$style" "$qk" "$v" "$extra")
+  [[ -n $ONLY && ! $run_name =~ $ONLY ]] && continue
   # The split is an evaluation choice, not a training one: a val row and its test twin are
   # the same weights scored on a different split. The key carries the split so both can sit
   # in the plan, while run_dir does not, so the second one reuses the first one's model.
-  row_split=""; row_easy=""; row_transform=""
-  parse_extra "$extra" row_easy row_transform row_split
+  row_split=""; row_easy=""; row_transform=""; row_negs=""
+  parse_extra "$extra" row_easy row_transform row_split row_negs
   key=$run_name
   [[ $row_split == val ]] && key="$run_name@val"
   run_dir=$MODELS_ROOT/$run_name
   KEYS+=("$key")
   RUN_DIRS[$key]=$run_dir
   K_SPLIT[$key]=$row_split
+  K_NEGS[$key]=$row_negs
   K_MODALITY[$key]=$modality K_STYLE[$key]=$style K_QK[$key]=$qk K_V[$key]=$v K_EXTRA[$key]=$extra
 
   if [[ $style == untrained ]]; then
@@ -648,7 +686,7 @@ while read -r modality style qk v extra; do
   SEEN_RUN_DIR[$run_name]=$key
 
   marker=$run_dir/final/modules.json
-  dataset=$(dataset_for "$modality" "$qk")
+  dataset=$(dataset_for "$modality" "$qk" "$row_negs")
   train_script=train.py
   # A missing dataset makes dataset_mtime 0, which reads as "older than the model" and
   # silently skips the condition -- the same shape of failure as the Phase-2 $qk bug.
@@ -746,7 +784,7 @@ for key in "${KEYS[@]}"; do
   # pointed every rephrased condition at the non-rephrased dataset, whose rephrased_query
   # column is empty -- multimodal then died on "Need at least 3 unique queries" and text
   # silently wrote preds for one empty query.
-  dataset=$(dataset_for "$modality" "${K_QK[$key]}")
+  dataset=$(dataset_for "$modality" "${K_QK[$key]}" "${K_NEGS[$key]}")
   test_script=test.py
 
   if [[ $style == untrained ]]; then

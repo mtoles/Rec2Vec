@@ -351,6 +351,24 @@ def drop_mined_negative(dataset: Dataset) -> Dataset:
     return dataset.select_columns(["anchor", "positive"])
 
 
+def is_usable_row(row) -> bool:
+    """The row filter applied before splitting; mine_hard_negs.py applies the same one."""
+    return row["positive"] != row["negative"] and bool(row["anchor"])
+
+
+def seeded_query_split(unique_queries: List[str], seed: int):
+    """80/10/10 split of unique anchors, deterministic in `seed` and in list order.
+
+    Shared with mine_hard_negs.py so a mined dataset reproduces the exact train split of
+    the dataset it was mined from.
+    """
+    if len(unique_queries) < 3:
+        raise ValueError("Need at least 3 unique queries for train/eval/test split")
+    train_queries, temp_queries = train_test_split(unique_queries, test_size=0.2, random_state=seed)
+    eval_queries, test_queries = train_test_split(temp_queries, test_size=0.5, random_state=seed)
+    return set(train_queries), set(eval_queries), set(test_queries)
+
+
 def split_dataset(dataset: Dataset, seed: int):
     """Precomputed leakage-free `split` column when present, seeded query split otherwise."""
     if "split" in dataset.column_names:
@@ -364,12 +382,8 @@ def split_dataset(dataset: Dataset, seed: int):
             test_dataset.remove_columns(aux_cols),
         )
 
-    unique_queries = list(dict.fromkeys(dataset["anchor"]))
-    if len(unique_queries) < 3:
-        raise ValueError("Need at least 3 unique queries for train/eval/test split")
-    train_queries, temp_queries = train_test_split(unique_queries, test_size=0.2, random_state=seed)
-    eval_queries, test_queries = train_test_split(temp_queries, test_size=0.5, random_state=seed)
-    train_queries, eval_queries, test_queries = set(train_queries), set(eval_queries), set(test_queries)
+    train_queries, eval_queries, test_queries = seeded_query_split(
+        list(dict.fromkeys(dataset["anchor"])), seed)
     return (
         dataset.filter(lambda x: x["anchor"] in train_queries),
         dataset.filter(lambda x: x["anchor"] in eval_queries),
@@ -634,7 +648,7 @@ def main():
             dataset = dataset.remove_columns([column])
     dataset = dataset.rename_column("positive_example", "positive")
     dataset = dataset.rename_column("negative_example", "negative")
-    dataset = dataset.filter(lambda x: x["positive"] != x["negative"] and bool(x["anchor"]))
+    dataset = dataset.filter(is_usable_row)
 
     # Default matches the paper's main grid; the validation sweep selected V=40 on both
     # modalities (see paper.sh's ablation rows).
@@ -660,6 +674,10 @@ def main():
             easy_negative_distance=easy_negative_value,
             transform=config["distance_transform"] if "distance_transform" in config else DistanceTransform.LINEAR.value,
             transform_alpha=float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
+            # mse-mined targets every non-positive at easy_label and never reads the label
+            # column, so a retrieval-mined negative with no measured distance is labeled
+            # at easy_label there. Every graded style refuses such rows instead.
+            unmeasured_as_easy=training_style == TrainingStyle.MSE_MINED.value,
         )
         # ours-infonce and infonce-ours-v3 (both GradedInfoNCELoss) recover "this row's
         # negative is random" by comparing the label to easy_label. With easy at the top of
