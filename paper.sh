@@ -108,7 +108,8 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   V:        distance normalizer, '-' = not applicable (untrained, triplet, infonce/-mined, siglip-mined,
 #             and cosent -- all baselines that never see the measured distance)
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>,
-#             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset)
+#             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset),
+#             negs=mined-graded (its label_mined_negs.py sibling, query_distance measured)
 # The image dataset only has synthetic (nl_query) queries, so multimodal rows are
 # synthetic-only. The V ablation runs on synthetic queries for both modalities.
 
@@ -491,6 +492,23 @@ text        infonce-mined     synthetic  -   negs=mined
 text        infonce-mined     rephrased  -   negs=mined
 multimodal  infonce-mined     synthetic  -   negs=mined
 multimodal  infonce-mined     rephrased  -   negs=mined
+# -------------------------------------------------------------------------
+# Graded losses on retrieval-mined negatives (2026-09-08): the same rows as the five
+# negs=mined rows above, after label_mined_negs.py measured each mined negative's
+# query_distance. Best miner + graded loss against best miner + standard loss, on
+# identical negatives; hparams are each style's per-query-kind selection on labeled rows.
+# Uncomment once the five _graded datasets exist.
+# -------------------------------------------------------------------------
+text        infonce-ours-v3   original   10  negs=mined-graded
+text        infonce-ours-v3   synthetic  20  negs=mined-graded
+text        infonce-ours-v3   rephrased  20  negs=mined-graded
+multimodal  infonce-ours-v3   synthetic  10  negs=mined-graded
+multimodal  infonce-ours-v3   rephrased  10  negs=mined-graded
+text        ours-infonce-margin original  80  easy=10,negs=mined-graded
+text        ours-infonce-margin synthetic 80  easy=10,negs=mined-graded
+text        ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
+multimodal  ours-infonce-margin synthetic 80  easy=10,negs=mined-graded
+multimodal  ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
 "
 
 # ---------------------------------------------------------------------------
@@ -572,6 +590,9 @@ dataset_for() { # modality [query_kind] [negs] -> dataset dir
   # negs=mined: the sibling built by mine_hard_negs.py for this query kind. Same rows and
   # split; only the train split's hard negatives differ (retrieval-mined, unmeasured distance).
   [[ ${3:-labeled} == mined ]] && base="${base}_mined-${2}"
+  # negs=mined-graded: the mined sibling after label_mined_negs.py measured every mined
+  # negative's query_distance, so the graded losses can train on it.
+  [[ ${3:-labeled} == mined-graded ]] && base="${base}_mined-${2}_graded"
   echo "$base"
 }
 
@@ -630,8 +651,8 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var
     *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
   esac
   case $_negs in
-    labeled|mined) ;;
-    *) echo "Unsupported negs '$_negs' (supported: labeled, mined)" >&2; exit 1 ;;
+    labeled|mined|mined-graded) ;;
+    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded)" >&2; exit 1 ;;
   esac
 }
 
