@@ -207,7 +207,9 @@ def mine(dataset, modality, kind, teacher, model, args):
             mined = None
             mined_score = None
             mined_source = None
+            mined_rank = None
             weakest = None  # (cand, score, rank) of the lowest-scoring non-positive candidate seen
+            survivors = 0
             for cand, score in zip(top_idx[r], top_scores[r]):
                 if cand in excluded:
                     continue
@@ -216,10 +218,14 @@ def mine(dataset, modality, kind, teacher, model, args):
                 if score >= threshold:
                     filtered += 1
                     continue
-                mined = cand
-                mined_score = score
-                mined_source = "rule"
-                break
+                # --skip-survivors N takes the (N+1)-th survivor (NV-Retriever's top-k shifted
+                # variant); a row with fewer survivors keeps its deepest one.
+                mined, mined_score, mined_rank, mined_source = cand, score, rank, "rule"
+                survivors += 1
+                if survivors > args.skip_survivors:
+                    break
+            if mined is not None:
+                rank = mined_rank
             # top_k candidates all inside the margin: the rule drops the row. --fallback weakest
             # keeps it with the lowest-scoring candidate retrieved -- the weakest hard negative
             # available, and the one least likely to be a false negative -- so the mined train set
@@ -240,6 +246,7 @@ def mine(dataset, modality, kind, teacher, model, args):
                 "mined_score": mined_score,
                 "mined_rank": rank if mined is not None else None,
                 "mined_source": mined_source,
+                "survivors_seen": survivors,
                 "filtered_above_threshold": filtered,
             }
     return records, item_id, item_category
@@ -286,6 +293,9 @@ def report(records, kind, args):
         "relative_margin": args.relative_margin,
         "n_hard_train_rows": len(recs),
         "fallback": args.fallback,
+        "skip_survivors": args.skip_survivors,
+        "n_short_of_skip": sum(1 for r in mined if r["mined_source"] == "rule"
+                               and r["survivors_seen"] <= args.skip_survivors),
         "n_mined": len(mined),
         "n_mined_by_rule": sum(r["mined_source"] == "rule" for r in mined),
         "n_mined_by_fallback": sum(r["mined_source"] == "fallback-weakest" for r in mined),
@@ -315,6 +325,11 @@ def main():
     ap.add_argument("--top-k", type=int, default=100, help="candidates retrieved before filtering")
     ap.add_argument("--relative-margin", type=float, default=0.05,
                     help="discard candidates scoring above (1 - margin) x positive score")
+    ap.add_argument("--skip-survivors", type=int, default=0,
+                    help="take the (N+1)-th survivor instead of the first (top-k shifted)")
+    ap.add_argument("--variant", default=None,
+                    help="suffix for the output dir, <dataset>_mined-<kind>_<variant>, so mining "
+                         "sweeps keep their datasets apart; the default config has none")
     ap.add_argument("--fallback", choices=["none", "weakest"], default="none",
                     help="no survivor: drop the row (none) or keep the lowest-scoring retrieved "
                          "candidate as a weaker hard negative (weakest)")
@@ -338,7 +353,7 @@ def main():
     root = args.out_root or os.path.dirname(args.dataset.rstrip("/"))
     for kind in args.query_kinds:
         records, item_id, item_category = mine(dataset, args.modality, kind, args.teacher, model, args)
-        out_dir = os.path.join(root, f"{base}_mined-{kind}")
+        out_dir = os.path.join(root, f"{base}_mined-{kind}" + (f"_{args.variant}" if args.variant else ""))
         out = apply(dataset, records, args.modality, item_id, item_category)
         out.save_to_disk(out_dir)
         summary = report(records, kind, args)

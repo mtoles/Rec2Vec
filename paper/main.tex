@@ -183,11 +183,14 @@ In product retrieval, Agapaki and Gill combine structured product information wi
 % We use it as graded supervision for first-stage retrieval, encouraging distances in the learned embedding space to reflect degree of constraint satisfaction.
 % We evaluate the resulting formulation in both textual and image-based product retrieval.
 
-\section{Methods}
 
 
 
-\subsection{Background}
+\section{Background}
+
+Numerous training objectives have been proposed for dense retrieval.
+Based on Appendix \ref{???}, we choose Margin-MSE, CoSENT, SIGLIP, and InfoNCE \red{cite} as our baseline loss functions.
+For reference, we define them here:
 
 Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product similarity is defined as
 
@@ -202,12 +205,51 @@ Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product 
 Where $q$ is a query, $x^+$ is a relevant document, $x^-$ is a less relevant document, and $y$ is a scalar representing the margin between their relevance as determined by a teacher model.
 $f$ is a function mapping queries or documents to their embeddings.
 
+The remaining objectives operate on cosine similarity, $\cos(q, x) = \inner{f(q)}{f(x)} / \big( \|f(q)\| \, \|f(x)\| \big)$, with a scale $s > 0$ playing the role of an inverse temperature.
+
+InfoNCE \citep{oord2018representation} treats every document in a batch of $B$ triples as a candidate for every query and is defined as
+
+\begin{equation}
+    \label{eq:trad-infonce}
+    \mathcal{L}(q_i) = - \log \frac{\exp\big( s \cos(q_i, x_i^+) \big)}{\sum_{j=1}^{B} \exp\big( s \cos(q_i, x_j^+) \big) + \exp\big( s \cos(q_i, x_j^-) \big)} ,
+\end{equation}
+
+where $(q_i, x_i^+, x_i^-)$ is the $i$-th triple and the sum runs over the $2B$ positives and negatives of the batch.
+The target is one-hot on $x_i^+$, so the loss constrains only the ordering of the candidates.
+
+SigLIP \citep{zhai2023sigmoid} replaces the softmax over candidates with an independent sigmoid classifier for each (query, candidate) pair and is defined as
+
+\begin{equation}
+    \label{eq:trad-siglip}
+    \mathcal{L} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \log \sigma\Big( t_i(x) \big( s \cos(q_i, x) + b \big) \Big) ,
+\end{equation}
+
+where $X$ is the set of $2B$ candidate documents in the batch, $t_i(x) = +1$ if $x = x_i^+$ and $-1$ otherwise, and $s$ and $b$ are a learnable scale and bias.
+Each pair is fit to its own target, so the loss constrains the absolute score of every candidate rather than its rank.
+
+CoSENT \citep{huang2024cosent} consumes pairs $(q_i, x_i)$ with relevance labels $r_i$ and penalizes every two pairs whose similarities are ordered against their labels:
+
+\begin{equation}
+    \label{eq:trad-cosent}
+    \mathcal{L} = \log \Big( 1 + \sum_{r_i > r_j} \exp\big( s \big( \cos(q_j, x_j) - \cos(q_i, x_i) \big) \big) \Big) ,
+\end{equation}
+
+where the sum runs over all ordered pairs of pairs in the batch with $r_i > r_j$.
+The labels enter only through their ordering, so with binary labels $r_i \in \{0, 1\}$ the loss requires every positive pair to outscore every negative pair by a margin set by $s$.
+
 Formally, following \citep{lu2025multiconir}, let query $q_k$ be a query composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., \red{K}\}$.
 We say a document $x$ is a positive document, $x^+$, with respect to $q_k$ if $x^+ \models C$, i.e., $x^+$ satisfies all $k$ conditions.
 Otherwise, we say the document $x^-$ is negative with respect to $q_k$.
 
 
+
+\section{Methods}
+
+
+
 \subsection{Attribute Hamming Loss Function}
+
+
 
 We introduce Attribute Hamming Loss, which is a form of Margin-MSE loss designed to distil knowledge from generative models rather than teacher embedding models.
 Attribute Hamming Loss replaces the distillation target $y$ with an integer representing the number of constraints in the query violated by $x^-$, rescaled by a constant $V$.
@@ -254,7 +296,8 @@ for all $\ell \in S$
     \label{fig:embedding}
 \end{figure}
 
-\section{Experiment}
+
+\section{Experiments}
 
 \subsection{Dataset Generation}
 

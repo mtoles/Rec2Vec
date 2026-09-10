@@ -559,6 +559,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-fraction", type=float, default=1.0,
                         help="Fraction of training-split queries to keep")
     parser.add_argument("--split-seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=42,
+                        help="training seed (init, data order, dropout); the split stays on --split-seed")
     return parser.parse_args()
 
 
@@ -567,6 +569,7 @@ def load_config(args: argparse.Namespace, query_kind: str) -> Dict[str, Any]:
         config = yaml.safe_load(f)
 
     config["model_name"] = args.model_name or DEFAULT_MODELS[args.modality]
+    config["seed"] = args.seed
     config.setdefault("training_style", TrainingStyle.BASELINE_TRIPLET.value)
     config.setdefault("training_args", {})
 
@@ -600,6 +603,8 @@ def name_extras(config: Dict[str, Any]) -> Dict[str, Any]:
         "easy": config["easy_negative_value"] if "easy_negative_value" in config else None,
         "V": config["V"] if "V" in config else None,
         "transform": config["distance_transform"] if "distance_transform" in config else None,
+        # 42 is the trainer default every earlier run used; those names carry no token.
+        "seed": config["seed"] if config["seed"] != 42 else None,
         "note": config["note"] if "note" in config else None,
     }
 
@@ -776,6 +781,8 @@ def main():
         save_total_limit=train_config["save_total_limit"],
         logging_steps=train_config["logging_steps"],
         report_to=train_config["report_to"],
+        seed=config["seed"],
+        data_seed=config["seed"],
     )
 
     swap_pos_neg = training_style == TrainingStyle.OURS_MSE_REVERSED.value

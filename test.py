@@ -5,6 +5,14 @@ train.py rather than copied, so it cannot drift -- encodes that split's corpus a
 with one model, and writes predictions to <run-dir>/preds/ (test) or <run-dir>/preds_val/
 (validation) so all analysis can run offline. See utils/test_inference.py for the formats.
 
+--query-kind human scores the human-written queries (human_study/download_human_labels.py)
+and writes to <run-dir>/preds_human/. The human dataset is evaluation-only: every row is
+split=test, and train.py has no `human` query kind. Its corpus is the test-split corpus of
+--distractor-dataset / --distractor-query-kind (the dataset and query kind the model was
+trained on, so the same corpus as its preds/) plus the human pairs' own products; the human
+set alone is a few hundred products and saturates every cutoff. paper.sh runs it for every
+test row.
+
 --split validation is what every hyperparameter sweep must read: selecting V or the
 easy-negative value on test numbers tunes on the reported set. The main grid reports test;
 the ablations select on val.
@@ -20,6 +28,10 @@ from datasets import load_from_disk
 from sentence_transformers import SentenceTransformer
 
 from train import QUERY_COLUMNS, encode_documents, split_dataset
+
+# Query kinds test.py can score: the training kinds plus the evaluation-only human queries.
+EVAL_QUERY_COLUMNS = {**QUERY_COLUMNS, "human": "human_query"}
+PREDS_SUBDIRS = {"test": "preds", "validation": "preds_val", "human": "preds_human"}
 from utils.test_inference import (
     build_corpus_and_queries,
     normalize,
@@ -51,7 +63,7 @@ def load_eval_split(dataset_path, query_key, split_seed, split="test"):
         raise ValueError(f"Requested query field '{query_key}' not found in columns: {dataset.column_names}")
 
     dataset = dataset.rename_column(query_key, "anchor")
-    for column in QUERY_COLUMNS.values():
+    for column in EVAL_QUERY_COLUMNS.values():
         if column in dataset.column_names:
             dataset = dataset.remove_columns([column])
     dataset = dataset.rename_column("positive_example", "positive")
@@ -67,26 +79,47 @@ def main():
     parser.add_argument("--modality", choices=["text", "multimodal"], required=True)
     parser.add_argument("--model-path", type=str, required=True, help="Model dir (.../final) or HF model name")
     parser.add_argument("--dataset", type=str, required=True, help="Processed dataset directory")
-    parser.add_argument("--query-kind", choices=["original", "synthetic", "rephrased"], required=True)
+    parser.add_argument("--query-kind", choices=list(EVAL_QUERY_COLUMNS), required=True,
+                        help="human reads the *_human dataset and is test-split only")
     parser.add_argument("--run-dir", type=str, required=True,
-                        help="Run directory; preds go to <run-dir>/preds (test) or <run-dir>/preds_val (validation)")
+                        help="Run directory; preds go to <run-dir>/preds (test), <run-dir>/preds_val "
+                             "(validation) or <run-dir>/preds_human (human queries)")
     parser.add_argument("--split", choices=["validation", "test"], default="test",
                         help="Which held-out split to score. Sweeps must use validation.")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=None,
                         help=f"Default per modality: {DEFAULT_BATCH_SIZES}")
     parser.add_argument("--split-seed", type=int, default=42)
+    parser.add_argument("--distractor-dataset", type=str, default=None,
+                        help="human only: dataset whose test-split corpus is added as distractors")
+    parser.add_argument("--distractor-query-kind", choices=list(QUERY_COLUMNS), default=None,
+                        help="human only: query kind that defines the distractor dataset's test split")
     args = parser.parse_args()
+    if args.query_kind == "human" and args.split != "test":
+        raise ValueError("--query-kind human is test-split only")
+    has_distractors = args.distractor_dataset is not None or args.distractor_query_kind is not None
+    if (args.query_kind == "human") != has_distractors or (
+            has_distractors and None in (args.distractor_dataset, args.distractor_query_kind)):
+        raise ValueError("--distractor-dataset and --distractor-query-kind are required with "
+                         "--query-kind human and not accepted otherwise")
 
     modality = args.modality
     batch_size = args.batch_size if args.batch_size is not None else DEFAULT_BATCH_SIZES[modality]
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    test_dataset = load_eval_split(args.dataset, QUERY_COLUMNS[args.query_kind], args.split_seed,
+    test_dataset = load_eval_split(args.dataset, EVAL_QUERY_COLUMNS[args.query_kind], args.split_seed,
                                    split=args.split)
     print(f"{args.split} split: {len(test_dataset):,} rows")
 
-    corpus, corpus_to_idx, queries, query_to_qid, positives = build_corpus_and_queries(test_dataset)
+    distractors = []
+    if args.query_kind == "human":
+        distractor_split = load_eval_split(args.distractor_dataset,
+                                           QUERY_COLUMNS[args.distractor_query_kind], args.split_seed)
+        distractors = list(distractor_split["positive"]) + list(distractor_split["negative"])
+        print(f"Distractors: {len(set(distractors)):,} unique items from the "
+              f"{args.distractor_query_kind} test split of {args.distractor_dataset}")
+    corpus, corpus_to_idx, queries, query_to_qid, positives = build_corpus_and_queries(
+        test_dataset, distractors=distractors)
     print(f"Corpus: {len(corpus):,} unique items | Queries: {len(queries):,}")
 
     print(f"Loading model {args.model_path}")
@@ -109,7 +142,7 @@ def main():
     sim_pos = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(pos_ids)])
     sim_neg = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(neg_ids)])
 
-    preds_dir = os.path.join(args.run_dir, "preds" if args.split == "test" else "preds_val")
+    preds_dir = os.path.join(args.run_dir, PREDS_SUBDIRS["human" if args.query_kind == "human" else args.split])
     os.makedirs(preds_dir, exist_ok=True)
 
     corpus_field = CORPUS_FIELDS[modality]

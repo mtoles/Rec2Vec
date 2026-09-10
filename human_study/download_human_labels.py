@@ -11,8 +11,11 @@ modality:
 
 Each output is a row-subset of the corresponding base processed dataset -- same columns, same
 values -- plus the human columns (`human_query`, `human_query_alt`, `human_pos_attributes`,
-`human_neg_attributes`, `annotator`). `human_query` is the column a `human` query kind would
-read, mirroring `nl_query` for synthetic and `rephrased_query` for rephrased.
+`human_neg_attributes`, `annotator`). `human_query` is the column the `human` query kind reads
+in test.py, mirroring `nl_query` for synthetic and `rephrased_query` for rephrased.
+
+Every output row is `split == "test"`: the human set is evaluation-only, so test.py's split
+logic keeps all of it and train.py never sees it (train.py has no `human` query kind).
 
 Rows are dropped when `Q3` is blank (nobody wrote a query) or when `Problem?` is non-blank
 (the annotator flagged the pair as unusable).
@@ -20,7 +23,10 @@ Rows are dropped when `Q3` is blank (nobody wrote a query) or when `Problem?` is
 Resolving a sheet row back to a dataset row: the workbooks carry rendered product text, not
 ids. Both generators are deterministic given their seed, so this script rebuilds the same
 pool and keys it by the rendered (Product 1, Product 2) text. That is exact rather than fuzzy,
-and it survives annotators reordering rows or tabs -- which two of them did.
+and it survives annotators reordering rows or tabs -- which two of them did. The
+"SHOPPING FOR: ..." header line of Product 1 is not part of the key: one annotator corrected
+a typo in it, and the product body below it is unique per pool row anyway (the generators
+never show a product twice).
 
 Usage:
     python human_study/download_human_labels.py
@@ -67,6 +73,14 @@ IMAGE_CATEGORY_CAP = 6
 
 def blank(value):
     return pd.isna(value) or not str(value).strip()
+
+
+def product_body(cell):
+    """The rendered product text of a sheet cell without its 'SHOPPING FOR:' header line."""
+    text = str(cell).strip()
+    if text.startswith("SHOPPING FOR:"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+    return text.strip()
 
 
 def fetch_workbook(sheet_id):
@@ -119,8 +133,7 @@ def text_pool():
                                      SHEETS * PER_SHEET, SEED, TEXT_MIN_CHARS, TEXT_MAX_CHARS)
     pool = {}
     for row in rows:
-        key = (human_data_text.format_product(row["positive_product"],
-                                              shopping_for=row["original_query"]).strip(),
+        key = (human_data_text.format_product(row["positive_product"]).strip(),
                human_data_text.format_product(row["hard_neg_product"]).strip())
         pool[key] = (row["positive_product"]["product_id"],
                      row["hard_neg_product"]["product_id"], row["item"])
@@ -133,8 +146,7 @@ def image_pool():
                                       SHEETS * PER_SHEET, SEED)
     pool = {}
     for row in rows:
-        key = (human_data_image.describe(row["positive_product"],
-                                         shopping_for=row["item"]).strip(),
+        key = (human_data_image.describe(row["positive_product"]).strip(),
                human_data_image.describe(row["hard_neg_product"]).strip())
         pool[key] = (row["positive_product_id"], row["hard_negative_product_id"],
                      row["item"])
@@ -183,7 +195,7 @@ def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative
 
     selected, extras, unmatched = [], [], []
     for tab_name, row in kept:
-        key = (str(row["Product 1"]).strip(), str(row["Product 2"]).strip())
+        key = (product_body(row["Product 1"]), product_body(row["Product 2"]))
         if key not in pool:
             raise ValueError(
                 f"Tab {tab_name!r} has a product pair that is not in the regenerated pool. "
@@ -221,6 +233,10 @@ def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative
     out = base.select(selected).flatten_indices()
     for column in extras[0]:
         out = out.add_column(column, [e[column] for e in extras])
+    # Evaluation-only: every row is test, whatever split the base assigned the pair.
+    if "split" in out.column_names:
+        out = out.remove_columns(["split"])
+    out = out.add_column("split", ["test"] * len(out))
 
     out_path = REPO_ROOT / "dataset/processed" / f"{base_path.name}{out_suffix}"
     out.save_to_disk(str(out_path))
