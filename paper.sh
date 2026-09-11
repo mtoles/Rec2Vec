@@ -29,6 +29,7 @@
 #   FORCE_TRAIN=1  retrain even if present    FORCE_TEST=1  re-infer even if present
 #   ONLY=<regex>   plan only the rows whose run name matches (e.g. ONLY=_mined- to run the
 #                  retrieval-mined baseline beside another instance without re-queuing its rows)
+#   OMP_NUM_THREADS=12  CPU threads per training process (default 12; see the export below)
 
 set -euo pipefail
 
@@ -56,6 +57,10 @@ DRY_RUN=${DRY_RUN:-0}
 FORCE_TRAIN=${FORCE_TRAIN:-0}
 FORCE_TEST=${FORCE_TEST:-0}
 ONLY=${ONLY:-}
+# CPU threads per training process. Unset, torch spawns one per core (208 on emu) in every
+# process; 8 such processes thrash the node (load 550, GPUs starved) and an image epoch takes
+# 2h10m. Capped at 12 the same epoch takes 22m and text steps run ~2x faster (2026-09-11).
+export OMP_NUM_THREADS=${OMP_NUM_THREADS:-12} MKL_NUM_THREADS=${MKL_NUM_THREADS:-12}
 
 # Styles named here are scheduled ahead of everything else, in this order. The condition table
 # below is grouped by experiment, not by urgency, so this reorders the queue without moving any
@@ -114,7 +119,9 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset),
 #             negs=mined-graded (its label_mined_negs.py sibling, query_distance measured),
 #             mining=<variant> (a mine_hard_negs.py --variant sibling; mining sweep),
-#             seed=<n> (a repeated trial with training seed n; the unsuffixed row is seed 42)
+#             seed=<n> (a repeated trial with training seed n; the unsuffixed row is seed 42),
+#             rephrase=in-context (rephrased rows only: the _rephrased-in-context dataset, and the
+#             _human-in-context eval set with the style examples held out)
 # The image dataset only has synthetic (nl_query) queries, so multimodal rows are
 # synthetic-only. The V ablation runs on synthetic queries for both modalities.
 
@@ -574,6 +581,53 @@ multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=4
 # multimodal  infonce-mined     rephrased  -   seed=46
 # text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=46
 # multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=46
+# -------------------------------------------------------------------------
+# In-context rephrasings (2026-09-11): every rephrased main-grid row retrained on the
+# rephrase_dataset.py --in-context sibling (_rephrased-in-context), whose prompt carried
+# human-written style examples, and scored on its test split and on _human-in-context.
+# Hparams are each style's per-query-kind selection on the plain rephrasing; not re-swept.
+# -------------------------------------------------------------------------
+text        infonce           rephrased  -   rephrase=in-context
+text        infonce-mined     rephrased  -   rephrase=in-context
+text        siglip-mined      rephrased  -   rephrase=in-context
+text        cosent            rephrased  -   rephrase=in-context
+text        ours-cosent       rephrased  -   rephrase=in-context
+text        ours-mse          rephrased  40  easy=10,rephrase=in-context
+text        ours-infonce      rephrased  40  rephrase=in-context
+text        ours-siglip       rephrased  20  easy=10,rephrase=in-context
+text        ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
+text        ours-mse-batched  rephrased  40  easy=10,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,rephrase=in-context
+multimodal  infonce           rephrased  -   rephrase=in-context
+multimodal  infonce-mined     rephrased  -   rephrase=in-context
+multimodal  siglip-mined      rephrased  -   rephrase=in-context
+multimodal  cosent            rephrased  -   rephrase=in-context
+multimodal  ours-cosent       rephrased  -   rephrase=in-context
+multimodal  ours-mse          rephrased  80  easy=10,rephrase=in-context
+multimodal  ours-infonce      rephrased  40  rephrase=in-context
+multimodal  ours-siglip       rephrased  40  easy=10,rephrase=in-context
+multimodal  ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
+multimodal  ours-mse-batched  rephrased  20  easy=10,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,rephrase=in-context
+text        infonce-ours-v3   rephrased  20  rephrase=in-context
+multimodal  infonce-ours-v3   rephrased  10  rephrase=in-context
+# Repeated trials of the in-context headline pair, so its -ic bars carry n=3 like the plain ones.
+text        infonce-ours-v3   rephrased  20  seed=43,rephrase=in-context
+text        infonce-ours-v3   rephrased  20  seed=44,rephrase=in-context
+multimodal  infonce-ours-v3   rephrased  10  seed=43,rephrase=in-context
+multimodal  infonce-ours-v3   rephrased  10  seed=44,rephrase=in-context
+text        infonce-mined     rephrased  -   seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   seed=44,rephrase=in-context
+# nv-mined on in-context: the _rephrased-in-context datasets mined with the selected variant
+# (logs/mine/run_incontext_m0.025_s10.sh), infonce-mined x 3 seeds, like the plain nv-mined rows.
+text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
 "
 
 # ---------------------------------------------------------------------------
@@ -655,15 +709,21 @@ drain() {
 model_for()   { [[ $1 == text ]] && echo "$TEXT_MODEL" || echo "$IMG_MODEL"; }
 # The human-query eval set: a row subset of the base dataset with human_query filled in and
 # every row split=test. One per modality, shared by every condition whatever it trained on.
-human_dataset_for() { # modality -> dataset dir
-  [[ $1 == text ]] && echo "${TEXT_DATASET}_human" || echo "${IMG_DATASET}_human"
+human_dataset_for() { # modality [rephrase] -> dataset dir
+  # rephrase=in-context rows score on the human set minus the style examples their rephraser
+  # saw (download_human_labels.py writes both).
+  local base; [[ $1 == text ]] && base="${TEXT_DATASET}_human" || base="${IMG_DATASET}_human"
+  echo "${base}${2:+-$2}"
 }
-dataset_for() { # modality [query_kind] [negs] [mining] -> dataset dir
+dataset_for() { # modality [query_kind] [negs] [mining] [rephrase] -> dataset dir
   local base
   [[ $1 == text ]] && base=$TEXT_DATASET || base=$IMG_DATASET
   # The rephrased queries live in a sibling dataset built by rephrase_dataset.py; it carries the
   # same rows, split column and labels, with rephrased_query filled in.
   [[ ${2:-} == rephrased ]] && base="${base}_rephrased"
+  # rephrase=in-context: the rephrase_dataset.py --in-context sibling, whose prompt carried
+  # human-written style examples (human_study/in_context_examples_<modality>.json).
+  [[ ${2:-} == rephrased && -n ${5:-} ]] && base="${base}-${5}"
   # negs=mined: the sibling built by mine_hard_negs.py for this query kind. Same rows and
   # split; only the train split's hard negatives differ (retrieval-mined, unmeasured distance).
   [[ ${3:-labeled} == mined ]] && base="${base}_mined-${2}"
@@ -678,13 +738,13 @@ dataset_for() { # modality [query_kind] [negs] [mining] -> dataset dir
 
 run_name_for() { # modality style query_kind V extra
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5
-  local model_short easy="" transform="" split=test negs=labeled mining="" seed=""
+  local model_short easy="" transform="" split=test negs=labeled mining="" seed="" rephrase=""
   model_short=$(basename "$(model_for "$modality")")
   # split is parsed but deliberately NOT part of the name: a val row and its test twin
   # share one model dir, and only their preds subdir differs. negs is not a token either:
   # it selects the dataset, whose tag already carries the _mined-<kind> suffix.
-  parse_extra "$extra" easy transform split negs mining seed
-  local name="${modality}__${model_short}__${style}__$(basename "$(dataset_for "$modality" "$qk" "$negs" "$mining")")__${qk}"
+  parse_extra "$extra" easy transform split negs mining seed rephrase
+  local name="${modality}__${model_short}__${style}__$(basename "$(dataset_for "$modality" "$qk" "$negs" "$mining" "$rephrase")")__${qk}"
   # Token order must match build_run_name extras order: easy, V, transform, note.
   if [[ -n $easy ]]; then name+="__easy-${easy}"; fi
   if [[ $v != - ]]; then name+="__V-${v}"; fi
@@ -695,14 +755,16 @@ run_name_for() { # modality style query_kind V extra
   echo "$name"
 }
 
-parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining_var] [seed_var]
+parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining_var] [seed_var] [rephrase_var]
   local extra=$1 token
   local -n _easy=$2 _transform=$3 _split=$4 _negs=$5
   local _mining_unused
   local -n _mining=${6:-_mining_unused}
   local _seed_unused
   local -n _seed=${7:-_seed_unused}
-  _easy="" _transform="" _split=test _negs=labeled _mining="" _seed=""
+  local _rephrase_unused
+  local -n _rephrase=${8:-_rephrase_unused}
+  _easy="" _transform="" _split=test _negs=labeled _mining="" _seed="" _rephrase=""
   if [[ $extra == - ]]; then return 0; fi
   IFS=, read -ra tokens <<<"$extra"
   for token in "${tokens[@]}"; do
@@ -713,7 +775,8 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
       negs=*) _negs=${token#negs=} ;;
       mining=*) _mining=${token#mining=} ;;
       seed=*) _seed=${token#seed=} ;;
-      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=, negs=, mining=, seed=)" >&2; exit 1 ;;
+      rephrase=*) _rephrase=${token#rephrase=} ;;
+      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=, negs=, mining=, seed=, rephrase=)" >&2; exit 1 ;;
     esac
   done
   case $_split in
@@ -728,9 +791,9 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
 
 train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full command
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5 run_dir=$6
-  local easy="" transform="" split=test negs=labeled mining="" seed=""
-  parse_extra "$extra" easy transform split negs mining seed
-  local cmd="$PY -u train.py --modality $modality --training-style $style --dataset $(dataset_for "$modality" "$qk" "$negs" "$mining") --output-dir $run_dir --note $NOTE --query-kind $qk $TRAIN_COMMON $REPORT_TO $WANDB_ARGS"
+  local easy="" transform="" split=test negs=labeled mining="" seed="" rephrase=""
+  parse_extra "$extra" easy transform split negs mining seed rephrase
+  local cmd="$PY -u train.py --modality $modality --training-style $style --dataset $(dataset_for "$modality" "$qk" "$negs" "$mining" "$rephrase") --output-dir $run_dir --note $NOTE --query-kind $qk $TRAIN_COMMON $REPORT_TO $WANDB_ARGS"
   if [[ $v != - ]]; then cmd+=" --V $v"; fi
   if [[ -n $easy ]]; then cmd+=" --easy-negative-value $easy"; fi
   if [[ -n $transform ]]; then cmd+=" --distance-transform $transform"; fi
@@ -743,7 +806,7 @@ train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full com
 # Build the plan
 # ---------------------------------------------------------------------------
 KEYS=()
-declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=() K_SPLIT=() K_NEGS=() K_MINING=() SEEN_RUN_DIR=()
+declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=() K_SPLIT=() K_NEGS=() K_MINING=() K_REPHRASE=() SEEN_RUN_DIR=()
 
 while read -r modality style qk v extra; do
   [[ -z $modality || $modality == \#* ]] && continue
@@ -752,8 +815,8 @@ while read -r modality style qk v extra; do
   # The split is an evaluation choice, not a training one: a val row and its test twin are
   # the same weights scored on a different split. The key carries the split so both can sit
   # in the plan, while run_dir does not, so the second one reuses the first one's model.
-  row_split=""; row_easy=""; row_transform=""; row_negs=""; row_mining=""
-  parse_extra "$extra" row_easy row_transform row_split row_negs row_mining
+  row_split=""; row_easy=""; row_transform=""; row_negs=""; row_mining=""; row_rephrase=""
+  parse_extra "$extra" row_easy row_transform row_split row_negs row_mining row_seed_unused row_rephrase
   key=$run_name
   [[ $row_split == val ]] && key="$run_name@val"
   run_dir=$MODELS_ROOT/$run_name
@@ -762,6 +825,7 @@ while read -r modality style qk v extra; do
   K_SPLIT[$key]=$row_split
   K_NEGS[$key]=$row_negs
   K_MINING[$key]=$row_mining
+  K_REPHRASE[$key]=$row_rephrase
   K_MODALITY[$key]=$modality K_STYLE[$key]=$style K_QK[$key]=$qk K_V[$key]=$v K_EXTRA[$key]=$extra
 
   if [[ $style == untrained ]]; then
@@ -779,7 +843,7 @@ while read -r modality style qk v extra; do
   SEEN_RUN_DIR[$run_name]=$key
 
   marker=$run_dir/final/modules.json
-  dataset=$(dataset_for "$modality" "$qk" "$row_negs" "$row_mining")
+  dataset=$(dataset_for "$modality" "$qk" "$row_negs" "$row_mining" "$row_rephrase")
   # Collect missing datasets and abort after the plan prints, so every one shows at once.
   if [[ ! -d $dataset ]]; then
     MISSING_DATASETS+=("$key -> $dataset")
@@ -817,7 +881,7 @@ done
 echo
 
 for modality in text multimodal; do
-  human_dataset=$(human_dataset_for "$modality")
+  human_dataset=$(human_dataset_for "$modality" "$row_rephrase")
   [[ -d $human_dataset ]] || MISSING_DATASETS+=("human eval ($modality) -> $human_dataset")
 done
 if ((${#MISSING_DATASETS[@]})); then
@@ -878,7 +942,7 @@ for key in "${KEYS[@]}"; do
   # pointed every rephrased condition at the non-rephrased dataset, whose rephrased_query
   # column is empty -- multimodal then died on "Need at least 3 unique queries" and text
   # silently wrote preds for one empty query.
-  dataset=$(dataset_for "$modality" "${K_QK[$key]}" "${K_NEGS[$key]}" "${K_MINING[$key]}")
+  dataset=$(dataset_for "$modality" "${K_QK[$key]}" "${K_NEGS[$key]}" "${K_MINING[$key]}" "${K_REPHRASE[$key]}")
   test_script=test.py
 
   if [[ $style == untrained ]]; then
@@ -916,7 +980,7 @@ for key in "${KEYS[@]}"; do
     HUMAN_STATUS[$key]="n/a (val row)"
     continue
   fi
-  human_dataset=$(human_dataset_for "$modality")
+  human_dataset=$(human_dataset_for "$modality" "${K_REPHRASE[$key]}")
   if preds_reusable "$run_dir/preds_human/meta.json" "$model_marker"; then
     HUMAN_STATUS[$key]="reused"
   else

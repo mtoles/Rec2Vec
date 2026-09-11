@@ -35,6 +35,7 @@ Usage:
 
 import argparse
 import io
+import json
 import sys
 import urllib.request
 from pathlib import Path
@@ -180,8 +181,29 @@ def base_index(base, positive_column, negative_column):
     return index
 
 
+IN_CONTEXT_SUFFIX = "-in-context"
+
+
+def in_context_examples(out, n_examples):
+    """Row indices of the first kept row of each of the first n_examples annotators.
+
+    Rows are in workbook order (tab, then sheet row), so the first row of an annotator's
+    block is their first non-problematic pair. These rows are the style examples in
+    rephrase_dataset.py --in-context and are held out of the *-in-context human set so
+    that models trained on in-context rephrasings are not scored on the queries their
+    rephraser saw."""
+    first = {}
+    for i, annotator in enumerate(out["annotator"]):
+        if annotator not in first:
+            first[annotator] = i
+    annotators = list(first)[:n_examples]
+    if len(annotators) < n_examples:
+        raise ValueError(f"only {len(annotators)} annotators, cannot take {n_examples} examples")
+    return [first[a] for a in annotators]
+
+
 def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative_column,
-          out_suffix):
+          out_suffix, n_examples):
     print(f"\n== {name}")
     tabs = fetch_workbook(sheet_id)
     check_headers(tabs, headers, sheet_id)
@@ -241,6 +263,21 @@ def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative
     out_path = REPO_ROOT / "dataset/processed" / f"{base_path.name}{out_suffix}"
     out.save_to_disk(str(out_path))
     print(f"  wrote {out_path}: {len(out)} rows, {len(set(out['annotator']))} annotators")
+
+    # The in-context variant: the same set minus the rows used as style examples.
+    examples = in_context_examples(out, n_examples)
+    example_rows = [{"annotator": out[i]["annotator"], "human_query": out[i]["human_query"],
+                     "nl_query": out[i]["nl_query"], positive_column: out[i][positive_column]}
+                    for i in examples]
+    examples_path = Path(__file__).resolve().parent / f"in_context_examples_{name}.json"
+    with open(examples_path, "w") as fh:
+        json.dump(example_rows, fh, indent=2)
+    rest = out.select([i for i in range(len(out)) if i not in set(examples)]).flatten_indices()
+    in_context_path = REPO_ROOT / "dataset/processed" / f"{base_path.name}{out_suffix}{IN_CONTEXT_SUFFIX}"
+    rest.save_to_disk(str(in_context_path))
+    print(f"  wrote {examples_path}: {len(example_rows)} style examples "
+          f"({', '.join(r['annotator'] for r in example_rows)})")
+    print(f"  wrote {in_context_path}: {len(rest)} rows (examples held out)")
     return out
 
 
@@ -248,15 +285,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-suffix", default="_human",
                     help="suffix appended to each base dataset name")
+    ap.add_argument("--in-context-examples", type=int, default=5,
+                    help="first kept row of this many annotators become the rephrasing style "
+                         "examples and are held out of the <suffix>-in-context set")
     args = ap.parse_args()
 
     build("text", "1DRYeAECYlWF2SGniw7vbGj873Hiz6VDEUnystnpjA8M", TEXT_HEADERS,
           REPO_ROOT / "dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek",
-          text_pool, "positive_id", "negative_id", args.out_suffix)
+          text_pool, "positive_id", "negative_id", args.out_suffix, args.in_context_examples)
 
     build("image", "18Ok_AmDiqwMgU5mGXslA-XN3dUNqT_nae4M3XlDbpYw", IMAGE_HEADERS,
           REPO_ROOT / "dataset/processed/deepfashion-inshop-image-triplets_hf_20000",
-          image_pool, "positive_product_id", "negative_product_id", args.out_suffix)
+          image_pool, "positive_product_id", "negative_product_id", args.out_suffix,
+          args.in_context_examples)
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ REPHRASE_PROMPT = """
 
     {product_description}
 
-    Task: Rephrase the query so it keeps the same meaning but sounds more natural and uses synonyms.
+    Task: Rephrase the query so it keeps the same meaning but sounds more natural and uses synonyms.{style_block}
 
     Rules:
     - Preserve intent exactly (positive stays positive, negative stays negative).
@@ -69,12 +69,33 @@ REPHRASE_PROMPT = """
     Return ONLY a JSON object: {{"rephrased_query": "..."}}"""
 
 
-def rephrase_query(nl_query: str, product_description: str, model_id: str) -> Optional[str]:
+STYLE_SENTENCE = ("Rephrase it similar to the style of these example queries, but avoid being "
+                  "exactly like them:")
+
+
+def style_block(examples):
+    """The in-context addition to the prompt: one sentence and a numbered list of example
+    queries, or nothing when there are no examples (the original prompt, byte for byte)."""
+    if not examples:
+        return ""
+    numbered = "\n".join(f"    {i + 1}. {q}" for i, q in enumerate(examples))
+    return f"\n    {STYLE_SENTENCE}\n\n{numbered}"
+
+
+def load_examples(path):
+    """Example queries from human_study/download_human_labels.py --in-context-examples."""
+    with open(path) as fh:
+        return [row["human_query"] for row in json.load(fh)]
+
+
+def rephrase_query(nl_query: str, product_description: str, model_id: str,
+                   examples=None) -> Optional[str]:
     """
     Rephrase a natural language query using the LLM to mean the same thing while avoiding keywords.
 
     product_description is the text of the positive product, given to the model as context so
-    the rewording stays consistent with the item the query is meant to retrieve.
+    the rewording stays consistent with the item the query is meant to retrieve. examples, when
+    given, are human-written queries shown as style examples (--in-context).
     """
     prompt = REPHRASE_PROMPT
 
@@ -99,7 +120,8 @@ def rephrase_query(nl_query: str, product_description: str, model_id: str) -> Op
     messages = [
         {
             "role": "user",
-            "content": prompt.format(query=nl_query, product_description=product_description),
+            "content": prompt.format(query=nl_query, product_description=product_description,
+                                     style_block=style_block(examples)),
         }
     ]
     
@@ -133,13 +155,15 @@ def product_description(row):
 
 
 REPHRASED_SUFFIX = "_rephrased"
+IN_CONTEXT_SUFFIX = "-in-context"
 
 
 DATA_SUFFIXES = {".jsonl", ".json"}
 
 
-def output_path(input_path):
-    """Same path with _rephrased appended: a.jsonl -> a_rephrased.jsonl, dir -> dir_rephrased.
+def output_path(input_path, in_context=False):
+    """Same path with _rephrased appended: a.jsonl -> a_rephrased.jsonl, dir -> dir_rephrased;
+    _rephrased-in-context when the prompt carries style examples.
 
     Only .jsonl/.json count as extensions. Dataset directory names contain dots of their own
     (gemini-2.5-flash), and Path.stem would happily treat ".5-flash_1000000_nolek" as one.
@@ -155,7 +179,8 @@ def output_path(input_path):
             f"{input_path} already ends in {REPHRASED_SUFFIX}; rephrase the original dataset "
             f"instead (rephrasing a rephrasing is not what you want)"
         )
-    return str(path.with_name(stem + REPHRASED_SUFFIX + extension))
+    suffix = REPHRASED_SUFFIX + (IN_CONTEXT_SUFFIX if in_context else "")
+    return str(path.with_name(stem + suffix + extension))
 
 
 def description_map(jsonl_path):
@@ -217,14 +242,14 @@ def load_rows(path, limit=None):
     return rows
 
 
-def rephrase_row(row, model_id):
+def rephrase_row(row, model_id, examples=None):
     """Overwrite rephrased_query. On failure the row keeps its original query, flagged."""
     query = row.get("nl_query")
     if not query:
         row["rephrased_query"] = ""
         row["rephrase_failed"] = True
         return row
-    rephrased = rephrase_query(query, product_description(row), model_id)
+    rephrased = rephrase_query(query, product_description(row), model_id, examples)
     row["rephrased_query"] = rephrased if rephrased else query
     row["rephrase_failed"] = not rephrased
     return row
@@ -232,8 +257,8 @@ def rephrase_row(row, model_id):
 
 def _worker(args_tuple):
     reset_cost_tracking()
-    row, model_id = args_tuple
-    return rephrase_row(row, model_id), get_cost_summary()
+    row, model_id, examples = args_tuple
+    return rephrase_row(row, model_id, examples), get_cost_summary()
 
 
 def run_rows(rows, args, on_row=None):
@@ -251,7 +276,7 @@ def run_rows(rows, args, on_row=None):
             while index < len(rows):
                 chunk = rows[index:index + workers * 4]
                 with Pool(processes=workers) as pool:
-                    results = pool.imap(_worker, [(r, args.model_id) for r in chunk], chunksize=1)
+                    results = pool.imap(_worker, [(r, args.model_id, args.examples) for r in chunk], chunksize=1)
                     chunk_failed = 0
                     for row, summary in results:
                         update_cost_from_summary(summary)
@@ -272,7 +297,7 @@ def run_rows(rows, args, on_row=None):
                     workers = min(args.max_workers, max(workers + 1, int(workers * 1.5)))
         else:
             for row in rows:
-                row = rephrase_row(row, args.model_id)
+                row = rephrase_row(row, args.model_id, args.examples)
                 failed += bool(row.get("rephrase_failed"))
                 done_rows.append(row)
                 if on_row:
@@ -302,10 +327,14 @@ def main():
                     help="chunk failure rate above which the worker count is halved")
     ap.add_argument("--resume", action="store_true", help="skip rows already in the output file")
     ap.add_argument("--show", action="store_true", help="print each prompt and answer in full")
+    ap.add_argument("--in-context", default=None,
+                    help="JSON of human queries (human_study/in_context_examples_<modality>.json) "
+                         "shown as style examples; output gets the -in-context suffix")
     args = ap.parse_args()
+    args.examples = load_examples(args.in_context) if args.in_context else None
 
     # Validate the input name even when --out overrides the destination.
-    default_out = output_path(args.dataset)
+    default_out = output_path(args.dataset, in_context=args.in_context is not None)
     out_path = args.out or default_out
 
     if os.path.isdir(args.dataset):
@@ -327,7 +356,8 @@ def main():
             if args.show:
                 print("\n" + "=" * 100)
                 print(REPHRASE_PROMPT.format(
-                    query=row.get("nl_query", ""), product_description=product_description(row)))
+                    query=row.get("nl_query", ""), product_description=product_description(row),
+                    style_block=style_block(args.examples)))
                 print("-" * 100)
                 print("REPHRASED:", row["rephrased_query"])
 
