@@ -598,6 +598,23 @@ def load_config(args: argparse.Namespace, query_kind: str) -> Dict[str, Any]:
     return config
 
 
+class SeededTrainer(SentenceTransformerTrainer):
+    """SentenceTransformerTrainer whose batch order follows --seed.
+
+    sentence-transformers 6.0.1 seeds the shuffling generator with args.seed but builds the
+    batch sampler without passing `seed`, so the sampler re-seeds that generator with its
+    default 0 (+ epoch) on every __iter__: the batch order is the same for every seed, and
+    only dropout varies between trials (nothing at all for CLIP). Passing args.seed through
+    makes a trial differ in data order as well.
+    """
+
+    def get_batch_sampler(self, dataset, batch_size, drop_last, valid_label_columns=None,
+                          generator=None, seed=0):
+        return super().get_batch_sampler(dataset, batch_size=batch_size, drop_last=drop_last,
+                                         valid_label_columns=valid_label_columns,
+                                         generator=generator, seed=self.args.seed)
+
+
 def name_extras(config: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "easy": config["easy_negative_value"] if "easy_negative_value" in config else None,
@@ -811,7 +828,7 @@ def main():
     print(f"Trainer eval dataset columns: {eval_dataset_for_trainer.column_names}")
     print(f"Final evaluator dataset columns (val): {raw_eval_dataset.column_names}")
 
-    trainer = SentenceTransformerTrainer(
+    trainer = SeededTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset_for_trainer,

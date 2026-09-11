@@ -546,8 +546,9 @@ multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.2_s10,split=va
 # Repeated trials (2026-09-10): the headline comparison, rephrased, both modalities, at
 # each row's selected hparams -- infonce-ours-v3 (ours, graded), infonce-mined on labeled
 # negatives (ours, ungraded), infonce-mined on the val-selected retrieval-mined negatives
-# (baseline). Seeds 43-46; the unsuffixed core row above is seed 42, so every condition
-# has 5 trials. analysis.ipynb reports mean and a 95% CI over the healthy trials.
+# (baseline). Seeds 43-44; the unsuffixed core row above is seed 42, so every condition
+# has 3 trials (cut from 5 on 2026-09-11; the seed 45/46 rows stay commented). analysis.ipynb
+# reports mean and a 95% CI over the healthy trials.
 # -------------------------------------------------------------------------
 text        infonce-ours-v3   rephrased  20  seed=43
 multimodal  infonce-ours-v3   rephrased  10  seed=43
@@ -561,18 +562,18 @@ text        infonce-mined     rephrased  -   seed=44
 multimodal  infonce-mined     rephrased  -   seed=44
 text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44
 multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44
-text        infonce-ours-v3   rephrased  20  seed=45
-multimodal  infonce-ours-v3   rephrased  10  seed=45
-text        infonce-mined     rephrased  -   seed=45
-multimodal  infonce-mined     rephrased  -   seed=45
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=45
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=45
-text        infonce-ours-v3   rephrased  20  seed=46
-multimodal  infonce-ours-v3   rephrased  10  seed=46
-text        infonce-mined     rephrased  -   seed=46
-multimodal  infonce-mined     rephrased  -   seed=46
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=46
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=46
+# text        infonce-ours-v3   rephrased  20  seed=45
+# multimodal  infonce-ours-v3   rephrased  10  seed=45
+# text        infonce-mined     rephrased  -   seed=45
+# multimodal  infonce-mined     rephrased  -   seed=45
+# text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=45
+# multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=45
+# text        infonce-ours-v3   rephrased  20  seed=46
+# multimodal  infonce-ours-v3   rephrased  10  seed=46
+# text        infonce-mined     rephrased  -   seed=46
+# multimodal  infonce-mined     rephrased  -   seed=46
+# text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=46
+# multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=46
 "
 
 # ---------------------------------------------------------------------------
