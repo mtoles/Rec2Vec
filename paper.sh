@@ -106,6 +106,7 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 # Columns: modality  style  query_kind  V  extra
 #   modality: text | multimodal
 #   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | mse-mined | cosent | ours-cosent
+#             | mse (pairwise MSE of cos(q, x) onto 1/0; the ungraded control of classic-mse)
 #             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
 #             | ours-infonce-margin (one-hot infonce-mined + distance-scheduled logit margins)
 #             | infonce-ours-v3 (infonce-mined with soft target mass e^{-s d/V} on the hard negative)
@@ -118,8 +119,12 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>,
 #             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset),
 #             negs=mined-graded (its label_mined_negs.py sibling, query_distance measured),
+#             negs=mixed (the mix_hard_negs.py sibling: a seeded half of the train-split hard
+#             negatives are the mined ones, the rest ours; mining= names the mined source),
 #             mining=<variant> (a mine_hard_negs.py --variant sibling; mining sweep),
 #             seed=<n> (a repeated trial with training seed n; the unsuffixed row is seed 42),
+#             order=mined-first (train.py --train-order: every batch of the mined-negative
+#             queries before any batch of the labeled ones, each epoch; negs=mixed rows),
 #             rephrase=in-context (rephrased rows only: the _rephrased-in-context dataset, and the
 #             _human-in-context eval set with the style examples held out)
 # The image dataset only has synthetic (nl_query) queries, so multimodal rows are
@@ -592,6 +597,7 @@ text        infonce-mined     rephrased  -   rephrase=in-context
 text        siglip-mined      rephrased  -   rephrase=in-context
 text        cosent            rephrased  -   rephrase=in-context
 text        ours-cosent       rephrased  -   rephrase=in-context
+text        mse               rephrased  -   rephrase=in-context
 text        ours-mse          rephrased  40  easy=10,rephrase=in-context
 text        ours-infonce      rephrased  40  rephrase=in-context
 text        ours-siglip       rephrased  20  easy=10,rephrase=in-context
@@ -603,6 +609,7 @@ multimodal  infonce-mined     rephrased  -   rephrase=in-context
 multimodal  siglip-mined      rephrased  -   rephrase=in-context
 multimodal  cosent            rephrased  -   rephrase=in-context
 multimodal  ours-cosent       rephrased  -   rephrase=in-context
+multimodal  mse               rephrased  -   rephrase=in-context
 multimodal  ours-mse          rephrased  80  easy=10,rephrase=in-context
 multimodal  ours-infonce      rephrased  40  rephrase=in-context
 multimodal  ours-siglip       rephrased  40  easy=10,rephrase=in-context
@@ -612,6 +619,41 @@ multimodal  mse-mined         rephrased  80  easy=10,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  rephrase=in-context
 multimodal  infonce-ours-v3   rephrased  10  rephrase=in-context
 # Repeated trials of the in-context headline pair, so its -ic bars carry n=3 like the plain ones.
+# Baseline loss selection (analysis.ipynb section 4, 2026-09-12): the ungraded losses scored on
+# the in-context VALIDATION split, so the choice of baseline is not made on the test set. Same
+# weights as the in-context rows (the seed=43/44 trials are below); inference only. The table
+# marks any slot with fewer than 3 seeds in red, so every loss here has all three.
+text        infonce-mined     rephrased  -   split=val,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,seed=44,rephrase=in-context
+text        cosent            rephrased  -   split=val,rephrase=in-context
+text        cosent            rephrased  -   split=val,seed=43,rephrase=in-context
+text        cosent            rephrased  -   split=val,seed=44,rephrase=in-context
+text        mse               rephrased  -   split=val,rephrase=in-context
+text        mse               rephrased  -   split=val,seed=43,rephrase=in-context
+text        mse               rephrased  -   split=val,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,seed=44,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,seed=43,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,seed=44,rephrase=in-context
+# InfoNCE + NV: infonce-mined on the nv-mined in-context datasets, same 3 seeds, validation split
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  seed=43,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  seed=44,rephrase=in-context
 multimodal  infonce-ours-v3   rephrased  10  seed=43,rephrase=in-context
@@ -620,6 +662,19 @@ text        infonce-mined     rephrased  -   seed=43,rephrase=in-context
 text        infonce-mined     rephrased  -   seed=44,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   seed=43,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   seed=44,rephrase=in-context
+# seeds 43/44 of the other ungraded losses (baseline loss selection, 2026-09-12)
+text        siglip-mined      rephrased  -   seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   seed=44,rephrase=in-context
+text        cosent            rephrased  -   seed=43,rephrase=in-context
+text        cosent            rephrased  -   seed=44,rephrase=in-context
+text        mse               rephrased  -   seed=43,rephrase=in-context
+text        mse               rephrased  -   seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   seed=44,rephrase=in-context
+multimodal  mse               rephrased  -   seed=43,rephrase=in-context
+multimodal  mse               rephrased  -   seed=44,rephrase=in-context
 # nv-mined on in-context: the _rephrased-in-context datasets mined with the selected variant
 # (logs/mine/run_incontext_m0.025_s10.sh), infonce-mined x 3 seeds, like the plain nv-mined rows.
 text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
@@ -628,6 +683,47 @@ text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=4
 multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# -------------------------------------------------------------------------
+# 50/50 mixed negatives (2026-09-11), in-context only: the mix_hard_negs.py sibling
+# (_mixed-rephrased_m0.025_s10) keeps our labeled negative on a seeded half of the train-split
+# hard rows and takes the nv-mined (m0.025_s10) one on the other half. infonce-ours-v3 grades
+# the labeled half; the mined half has no measured distance and is labeled at the easy
+# distance (--unmeasured-negatives easy), so those rows train one-hot, as under infonce-mined.
+# V is re-swept on validation (recall@5 text / recall@20 image) since the training
+# distribution changed; analysis.ipynb section 2 draws the sweep and section 5 gates the
+# test rows on MIXED_SELECTED. Fill V in from the argmax and uncomment the 3-seed rows.
+# Two groups: ours-nv-mixed (one shuffle over the mix) and ours-nv-ordered (order=mined-first:
+# each epoch trains every batch of the nv-mined queries before any batch of ours).
+# -------------------------------------------------------------------------
+text        infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+text        infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+text        infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+multimodal  infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+multimodal  infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+multimodal  infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# Selected V (2026-09-12, val argmax: text 20, image 80, both groups): the seed-42 row shares its model with the sweep cell and is inference only.
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
+text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
+multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
 "
 
 # ---------------------------------------------------------------------------
@@ -733,29 +829,34 @@ dataset_for() { # modality [query_kind] [negs] [mining] [rephrase] -> dataset di
   # negs=mined-graded: the mined sibling after label_mined_negs.py measured every mined
   # negative's query_distance, so the graded losses can train on it.
   [[ ${3:-labeled} == mined-graded ]] && base="${base}_mined-${2}_graded"
+  # negs=mixed: the mix_hard_negs.py sibling, half labeled and half mined train negatives;
+  # mining= names the mined sibling it drew from, as for negs=mined.
+  [[ ${3:-labeled} == mixed ]] && base="${base}_mixed-${2}"
+  [[ ${3:-labeled} == mixed && -n ${4:-} ]] && base="${base}_${4}"
   echo "$base"
 }
 
 run_name_for() { # modality style query_kind V extra
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5
-  local model_short easy="" transform="" split=test negs=labeled mining="" seed="" rephrase=""
+  local model_short easy="" transform="" split=test negs=labeled mining="" seed="" rephrase="" order=""
   model_short=$(basename "$(model_for "$modality")")
   # split is parsed but deliberately NOT part of the name: a val row and its test twin
   # share one model dir, and only their preds subdir differs. negs is not a token either:
   # it selects the dataset, whose tag already carries the _mined-<kind> suffix.
-  parse_extra "$extra" easy transform split negs mining seed rephrase
+  parse_extra "$extra" easy transform split negs mining seed rephrase order
   local name="${modality}__${model_short}__${style}__$(basename "$(dataset_for "$modality" "$qk" "$negs" "$mining" "$rephrase")")__${qk}"
-  # Token order must match build_run_name extras order: easy, V, transform, note.
+  # Token order must match build_run_name extras order: easy, V, transform, order, seed, note.
   if [[ -n $easy ]]; then name+="__easy-${easy}"; fi
   if [[ $v != - ]]; then name+="__V-${v}"; fi
   if [[ -n $transform ]]; then name+="__transform-${transform}"; fi
+  if [[ -n $order ]]; then name+="__order-${order}"; fi
   # seed=<n> names a repeated trial; the trainer default 42 carries no token (train.py name_extras).
   if [[ -n $seed && $seed != 42 ]]; then name+="__seed-${seed}"; fi
   name+="__note-${NOTE}"
   echo "$name"
 }
 
-parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining_var] [seed_var] [rephrase_var]
+parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining_var] [seed_var] [rephrase_var] [order_var]
   local extra=$1 token
   local -n _easy=$2 _transform=$3 _split=$4 _negs=$5
   local _mining_unused
@@ -764,7 +865,9 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
   local -n _seed=${7:-_seed_unused}
   local _rephrase_unused
   local -n _rephrase=${8:-_rephrase_unused}
-  _easy="" _transform="" _split=test _negs=labeled _mining="" _seed="" _rephrase=""
+  local _order_unused
+  local -n _order=${9:-_order_unused}
+  _easy="" _transform="" _split=test _negs=labeled _mining="" _seed="" _rephrase="" _order=""
   if [[ $extra == - ]]; then return 0; fi
   IFS=, read -ra tokens <<<"$extra"
   for token in "${tokens[@]}"; do
@@ -776,7 +879,8 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
       mining=*) _mining=${token#mining=} ;;
       seed=*) _seed=${token#seed=} ;;
       rephrase=*) _rephrase=${token#rephrase=} ;;
-      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=, negs=, mining=, seed=, rephrase=)" >&2; exit 1 ;;
+      order=*) _order=${token#order=} ;;
+      *) echo "Unsupported extra '$token' (supported: easy=, transform=, split=, negs=, mining=, seed=, rephrase=, order=)" >&2; exit 1 ;;
     esac
   done
   case $_split in
@@ -784,20 +888,24 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
     *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
   esac
   case $_negs in
-    labeled|mined|mined-graded) ;;
-    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded)" >&2; exit 1 ;;
+    labeled|mined|mined-graded|mixed) ;;
+    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed)" >&2; exit 1 ;;
   esac
 }
 
 train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full command
   local modality=$1 style=$2 qk=$3 v=$4 extra=$5 run_dir=$6
-  local easy="" transform="" split=test negs=labeled mining="" seed="" rephrase=""
-  parse_extra "$extra" easy transform split negs mining seed rephrase
+  local easy="" transform="" split=test negs=labeled mining="" seed="" rephrase="" order=""
+  parse_extra "$extra" easy transform split negs mining seed rephrase order
   local cmd="$PY -u train.py --modality $modality --training-style $style --dataset $(dataset_for "$modality" "$qk" "$negs" "$mining" "$rephrase") --output-dir $run_dir --note $NOTE --query-kind $qk $TRAIN_COMMON $REPORT_TO $WANDB_ARGS"
   if [[ $v != - ]]; then cmd+=" --V $v"; fi
   if [[ -n $easy ]]; then cmd+=" --easy-negative-value $easy"; fi
   if [[ -n $transform ]]; then cmd+=" --distance-transform $transform"; fi
   if [[ -n $seed ]]; then cmd+=" --seed $seed"; fi
+  # negs=mixed: the mined half has no measured distance; a graded loss labels it at the
+  # easy-negative distance (target mass 0, one-hot like infonce-mined on those rows).
+  if [[ $negs == mixed ]]; then cmd+=" --unmeasured-negatives easy"; fi
+  if [[ -n $order ]]; then cmd+=" --train-order $order"; fi
   if [[ $modality == multimodal && -n $IMG_TRAIN_EXTRA ]]; then cmd+=" $IMG_TRAIN_EXTRA"; fi
   echo "$cmd"
 }
@@ -880,9 +988,15 @@ for key in "${KEYS[@]}"; do
 done
 echo
 
-for modality in text multimodal; do
-  human_dataset=$(human_dataset_for "$modality" "$row_rephrase")
-  [[ -d $human_dataset ]] || MISSING_DATASETS+=("human eval ($modality) -> $human_dataset")
+# Every human eval set a test row of the plan will score on: one per (modality, rephrase).
+declare -A HUMAN_NEEDED=()
+for key in "${KEYS[@]}"; do
+  [[ ${K_SPLIT[$key]} == val ]] && continue
+  HUMAN_NEEDED["${K_MODALITY[$key]}|${K_REPHRASE[$key]}"]=1
+done
+for need in "${!HUMAN_NEEDED[@]}"; do
+  human_dataset=$(human_dataset_for "${need%%|*}" "${need#*|}")
+  [[ -d $human_dataset ]] || MISSING_DATASETS+=("human eval (${need%%|*}) -> $human_dataset")
 done
 if ((${#MISSING_DATASETS[@]})); then
   echo

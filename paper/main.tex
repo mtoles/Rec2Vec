@@ -186,11 +186,49 @@ In product retrieval, Agapaki and Gill combine structured product information wi
 
 
 
-\section{Background}
+
+
+\section{Evaluation}
+
+We target two domains, e-commerce products and images, to demonstrate the multimodal capabilities of our system.
+For e-commerce, we choose the ESCI corpus of Amazon products \red{cite} due to its large size.
+For images, we choose the DeepFashion In-Shop because it contains images with subtle but objectively differing attributes.
+
+In both datasets, we select easy negatives through random sampling of the entire dataset.
+We select candidates for hard negatives in ESCI using the pre-existing substitution labels.
+For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees''.
+
+To extract document attributes, we prompt Gemini 2.5 Flash with the pair of examples, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
+In the DeepFashion dataset, we include images of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
+
+We instruct it to generate up to $k/4=5$ attributes that apply to only the first example, only the second example, to both examples, or to neither example, for a total of $k=20$ attributes.
+We then select a random subset of these attributes to compose the query, negating attributes that do not apply to the positive example, ensuring that at least one attribute is not satisfied by the hard negative example.
+This downsampling step is useful to ensure that selected attributes are not merely the most salient.
+We manually annotate \red{xx} attributes across \red{xx} products in each dataset and find that the attributes are correct \red{xx\%} and \red{xx\%} of the time in ECSI and DeepFashion, respectively.
+Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $0 \leq k' < k$.
+We construct the query with the template "I am looking for: "{item}" that has: {postive + common attributes}; and does not have: {negative + neither attributes}".
+Additionally, we construct a rewritten version of the query to test robustness to rephrasing and non-exact match, prompting the model to preserve intent and numeric values while replacing most attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}).
+
+\section{Baselines}
 
 Numerous training objectives have been proposed for dense retrieval.
-Based on Appendix \ref{???}, we choose Margin-MSE, CoSENT, SIGLIP, and InfoNCE \red{cite} as our baseline loss functions.
-For reference, we define them here:
+Based on \red{Appendix \ref{??}}, we choose Margin-MSE, CoSENT, SIGLIP, and InfoNCE \red{cite} as our baseline loss functions, including their definitions in Appendix \ref{app:loss-functions} for reference.
+We train baseline models using hyperparameters listed in \red{Appendix \ref{??}}, concluding that InfoNCE is the strongest (Table \ref{tab:baseline-loss}).
+To further strengthen our baseline, we choose the strongest hard negative mining algorithm demonstrated in \citet{wischounig2026negative}, NV-Retriever \citep{moreira2024nv} and apply it to InfoNCE. 
+We choose the best of $n=8$ combinations based on a hyperparameter sweep \red{(Appendix \ref{??})}.
+
+
+\begin{table}[t]
+\centering
+\input{figs/baseline_loss_table.tex}
+\caption{Validation split recall of baseline loss functions trained on binary labels, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever.}
+\label{tab:baseline-loss}
+\end{table}
+
+
+
+
+\section{Methods}
 
 Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product similarity is defined as
 
@@ -205,16 +243,13 @@ Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product 
 Where $q$ is a query, $x^+$ is a relevant document, $x^-$ is a less relevant document, and $y$ is a scalar representing the margin between their relevance as determined by a teacher model.
 $f$ is a function mapping queries or documents to their embeddings. 
 Throughout this paper we take $\inner{\cdot}{\cdot}$ to be cosine similarity.
-We include CoSENT, SIGLIP, and InfoNCE loss functions in Appendix \ref{app:loss-functions}, for reference.
+
 
 
 Formally, following \citep{lu2025multiconir}, let query $q_k$ be a query composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., \red{K}\}$.
 We say a document $x$ is a positive document, $x^+$, with respect to $q_k$ if $x^+ \models C$, i.e., $x^+$ satisfies all $k$ conditions.
 Otherwise, we say the document $x^-$ is negative with respect to $q_k$.
 
-
-
-\section{Methods}
 
 
 
@@ -327,33 +362,12 @@ for all $\ell \in S$
 \begin{figure}
     \centering
     \includegraphics[width=0.6\linewidth]{figs/embedding_fig.pdf}
-    \caption{An idealized embedding space. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed as orthonormal directions, and each direction is an exact linear probe for its attribute. The query requiring red and zipper embeds as the superposition $f(x_{\mathrm{red}}) + f(x_{\mathrm{zipper}})$ of its two probes; its cosine similarity with a document counts the queried attributes the document satisfies: $1$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$.}
+    \caption{An idealized embedding space. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed as orthonormal directions; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
     \label{fig:embedding}
 \end{figure}
 
 
 \section{Experiments}
-
-\subsection{Dataset Generation}
-
-We target two domains, e-commerce products and images, to demonstrate the multimodal capabilities of our system.
-For e-commerce, we choose the ESCI corpus of Amazon products \red{cite} due to its large size.
-For images, we choose the DeepFashion In-Shop because it contains images with subtle but objectively different attributes.
-
-In both datasets, we select easy negatives through random sampling of the entire dataset.
-We select candidates for hard negatives in ESCI using the pre-existing substitution labels.
-For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees''.
-
-To extract document attributes, we prompt Gemini 2.5 Flash with the pair of examples, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
-In the DeepFashion dataset, we include images of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
-
-We instruct it to generate up to $k/4=5$ attributes that apply to only the first example, only the second example, to both examples, or to neither example, for a total of $k=20$ attributes.
-We then select a random subset of these attributes to compose the query, negating attributes that do not apply to the positive example, ensuring that at least one attribute is not satisfied by the hard negative example.
-This downsampling step is useful to ensure that selected attributes are not merely the most salient.
-We manually annotate \red{xx} attributes across \red{xx} products in each dataset and find that the attributes are correct \red{xx\%} and \red{xx\%} of the time in ECSI and DeepFashion, respectively.
-Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $0 \leq k' < k$.
-We construct the query with the template "I am looking for: "{item}" that has: {postive + common attributes}; and does not have: {negative + neither attributes}".
-Additionally, we construct a rewritten version of the query to test robustness to rephrasing and non-exact match, prompting the model to preserve intent and numeric values while replacing most attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}).
 
 
 

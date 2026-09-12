@@ -28,9 +28,11 @@ from sentence_transformers import (
     util,
 )
 from sentence_transformers.evaluation import InformationRetrievalEvaluator
+from sentence_transformers.base.sampler import NoDuplicatesBatchSampler
 from sentence_transformers.training_args import BatchSamplers
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+import numpy as np
 import torch
 import wandb
 import yaml
@@ -41,7 +43,7 @@ from utils.graded_losses import (
     MarginInfoNCELoss,
 )
 from utils.distance_labels import (
-    DEFAULT_MAX_DISTANCE, default_easy_negative_distance, to_training_labels,
+    DEFAULT_MAX_DISTANCE, MINED_NEGATIVE_SOURCE, default_easy_negative_distance, to_training_labels,
 )
 from utils.run_naming import build_output_dir, build_run_name
 
@@ -74,6 +76,7 @@ class TrainingStyle(Enum):
     INFONCE_OURS_V3 = "infonce-ours-v3"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
+    MSE = "mse"
 
 
 TRIPLET_STYLES = (
@@ -83,6 +86,7 @@ TRIPLET_STYLES = (
     TrainingStyle.SIGLIP_MINED.value,
     TrainingStyle.COSENT.value,
     TrainingStyle.OURS_COSENT.value,
+    TrainingStyle.MSE.value,
 )
 LABELED_STYLES = (
     TrainingStyle.OURS_MSE.value,
@@ -96,7 +100,7 @@ LABELED_STYLES = (
     TrainingStyle.CLASSIC_MSE.value,
 )
 PAIR_STYLES = (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.COSENT.value,
-               TrainingStyle.OURS_COSENT.value)
+               TrainingStyle.OURS_COSENT.value, TrainingStyle.MSE.value)
 
 
 # ---------------------------------------------------------------------------
@@ -409,14 +413,16 @@ def select_query_fraction(dataset: Dataset, fraction: float, seed: int, split_na
     return selected
 
 
-def build_pair_dataset(dataset: Dataset, is_cosent: bool, tiered: bool = False) -> Dataset:
+def build_pair_dataset(dataset: Dataset, is_cosent: bool, tiered: bool = False,
+                       binary: bool = False) -> Dataset:
     """(anchor, positive, negative[, label]) rows -> (sentence_A, sentence_B, label) pairs.
 
     Negative labels by style. cosent: 0 for every negative, so only the positive/negative
     split reaches the loss. ours-cosent (tiered): 0.5 for the mined hard negative, 0 for a
     random one -- CoSENT reads label order only, so this is exactly the three-rank ordering
     positive > hard > random and nothing more; no distance, V or easy is involved.
-    classic-mse regresses the graded label 1 - d/V.
+    classic-mse regresses the graded label 1 - d/V. mse (binary): 0 for every negative,
+    the ungraded control of classic-mse.
 
     The CoSENT family scores every pair in a batch against every other, so the shared
     positive is emitted from the hard row only; CosineSimilarityLoss scores each pair
@@ -429,7 +435,7 @@ def build_pair_dataset(dataset: Dataset, is_cosent: bool, tiered: bool = False) 
         sources = batch["negative_example_source"]
         if tiered:
             neg_labels = [0.0 if source == "random" else 0.5 for source in sources]
-        elif is_cosent:
+        elif is_cosent or binary:
             neg_labels = [0.0] * n
         else:
             neg_labels = [1.0 - l for l in batch["label"]]
@@ -503,7 +509,9 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # ours-siglip's binary ablation: same layout, scale/bias and weighting, but
         # one-hot targets -- the mined negative is just 0, no graded signal.
         return GradedSigLIPLoss(model=model, easy_label=None, binary=True, batch_size=batch_size)
-    if training_style == TrainingStyle.CLASSIC_MSE.value:
+    if training_style in (TrainingStyle.CLASSIC_MSE.value, TrainingStyle.MSE.value):
+        # Pairwise MSE of cos(q, x) onto the pair label. classic-mse's negatives carry the
+        # graded label 1 - d/V, mse's carry 0 (see build_pair_dataset).
         return losses.CosineSimilarityLoss(model=model)
     raise ValueError(f"Invalid training style: {training_style}")
 
@@ -529,7 +537,15 @@ def parse_args() -> argparse.Namespace:
                         help=", ".join(style.value for style in TrainingStyle))
     parser.add_argument("--config", type=str, default="config.yaml")
     parser.add_argument("--easy-negative-value", type=int, default=None)
+    parser.add_argument("--unmeasured-negatives", type=str, default=None, choices=["refuse", "easy"],
+                        help="graded styles: what to do with a retrieval-mined negative whose "
+                             "query_distance was never measured -- refuse the dataset (default) "
+                             "or label it at the easy-negative distance (mixed datasets)")
     parser.add_argument("--V", type=int, default=None)
+    parser.add_argument("--train-order", type=str, default=None, choices=["mined-first"],
+                        help="mined-first: every batch of the queries whose hard negative is "
+                             "retrieval-mined before any batch of the labeled ones, each epoch "
+                             "(mix_hard_negs.py datasets); default: one shuffle over all rows")
     parser.add_argument("--note", type=str, default=None,
                         help="Free-form experiment tag; becomes part of the run name and output dir")
     parser.add_argument("--distance-transform", type=str, default=None,
@@ -574,7 +590,8 @@ def load_config(args: argparse.Namespace, query_kind: str) -> Dict[str, Any]:
     config.setdefault("training_args", {})
 
     for key in ["dataset", "training_style", "wandb_project", "wandb_group",
-                "easy_negative_value", "V", "note", "distance_transform", "distance_transform_alpha"]:
+                "easy_negative_value", "V", "note", "distance_transform", "distance_transform_alpha",
+                "unmeasured_negatives", "train_order"]:
         value = getattr(args, key)
         if value is not None:
             config[key] = value
@@ -606,13 +623,79 @@ class SeededTrainer(SentenceTransformerTrainer):
     default 0 (+ epoch) on every __iter__: the batch order is the same for every seed, and
     only dropout varies between trials (nothing at all for CLIP). Passing args.seed through
     makes a trial differ in data order as well.
+
+    `train_phases` (--train-order mined-first) is one phase number per train row; the train
+    sampler then yields every phase-0 batch before any phase-1 batch, shuffled within a phase.
+    The eval loader calls get_batch_sampler too, so the phases are applied by row count.
     """
+
+    def __init__(self, *args, train_phases=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.train_phases = train_phases
 
     def get_batch_sampler(self, dataset, batch_size, drop_last, valid_label_columns=None,
                           generator=None, seed=0):
+        if self.train_phases is not None and len(dataset) == len(self.train_phases):
+            return PhasedNoDuplicatesBatchSampler(
+                dataset, batch_size=batch_size, drop_last=drop_last,
+                valid_label_columns=valid_label_columns, generator=generator,
+                seed=self.args.seed, phases=self.train_phases)
         return super().get_batch_sampler(dataset, batch_size=batch_size, drop_last=drop_last,
                                          valid_label_columns=valid_label_columns,
                                          generator=generator, seed=self.args.seed)
+
+
+class PhasedNoDuplicatesBatchSampler(NoDuplicatesBatchSampler):
+    """NoDuplicatesBatchSampler whose epoch is a sequence of phases.
+
+    `phases[i]` is the phase of row i. Each epoch yields the batches of the lowest phase
+    first, then the next, and so on; within a phase the rows are shuffled with the sampler's
+    generator and batched under the no-duplicates rule exactly as the parent does. A phase
+    whose last batch is short yields it short rather than mixing phases in one batch.
+    """
+
+    def __init__(self, *args, phases, **kwargs):
+        super().__init__(*args, **kwargs)
+        if len(phases) != len(self.dataset):
+            raise ValueError(f"{len(phases)} phases for {len(self.dataset)} rows")
+        self.phases = np.asarray(phases)
+        if self.precompute_hashes:
+            raise ValueError("precompute_hashes is not supported by the phased sampler")
+
+    def __iter__(self):
+        if self.generator and self.seed is not None:
+            self.generator.manual_seed(self.seed + self.epoch)
+        for phase in np.unique(self.phases):
+            rows = np.flatnonzero(self.phases == phase)
+            order = torch.randperm(len(rows), generator=self.generator).numpy()
+            yield from self._batches(rows[order])
+
+    def _batches(self, remaining):
+        """The parent's greedy no-duplicates batching over one shuffled index array."""
+        from sentence_transformers.base.sampler import _EXCLUDE_DATASET_COLUMNS, _sample_value_str
+
+        def sample_values(index):
+            return {_sample_value_str(value) for key, value in self.dataset[index].items()
+                    if key not in _EXCLUDE_DATASET_COLUMNS}
+
+        remaining = [int(i) for i in remaining]
+        while remaining:
+            batch_values = set()
+            batch_indices = []
+            deferred = []
+            for index in remaining:
+                if len(batch_indices) == self.batch_size:
+                    deferred.append(index)
+                    continue
+                values = sample_values(index)
+                if not values.isdisjoint(batch_values):
+                    deferred.append(index)
+                    continue
+                batch_indices.append(index)
+                batch_values.update(values)
+            remaining = deferred
+            if len(batch_indices) == self.batch_size or not self.drop_last:
+                yield batch_indices
 
 
 def name_extras(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -620,6 +703,8 @@ def name_extras(config: Dict[str, Any]) -> Dict[str, Any]:
         "easy": config["easy_negative_value"] if "easy_negative_value" in config else None,
         "V": config["V"] if "V" in config else None,
         "transform": config["distance_transform"] if "distance_transform" in config else None,
+        # --train-order mined-first: a curriculum, so the run name carries it.
+        "order": config["train_order"] if "train_order" in config else None,
         # 42 is the trainer default every earlier run used; those names carry no token.
         "seed": config["seed"] if config["seed"] != 42 else None,
         "note": config["note"] if "note" in config else None,
@@ -698,8 +783,11 @@ def main():
             transform_alpha=float(config["distance_transform_alpha"]) if "distance_transform_alpha" in config else 5.0,
             # mse-mined targets every non-positive at easy_label and never reads the label
             # column, so a retrieval-mined negative with no measured distance is labeled
-            # at easy_label there. Every graded style refuses such rows instead.
-            unmeasured_as_easy=training_style == TrainingStyle.MSE_MINED.value,
+            # at easy_label there. Every graded style refuses such rows unless
+            # --unmeasured-negatives easy asks for the same labeling (mix_hard_negs.py
+            # datasets: the mined half then trains one-hot, like a random row).
+            unmeasured_as_easy=training_style == TrainingStyle.MSE_MINED.value
+            or ("unmeasured_negatives" in config and config["unmeasured_negatives"] == "easy"),
         )
         # ours-infonce and infonce-ours-v3 (both GradedInfoNCELoss) recover "this row's
         # negative is random" by comparing the label to easy_label. With easy at the top of
@@ -743,11 +831,31 @@ def main():
             wandb.finish()
         return
 
+    # --train-order mined-first: phase 0 is every row of a query whose hard negative is
+    # retrieval-mined (its random-negative twin included), phase 1 the rest. Read before
+    # prepare_dataset_for_trainer drops the source column; row order is preserved after it.
+    train_phases = None
+    if "train_order" in config:
+        if training_style in PAIR_STYLES:
+            raise ValueError("--train-order is not supported for the pair styles")
+        sources = train_dataset["negative_example_source"]
+        anchors = train_dataset["anchor"]
+        mined_anchors = {a for a, src in zip(anchors, sources) if src == MINED_NEGATIVE_SOURCE}
+        if not mined_anchors:
+            raise ValueError("--train-order mined-first: no retrieval-mined negatives in the train split")
+        train_phases = [0 if a in mined_anchors else 1 for a in anchors]
+        if len(eval_dataset) == len(train_dataset):
+            raise ValueError("eval and train splits have the same row count; the phased "
+                             "sampler tells them apart by length")
+        print(f"Train order mined-first: {train_phases.count(0):,} rows in phase 0 (mined), "
+              f"{train_phases.count(1):,} in phase 1 (labeled)")
+
     if training_style in PAIR_STYLES:
         is_cosent = training_style in (TrainingStyle.COSENT.value, TrainingStyle.OURS_COSENT.value)
         tiered = training_style == TrainingStyle.OURS_COSENT.value
-        train_dataset = build_pair_dataset(train_dataset, is_cosent, tiered)
-        eval_dataset = build_pair_dataset(eval_dataset, is_cosent, tiered)
+        binary = training_style == TrainingStyle.MSE.value
+        train_dataset = build_pair_dataset(train_dataset, is_cosent, tiered, binary)
+        eval_dataset = build_pair_dataset(eval_dataset, is_cosent, tiered, binary)
 
     cuda_count = max(1, torch.cuda.device_count())
     per_device_train_batch_size = min(
@@ -834,6 +942,7 @@ def main():
         train_dataset=train_dataset_for_trainer,
         eval_dataset=eval_dataset_for_trainer,
         loss=loss,
+        train_phases=train_phases,
     )
     trainer.train()
 
