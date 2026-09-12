@@ -649,11 +649,33 @@ multimodal  mse               rephrased  -   split=val,seed=43,rephrase=in-conte
 multimodal  mse               rephrased  -   split=val,seed=44,rephrase=in-context
 # InfoNCE + NV: infonce-mined on the nv-mined in-context datasets, same 3 seeds, validation split
 text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,rephrase=in-context
-text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
-text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+# text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+# multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# seeds 43/44 of the in-context re-selected variant (2026-09-12)
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+# In-context re-run of the NV-Retriever mining sweep (logs/mine/run_nv_sweep_ic_all.sh,
+# 2026-09-12): every grid cell carries an explicit tag, the (0.025, s10) cell is the seed-42
+# val row above. Selection lives in analysis.ipynb NV_SELECTED[..., "in-context"].
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s0,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s0,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s10,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s0,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s10,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.2_s0,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.2_s10,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s0,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s0,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s10,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s0,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s10,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.2_s0,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.2_s10,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  seed=43,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  seed=44,rephrase=in-context
 multimodal  infonce-ours-v3   rephrased  10  seed=43,rephrase=in-context
@@ -677,12 +699,20 @@ multimodal  mse               rephrased  -   seed=43,rephrase=in-context
 multimodal  mse               rephrased  -   seed=44,rephrase=in-context
 # nv-mined on in-context: the _rephrased-in-context datasets mined with the selected variant
 # (logs/mine/run_incontext_m0.025_s10.sh), infonce-mined x 3 seeds, like the plain nv-mined rows.
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
+# text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+# text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
+# multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
+# multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44,rephrase=in-context
+# 2026-09-12: re-selected on the in-context sweep (below): text m0.1_s10, image m0.05_s0.
+# The m0.025_s10 rows above carried the plain-rephrased selection and are kept for reference.
+text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # 50/50 mixed negatives (2026-09-11), in-context only: the mix_hard_negs.py sibling
 # (_mixed-rephrased_m0.025_s10) keeps our labeled negative on a seeded half of the train-split

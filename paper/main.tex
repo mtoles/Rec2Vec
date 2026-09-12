@@ -188,34 +188,53 @@ In product retrieval, Agapaki and Gill combine structured product information wi
 
 
 
-\section{Evaluation}
+\section{Evaluation and Dataset Construction}
+We seek to evaluate models on a test dataset containing query-document pairs where the document satisfies all constraints in the query.
+At the same time, we want the training dataset to contain hard negative examples for those queries that do not satisfy all their constraints.
+Due to the lack of structured attributes in existing datasets, we construct a synthetic data pipeline based on the observation that current generative LLMs can extract the necessary attributes.
+In effect, this pipeline seeks to distill fine-grained attribute extraction from large, generative models into small embedding models.
 
 We target two domains, e-commerce products and images, to demonstrate the multimodal capabilities of our system.
 For e-commerce, we choose the ESCI corpus of Amazon products \red{cite} due to its large size.
 For images, we choose the DeepFashion In-Shop because it contains images with subtle but objectively differing attributes.
 
-In both datasets, we select easy negatives through random sampling of the entire dataset.
-We select candidates for hard negatives in ESCI using the pre-existing substitution labels.
+To extract document attributes, we prompt Gemini 2.5 Flash with a matched positive and negative document pair, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
+We select candidates for hard negatives in ESCI using the pre-existing Substitute and Irrelevant labels.
 For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees''.
-
-To extract document attributes, we prompt Gemini 2.5 Flash with the pair of examples, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
 In the DeepFashion dataset, we include images of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
 
-We instruct it to generate up to $k/4=5$ attributes that apply to only the first example, only the second example, to both examples, or to neither example, for a total of $k=20$ attributes.
+We instruct it to generate up to 5 attributes that apply to only the first example, only the second example, to both examples, or to neither example, a pool of up to 20 attributes.
 We then select a random subset of these attributes to compose the query, negating attributes that do not apply to the positive example, ensuring that at least one attribute is not satisfied by the hard negative example.
-This downsampling step is useful to ensure that selected attributes are not merely the most salient.
+Oversampling here is useful to ensure that selected attributes are not merely the most salient.
+Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $1 \leq k' \leq \min(k, 10)$.
+
+We construct a proto-query with the template "I am looking for: {item} that has: \{positive\} + \{common\} attributes; and does not have: \{negative\} + \{neither\} attributes".
+We then prompt Gemini 2.5 Flash to rewrite the proto-query based on five human-written in-context examples, replacing attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}); the prompt includes the positive document so synonyms stay consistent with it, requires at least half of the attributes to be reworded, and forbids changing numeric values.
+% rephrasing and non-exact match, prompting the model to preserve intent and numeric values while replacing most attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}).
+Rewriting the query in this way is designed to improve the realism and diversity of queries and reduce surface form overlap between queries and positive documents.
+This yields a (query, positive, hard negative) triple.
+We also sample an easy negative at random from the same split.
+The easy negative is drawn from a different category than the positive for DeepFashion.
+This yields a matching (query, positive, easy negative) triple.
+We divide this dataset into train, validation, and test splits, ensuring that no query or document appears in multiple.
+
 We manually annotate \red{xx} attributes across \red{xx} products in each dataset and find that the attributes are correct \red{xx\%} and \red{xx\%} of the time in ECSI and DeepFashion, respectively.
-Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $0 \leq k' < k$.
-We construct the query with the template "I am looking for: "{item}" that has: {postive + common attributes}; and does not have: {negative + neither attributes}".
-Additionally, we construct a rewritten version of the query to test robustness to rephrasing and non-exact match, prompting the model to preserve intent and numeric values while replacing most attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}).
+
 
 \section{Baselines}
 
 Numerous training objectives have been proposed for dense retrieval.
-Based on \red{Appendix \ref{??}}, we choose Margin-MSE, CoSENT, SIGLIP, and InfoNCE \red{cite} as our baseline loss functions, including their definitions in Appendix \ref{app:loss-functions} for reference.
+We choose MSE, CoSENT, SigLIP, and InfoNCE \red{cite} as our baseline loss functions based on their applicability to triple-supervised training and coverage of high level loss strategy families. 
+MSE regresses query-document pairs onto a binary target; CoSENT ranks pairs ordinally; SigLIP classifies in-batch pairs independently; InfoNCE scores each in-batch candidate against the others using a softmax function.
+We include their definitions in Appendix \ref{app:loss-functions} for reference.
+Because batch size affects CoSENT, SigLIP, and InfoNCE training dynamics, we hold batch size constant across all runs.
+We design our experiments such that each model sees each training triple once per epoch.
+We train every model for one epoch with 32 rows per forward pass and 4 forward passes per optimizer step.
+The pair-based losses (MSE, CoSENT) emit two pairs per training triple, so their batches contain about half as many positives as the triple-based losses.
 We train baseline models using hyperparameters listed in \red{Appendix \ref{??}}, concluding that InfoNCE is the strongest (Table \ref{tab:baseline-loss}).
-To further strengthen our baseline, we choose the strongest hard negative mining algorithm demonstrated in \citet{wischounig2026negative}, NV-Retriever \citep{moreira2024nv} and apply it to InfoNCE. 
-We choose the best of $n=8$ combinations based on a hyperparameter sweep \red{(Appendix \ref{??})}.
+% \red{To further strengthen our baseline, we adopt the positive-aware hard negative mining of NV-Retriever \citep{moreira2024nv}, which the survey of \citet{wischounig2026negative} classifies under false-negative filtering and which underlies the top retrieval model on the MTEB leaderboard in their Table 5 \textcolor{orange}{(cite NV-Embed-v2)}, and apply it to InfoNCE.}
+To further strengthen our baseline, we apply the positive-aware hard negative mining algorithm NV-Retriever, a key component of NV-Embed-v2 \citep{lee2024nv}, the strongest model based on hard negative mining listed in \citet{wischounig2026negative}.
+We choose the best of $n=8$ hyperparameter combinations based on a grid search \red{(Appendix \ref{??})}.
 
 
 \begin{table}[t]
@@ -362,7 +381,8 @@ for all $\ell \in S$
 \begin{figure}
     \centering
     \includegraphics[width=0.6\linewidth]{figs/embedding_fig.pdf}
-    \caption{An idealized embedding space. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed as orthonormal directions; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
+    % \caption{An idealized embedding space in $\mathcal{R}^4$, projected into $\mathcal{R}^3$. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed embed.; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
+    \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate. Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see. The query is the normalized sum of its attributes' linear probes $b_i$. With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$. Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
     \label{fig:embedding}
 \end{figure}
 

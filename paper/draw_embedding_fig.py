@@ -1,12 +1,20 @@
-"""Figure: attribute basis vectors and a query vector in embedding space.
+"""Figure: attribute document vectors and a query vector in embedding space.
 
-The three single-attribute document embeddings form an orthonormal basis; the
-query is the unit-normalized sum of two of them. Dotted perpendiculars drop
-the red and cotton tips onto the x and y axes, and a dotted drop from the
-query tip to the xy plane lands on the red vector, showing that the query lies
-above it.
-All four vectors are rotated 30 degrees clockwise about z while the axis guides
-and the camera stay put, so the vectors sit off the coordinate axes.
+The space is four-dimensional; the figure draws the first three. The three
+single-attribute documents have mutually orthogonal visible parts and put the
+rest of their unit length into a fourth component that is not drawn: red and
+cotton have visible length sqrt(2/3), zipper only 1/sqrt(3). The query is the
+unit-normalized sum of its attributes' exact linear probes, each probe being the
+attribute's visible unit direction divided by its document's visible length, so the
+query leans toward zipper and has no fourth component. Its cosine with x_red
+and with x_zipper is the same, sqrt(2)/3 = 1/V with V = 3/sqrt(2). The
+positive document x_{red,zipper}, which the probes force to be the visible sum
+of x_red and x_zipper with no fourth component, scores 2/V. Dotted
+perpendiculars drop the red and cotton tips onto the x and y axes, and dotted
+drops from the query tip and the positive's tip to the xy plane land on the
+red vector.
+The visible parts are rotated 45 degrees clockwise about z while the axis
+guides and the camera stay put, so the vectors sit off the coordinate axes.
 
 Usage:  python draw_embedding_fig.py
   -> paper/figs/embedding_fig.{pdf,png}
@@ -24,25 +32,33 @@ from matplotlib.transforms import Bbox
 from mpl_toolkits.mplot3d.proj3d import proj_transform
 
 # --- vectors ---------------------------------------------------------------
-# The standard basis turned 30 degrees clockwise about z. Rotation is an
-# isometry, so the basis stays orthonormal; the query is the sum of two basis
-# vectors scaled to unit norm.
-COS30, SIN30 = np.sqrt(3) / 2, 0.5
-RED = np.array([COS30, -SIN30, 0.0])     # (1, 0, 0) rotated
-COTTON = np.array([SIN30, COS30, 0.0])   # (0, 1, 0) rotated
-ZIPPER = np.array([0.0, 0.0, 1.0])       # on the axis of rotation, unmoved
-QUERY = (RED + ZIPPER) / np.sqrt(2)      # unit norm
+# Visible (first three) components only. The unit directions are the standard
+# basis turned 45 degrees clockwise about z; each document's visible part is
+# that direction scaled to its visible length, the rest of its unit norm being
+# the fourth component that is not drawn. The query is the normalized sum of
+# the probes E_RED / |RED| and E_ZIPPER / |ZIPPER| and has no fourth component.
+R2 = 1 / np.sqrt(2)
+E_RED = np.array([R2, -R2, 0.0])
+E_COTTON = np.array([R2, R2, 0.0])
+E_ZIPPER = np.array([0.0, 0.0, 1.0])
+RED = np.sqrt(2 / 3) * E_RED         # (1/sqrt3, -1/sqrt3, 0 | 1/sqrt3)
+COTTON = np.sqrt(2 / 3) * E_COTTON   # (1/sqrt3, 1/sqrt3, 0 | 1/sqrt3)
+ZIPPER = (1 / np.sqrt(3)) * E_ZIPPER # (0, 0, 1/sqrt3 | sqrt2/sqrt3)
+PROBE_SUM = E_RED / np.linalg.norm(RED) + E_ZIPPER / np.linalg.norm(ZIPPER)
+QUERY = PROBE_SUM / np.linalg.norm(PROBE_SUM)  # (1/sqrt6, -1/sqrt6, sqrt2/sqrt3 | 0)
+POSITIVE = RED + ZIPPER                        # (1/sqrt3, -1/sqrt3, 1/sqrt3 | 0), unit norm
 
 # --- geometry --------------------------------------------------------------
 ELEV, AZIM = 20.0, 32.0   # camera
 LIM = 1.25                # equal on all three axes, else the projection shears
 AXIS_LEN = 1.2            # how far the axis guides run
-FIGSIZE = (5.2, 3.9)
+FIGSIZE = (6.0, 3.9)
 CROP_PAD = 4              # points of whitespace kept around the content
 
 # --- style -----------------------------------------------------------------
 DOC = "#8c2b34"        # the three attribute vectors and their labels
 ACCENT = "#2a78d6"     # the query vector
+POSITIVE_COLOR = "#1b6b3a"  # the positive document and its label
 CONSTRUCT = "#9fbfe6"  # the query's construction path
 AXIS = "#dfe3e8"       # solid axis guides
 
@@ -59,17 +75,20 @@ plt.rcParams.update({
 # the whole label moves with them.
 LABELS = (
     {"xy": (0.186, 0.165),
-     "text": r"$f(x_{\mathrm{red}}) = (\frac{\sqrt{3}}{2}, -\frac{1}{2}, 0)$",
+     "text": r"$f(x_{\mathrm{red}}) = (\frac{1}{\sqrt{3}}, -\frac{1}{\sqrt{3}}, 0, \frac{1}{\sqrt{3}})$",
      "color": DOC},
-    {"xy": (0.659, 0.191),
-     "text": r"$f(x_{\mathrm{cotton}}) = (\frac{1}{2}, \frac{\sqrt{3}}{2}, 0)$",
+    {"xy": (0.77, 0.10),
+     "text": r"$f(x_{\mathrm{cotton}}) = (\frac{1}{\sqrt{3}}, \frac{1}{\sqrt{3}}, 0, \frac{1}{\sqrt{3}})$",
      "color": DOC},
-    {"xy": (0.623, 0.588),
-     "text": r"$f(x_{\mathrm{zipper}}) = (0, 0, 1)$",
+    {"xy": (0.66, 0.60),
+     "text": r"$f(x_{\mathrm{zipper}}) = (0, 0, \frac{1}{\sqrt{3}}, \frac{\sqrt{2}}{\sqrt{3}})$",
      "color": DOC},
-    {"xy": (0.105, 0.8),
-     "text": r"$f(q_{\mathrm{red,zipper}}) = \frac{1}{\sqrt{2}}(\frac{\sqrt{3}}{2}, -\frac{1}{2}, 1)$",
+    {"xy": (0.36, 0.905),
+     "text": r"$f(q_{\mathrm{red,zipper}}) = (\frac{1}{\sqrt{6}}, -\frac{1}{\sqrt{6}}, \frac{\sqrt{2}}{\sqrt{3}}, 0)$",
      "color": ACCENT},
+    {"xy": (0.02, 0.655),
+     "text": "$f(x_{\\mathrm{red,zipper}})$\n$= (\\frac{1}{\\sqrt{3}}, -\\frac{1}{\\sqrt{3}}, \\frac{1}{\\sqrt{3}}, 0)$",
+     "color": POSITIVE_COLOR},
 )
 
 ORIGIN = np.zeros(3)
@@ -138,8 +157,10 @@ def main():
     dotted(ax, RED, RED * [1, 0, 0])         # red tip onto the x axis
     dotted(ax, COTTON, COTTON * [0, 1, 0])   # cotton tip onto the y axis
     dotted(ax, QUERY, QUERY * [1, 1, 0])     # query tip onto the xy plane
+    dotted(ax, POSITIVE, POSITIVE * [1, 1, 0])  # positive tip onto the xy plane, at the red tip
     for vec in (RED, COTTON, ZIPPER):
         arrow(ax, vec, DOC)
+    arrow(ax, POSITIVE, POSITIVE_COLOR)
     arrow(ax, QUERY, ACCENT, lw=2.2, zorder=6)
 
     for label in LABELS:
@@ -152,7 +173,9 @@ def main():
     ax.view_init(elev=ELEV, azim=AZIM)
     ax.set_axis_off()  # no panes, grid, or ticks
 
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.06, top=1.0)
+    # The axes keep the width of a 5.2in canvas; the extra 0.8in on the left is room for
+    # labels placed at negative axes x, which the ink crop then trims to.
+    fig.subplots_adjust(left=0.15, right=0.98, bottom=0.06, top=1.0)
     crop = ink_bbox(fig).transformed(fig.dpi_scale_trans.inverted())
 
     out_dir = pathlib.Path(__file__).resolve().parent / "figs"
