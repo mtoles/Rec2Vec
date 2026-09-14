@@ -252,7 +252,7 @@ def mine(dataset, modality, kind, teacher, model, args):
     return records, item_id, item_category
 
 
-def apply(dataset, records, modality, item_id, item_category):
+def apply(dataset, records, modality, item_id, item_category, source=MINED_NEGATIVE_SOURCE):
     pos_id_col, neg_id_col = ID_COLUMNS[modality]
     blank = [c for c in PAIR_COLUMNS if c in dataset.column_names]
 
@@ -264,7 +264,7 @@ def apply(dataset, records, modality, item_id, item_category):
                 continue
             batch["negative_example"][r] = rec["mined_item"]
             batch[neg_id_col][r] = rec["mined_id"]
-            batch["negative_example_source"][r] = MINED_NEGATIVE_SOURCE
+            batch["negative_example_source"][r] = source
             batch["query_distance"][r] = None
             for c in blank:
                 batch[c][r] = None

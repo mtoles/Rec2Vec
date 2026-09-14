@@ -68,7 +68,7 @@ export OMP_NUM_THREADS=${OMP_NUM_THREADS:-12} MKL_NUM_THREADS=${MKL_NUM_THREADS:
 # member then its ungraded (mined) control, families in paper priority -- infonce, mse, siglip.
 # ours-cosent is cosent with a third rank (positive > hard > random); CoSENT reads label order
 # only, so it has no V/easy and no search -- main-grid rows only.
-PRIORITY_STYLES=(infonce-ours-v3 ours-infonce-margin infonce-mined ours-mse-batched mse-mined ours-cosent cosent ours-siglip siglip-mined)
+PRIORITY_STYLES=(infonce-ours-v3 ours-infonce-margin infonce-mined ours-mse-batched mse-mined ours-cosent cosent siglip-v3 ours-siglip siglip-mined)
 
 TEXT_MODEL=sentence-transformers/all-mpnet-base-v2
 IMG_MODEL=sentence-transformers/clip-ViT-B-32
@@ -110,6 +110,8 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
 #             | ours-infonce-margin (one-hot infonce-mined + distance-scheduled logit margins)
 #             | infonce-ours-v3 (infonce-mined with soft target mass e^{-s d/V} on the hard negative)
+#             | siglip-v3 (siglip-mined with the own hard negative's target e^{-s d/V}; ours-siglip's 1 - d/V
+#               target replaced the way infonce-ours-v3 replaces ours-infonce's)
 #             infonce is the standard 2-column objective (in-batch negatives only);
 #             infonce-mined adds our labeled hard negative as a third column.
 #             | ours-mse-batched (ours over the full in-batch candidate pool)
@@ -119,6 +121,7 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>,
 #             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset),
 #             negs=mined-graded (its label_mined_negs.py sibling, query_distance measured),
+#             negs=random (the random_hard_negs.py sibling: hard negatives replaced by random products),
 #             negs=mixed (the mix_hard_negs.py sibling: a seeded half of the train-split hard
 #             negatives are the mined ones, the rest ours; mining= names the mined source),
 #             mining=<variant> (a mine_hard_negs.py --variant sibling; mining sweep),
@@ -754,6 +757,173 @@ text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=4
 multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
 multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
 multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
+# -------------------------------------------------------------------------
+# Full in-context result set for the mse / cosent / siglip families (2026-09-13), matching
+# infonce's: 3 seeds on the graded and ungraded styles; the ungraded loss on the NV-mined
+# in-context negatives at the variant selected on the infonce sweep (text m0.1_s10, image
+# m0.05_s0; not re-selected per loss); the graded loss on the 50/50 mix, V re-swept on the
+# mixed validation split (easy fixed at the style's selection), then 3 seeds at the argmax.
+# -------------------------------------------------------------------------
+# seeds 43/44 on the existing in-context rows
+text        ours-mse-batched  rephrased  40  easy=10,seed=43,rephrase=in-context
+text        ours-mse-batched  rephrased  40  easy=10,seed=44,rephrase=in-context
+multimodal  ours-mse-batched  rephrased  20  easy=10,seed=43,rephrase=in-context
+multimodal  ours-mse-batched  rephrased  20  easy=10,seed=44,rephrase=in-context
+text        ours-siglip       rephrased  20  easy=10,seed=43,rephrase=in-context
+text        ours-siglip       rephrased  20  easy=10,seed=44,rephrase=in-context
+multimodal  ours-siglip       rephrased  40  easy=10,seed=43,rephrase=in-context
+multimodal  ours-siglip       rephrased  40  easy=10,seed=44,rephrase=in-context
+text        ours-cosent       rephrased  -   seed=43,rephrase=in-context
+text        ours-cosent       rephrased  -   seed=44,rephrase=in-context
+multimodal  ours-cosent       rephrased  -   seed=43,rephrase=in-context
+multimodal  ours-cosent       rephrased  -   seed=44,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,seed=43,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,seed=44,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,seed=43,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,seed=44,rephrase=in-context
+text        cosent            rephrased  -   seed=43,rephrase=in-context
+text        cosent            rephrased  -   seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   seed=44,rephrase=in-context
+# nv-mined group: the ungraded loss on the NV-mined in-context negatives, 3 seeds
+text        mse-mined         rephrased  40  easy=10,negs=mined,mining=m0.1_s10,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=mined,mining=m0.05_s0,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+text        cosent            rephrased  -   negs=mined,mining=m0.1_s10,rephrase=in-context
+text        cosent            rephrased  -   negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
+text        cosent            rephrased  -   negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+# mixed group: V sweep on the mixed in-context validation split (ours-cosent has no V)
+text        ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-siglip       rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-siglip       rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-siglip       rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-siglip       rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# mixed group: 3 seeds. ours-cosent now; ours-mse-batched / ours-siglip once V is selected (fill V, uncomment)
+text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
+text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# text        ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+# text        ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# text        ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# multimodal  ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+# multimodal  ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# multimodal  ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# text        ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+# text        ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# text        ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# multimodal  ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+# multimodal  ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# multimodal  ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# -------------------------------------------------------------------------
+# Random-negative control (2026-09-13), in-context only: each family's ungraded style on the
+# random_hard_negs.py sibling, where every train-split hard negative is a uniform random
+# product. Shows what any hard negative (ours or NV-mined) adds over none. 3 seeds.
+# -------------------------------------------------------------------------
+text        infonce-mined     rephrased  -   negs=random,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=random,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=random,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=random,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=random,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=random,seed=44,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=random,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=random,seed=43,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=random,seed=44,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=random,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=random,seed=43,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=random,seed=44,rephrase=in-context
+text        cosent            rephrased  -   negs=random,rephrase=in-context
+text        cosent            rephrased  -   negs=random,seed=43,rephrase=in-context
+text        cosent            rephrased  -   negs=random,seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=random,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=random,seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=random,seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=random,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=random,seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=random,seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=random,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=random,seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=random,seed=44,rephrase=in-context
+# Baseline loss selection on random negatives (2026-09-14, analysis.ipynb section 4): Table 1
+# compares the ungraded losses trained on the random_hard_negs.py sibling, not on our labeled
+# hard negative, so that the baseline choice does not depend on our data. Validation split.
+# infonce-mined / cosent / siglip-mined reuse the random-control weights above (inference only);
+# mse (pairwise, the table's MSE row) has no random-control test row, so its rows train here.
+text        infonce-mined     rephrased  -   split=val,negs=random,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        cosent            rephrased  -   split=val,negs=random,rephrase=in-context
+text        cosent            rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        cosent            rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,negs=random,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        mse               rephrased  -   split=val,negs=random,rephrase=in-context
+text        mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+# -------------------------------------------------------------------------
+# siglip-v3 (2026-09-14): ours-siglip with the exponential target (utils/graded_losses.py,
+# exponential=True). Like infonce-ours-v3, easy plays no part (random and cross-row cells
+# target 0), so the sweep is V alone, on the in-context rephrased validation split -- the
+# paper's rephrased kind -- at recall@5 text / recall@20 image. Fill V in from the argmax and
+# uncomment the 3-seed rows; the seed-42 row shares its model with the sweep cell.
+# Selected 2026-09-14: V=80 both modalities (val argmax; monotone in V, grid edge).
+# -------------------------------------------------------------------------
+text        siglip-v3         rephrased  10  split=val,rephrase=in-context
+text        siglip-v3         rephrased  20  split=val,rephrase=in-context
+text        siglip-v3         rephrased  40  split=val,rephrase=in-context
+text        siglip-v3         rephrased  80  split=val,rephrase=in-context
+multimodal  siglip-v3         rephrased  10  split=val,rephrase=in-context
+multimodal  siglip-v3         rephrased  20  split=val,rephrase=in-context
+multimodal  siglip-v3         rephrased  40  split=val,rephrase=in-context
+multimodal  siglip-v3         rephrased  80  split=val,rephrase=in-context
+text        siglip-v3         rephrased  80  rephrase=in-context
+text        siglip-v3         rephrased  80  seed=43,rephrase=in-context
+text        siglip-v3         rephrased  80  seed=44,rephrase=in-context
+multimodal  siglip-v3         rephrased  80  rephrase=in-context
+multimodal  siglip-v3         rephrased  80  seed=43,rephrase=in-context
+multimodal  siglip-v3         rephrased  80  seed=44,rephrase=in-context
 "
 
 # ---------------------------------------------------------------------------
@@ -863,6 +1033,9 @@ dataset_for() { # modality [query_kind] [negs] [mining] [rephrase] -> dataset di
   # mining= names the mined sibling it drew from, as for negs=mined.
   [[ ${3:-labeled} == mixed ]] && base="${base}_mixed-${2}"
   [[ ${3:-labeled} == mixed && -n ${4:-} ]] && base="${base}_${4}"
+  # negs=random: the random_hard_negs.py sibling, every train-split hard negative replaced by a
+  # uniform random product -- the control for hard-negative mining of any kind.
+  [[ ${3:-labeled} == random ]] && base="${base}_random-${2}"
   echo "$base"
 }
 
@@ -918,8 +1091,8 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
     *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
   esac
   case $_negs in
-    labeled|mined|mined-graded|mixed) ;;
-    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed)" >&2; exit 1 ;;
+    labeled|mined|mined-graded|mixed|random) ;;
+    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed, random)" >&2; exit 1 ;;
   esac
 }
 

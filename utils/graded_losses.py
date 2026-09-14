@@ -221,6 +221,16 @@ class GradedSigLIPLoss(nn.Module):
         cross-row:         1 - easy_label     (a random product sits at the easy distance,
                                                the same target as the row's own random
                                                negative -- 0.5 for linear V=40)
+    exponential (siglip-v3): the hard negative's target is exp(-target_scale * label)
+    instead of 1 - label, and every random or cross-row cell targets 0 -- the same change
+    GradedExponentialInfoNCELoss makes to GradedInfoNCELoss. With 1 - label every non-positive
+    cell targets >= 1 - easy_label (0.5 at the selected easy=10, V=20), so nothing is pushed
+    toward 0 and the graded version separates less than its binary control. With the
+    exponential a d=1 negative targets exp(-target_scale / V) (0.37 at V=20, 0.78 at V=80), a
+    d=10 one exp(-10 target_scale / V) (~0 at V=20, 0.08 at V=80), and random products 0.
+    Random rows are identified by label == easy_label as in the InfoNCE losses, so train.py
+    applies the same easy-collision refusal.
+
     s and b are learnable (the SigLIP recipe); the trainer optimizes loss parameters
     alongside the model. b starts at each mode's prior: -log(2B - 1) in binary mode
     (sigma(b) = 1/2B, the chance a candidate is the match) and 0 in graded mode (most
@@ -231,7 +241,8 @@ class GradedSigLIPLoss(nn.Module):
 
     def __init__(self, model: SentenceTransformer, easy_label: float | None,
                  hard_weight: float = 0.5, init_scale: float = 10.0, init_bias: float | None = None,
-                 binary: bool = False, batch_size: int | None = None):
+                 binary: bool = False, batch_size: int | None = None,
+                 exponential: bool = False, target_scale: float = 20.0):
         """
         easy_label: as in BatchGradedMarginMSELoss. Unused in binary mode.
         hard_weight: fraction of the loss carried by the 2B labeled cells (own positive +
@@ -244,8 +255,9 @@ class GradedSigLIPLoss(nn.Module):
         """
         super().__init__()
         assert binary or easy_label is not None
+        assert not (binary and exponential)
         if init_bias is None:
-            if binary:
+            if binary or exponential:
                 # SigLIP's init principle scaled to this batch: sigma(b) = the prior
                 # probability that a candidate is the match, 1/2B (Zhai et al. 2023 use
                 # b = -10 at |B| ~ 16k by the same logic). Graded targets center at
@@ -258,6 +270,8 @@ class GradedSigLIPLoss(nn.Module):
         self.easy_label = easy_label
         self.hard_weight = hard_weight
         self.binary = binary
+        self.exponential = exponential
+        self.target_scale = target_scale
         self.logit_scale = nn.Parameter(torch.tensor(float(init_scale)).log())
         self.logit_bias = nn.Parameter(torch.tensor(float(init_bias)))
 
@@ -276,6 +290,13 @@ class GradedSigLIPLoss(nn.Module):
         if self.binary:
             T = torch.zeros_like(Z)
             T[idx, idx] = 1.0
+        elif self.exponential:
+            targets = labels.to(Z.dtype)
+            is_random = targets >= self.easy_label - 1e-6
+            T = torch.zeros_like(Z)
+            T[idx, idx] = 1.0
+            T[idx, B + idx] = torch.where(is_random, torch.zeros_like(targets),
+                                          torch.exp(-self.target_scale * targets))
         else:
             targets = labels.to(Z.dtype)
             T = torch.full_like(Z, 1.0 - self.easy_label)

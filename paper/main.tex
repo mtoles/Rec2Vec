@@ -217,6 +217,8 @@ We also sample an easy negative at random from the same split.
 The easy negative is drawn from a different category than the positive for DeepFashion.
 This yields a matching (query, positive, easy negative) triple.
 We divide this dataset into train, validation, and test splits, ensuring that no query or document appears in multiple.
+Note that the hard negative mining procedure can be applied to virtually any dataset or modality that can on which an LLM can perform binary QA, thus we consider it the first contribution of this paper.
+
 
 We manually annotate \red{xx} attributes across \red{xx} products in each dataset and find that the attributes are correct \red{xx\%} and \red{xx\%} of the time in ECSI and DeepFashion, respectively.
 
@@ -227,7 +229,9 @@ Numerous training objectives have been proposed for dense retrieval.
 We choose MSE, CoSENT, SigLIP, and InfoNCE \red{cite} as our baseline loss functions based on their applicability to triple-supervised training and coverage of high level loss strategy families. 
 MSE regresses query-document pairs onto a binary target; CoSENT ranks pairs ordinally; SigLIP classifies in-batch pairs independently; InfoNCE scores each in-batch candidate against the others using a softmax function.
 We include their definitions in Appendix \ref{app:loss-functions} for reference.
-Because batch size affects CoSENT, SigLIP, and InfoNCE training dynamics, we hold batch size constant across all runs.
+Because batch size affects CoSENT, SigLIP, and InfoNCE training dynamics through pairwise in-batch comparisons, we hold batch size constant across all runs.
+To do so, we expand the batch to include $B$ positives and $B$ negatives, comparing all positives to all positives and all negatives, for a total of $2B^2$ comparisons, as opposed to $B^2$, conventionally.
+This permits imcorporating the baseline NV-Retriever and our proposed hard negative mining algorithms without confounding comparisons per batch \red{(Section \ref{??})}.
 We design our experiments such that each model sees each training triple once per epoch.
 We train every model for one epoch with 32 rows per forward pass and 4 forward passes per optimizer step.
 The pair-based losses (MSE, CoSENT) emit two pairs per training triple, so their batches contain about half as many positives as the triple-based losses.
@@ -240,7 +244,7 @@ We choose the best of $n=8$ hyperparameter combinations based on a grid search \
 \begin{table}[t]
 \centering
 \input{figs/baseline_loss_table.tex}
-\caption{Validation split recall of baseline loss functions trained on binary labels, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever.}
+\caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives. +NV indicates the model was trained using negatives mined with NV-Retriever.}
 \label{tab:baseline-loss}
 \end{table}
 
@@ -291,70 +295,95 @@ Formally, we define Attribute Hamming Distance $d$ as
     \end{cases}
 \end{equation}
 
-We then modify the Margin-MSE loss function
+We then modify modify each loss function, with the modification in \textbf{bold}:
+
+\paragraph{Margin-MSE:}
+We set the margin term to $d/V$:
 
 \begin{equation}
 \label{eq:hamming}
-    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \tfrac{d}{V} \Big)^2
+    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \boldsymbol{\tfrac{d}{V}} \Big)^2
 \end{equation}
 
 Where the violation scale hyperparameter $V$ controls the penalty per violation and easy negative distance $\eta > 0$ controls the penalty for easy negatives.
 Let $K^*$ be the maximum number of constraints violated by any example.
 Choosing $V \geq \text{max}(\eta, K^*)$ ensures the $d/V$ term is in $[0, 1]$.
-We demonstrate the broad applicability of this strategy by modifying the other baseline loss functions:
 
-InfoNCE.
-\red{Every document in a batch of $B$ triples is a candidate for every query. A candidate drawn from another row is a random product with respect to $q_i$, so we treat it as an easy negative with $d = \eta$; the positive has $d = 0$ since it satisfies every condition. We add $d / V$ to each candidate's cosine inside the softmax:}
+\paragraph{InfoNCE:}
+Every document in a batch of $B$ triples is a candidate for every query: the $B$ positives and the $B$ hard negatives, the set $X$ of $2B$ candidates. InfoNCE trains the softmax over $X$ toward a one-hot target on the query's own positive. We keep the logits and change the target: the own positive keeps mass $1$, the own hard negative receives mass $e^{-s\,d/V}$ for its measured $d$, and every candidate drawn from another row, positive or negative, is a random product with respect to $q_i$ and receives no mass. Rows are normalized to sum to one:
 
-\begin{equation}
+\begin{align}
+    \label{eq:ours-infonce-target}
+    T_i(x) &=
+    \begin{cases}
+        1 & x = x_i^+ \\
+        e^{-s\, d(x_i^-, q_i) / V} & x = x_i^- \\
+        0 & \text{otherwise,}
+    \end{cases} \\[0.5em]
     \label{eq:ours-infonce}
-    \mathcal{L}_\text{InfoNCE}(q_i) = - \log \frac{\exp\big( s \cos(q_i, x_i^+) \big)}{\sum_{j=1}^{B} \exp\Big( s \big( \cos(q_i, x_j^+) + \red{\boldsymbol{d(x_j^+, q_i)/V}} \big) \Big) + \exp\Big( s \big( \cos(q_i, x_j^-) + \red{\boldsymbol{d(x_j^-, q_i)/V}} \big) \Big)} ,
-\end{equation}
+    \mathcal{L}_\text{INCE}(q_i) &= - \sum_{x \in X} \boldsymbol{\frac{T_i(x)}{\sum_{x' \in X} T_i(x')}} \log \frac{\exp\big( s \inner{f(q_i)}{f(x)} \big)}{\sum_{x' \in X} \exp\big( s \inner{f(q_i)}{f(x')} \big)} .
+\end{align}
 
-\red{The target stays one-hot, so the ranking pressure is that of InfoNCE.
-A negative is pushed down only until its cosine gap to the positive exceeds its margin, so at the optimum the gaps are proportional to $d$.}
+$V \rightarrow 0$ this becomes equivalent to the original InfoNCE loss.
 
-SigLIP.
-\red{Let $T_i(x) = 1 - d(x, q_i) / V$ be the target similarity of candidate $x$ for query $q_i$: $1$ for the positive, $1 - d/V$ for the hard negative, and $1 - \eta / V$ for every other candidate.
-Each cell is fit to its own target by binary cross-entropy in place of the one-hot sign $t_i(x)$:}
+% Earlier variant (ours-infonce-margin), superseded by the target-mass form above on 2026-09-03:
+% margins d/V added to each candidate's cosine inside the softmax, target one-hot.
+%   L(q_i) = - log exp(s cos(q_i, x_i^+)) / sum_j [ exp(s (cos(q_i, x_j^+) + d(x_j^+, q_i)/V)) + exp(s (cos(q_i, x_j^-) + d(x_j^-, q_i)/V)) ]
+% with d = 0 on the own positive, the measured d on the own hard negative, and eta on every cross-row candidate.
+
+\paragraph{SigLIP:}
+\red{In place of the original binary target, we weight each pair with $T_i(x)$:}
 
 \begin{equation}
     \label{eq:ours-siglip}
-    \mathcal{L}_\text{SigLIP} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \Big[ \red{\boldsymbol{T_i(x)}} \log \sigma\big( s \cos(q_i, x) + b \big) + \red{\boldsymbol{\big( 1 - T_i(x) \big)}} \log \sigma\big( - s \cos(q_i, x) - b \big) \Big] ,
+    \mathcal{L}_\text{SigLIP} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \left[ \boldsymbol{T_i(x)} \log \frac{1}{1 + e^{-\left( s \inner{f(q_i)}{f(x)} + b \right)}} + \big( \boldsymbol{1 - T_i(x)} \big) \log \frac{1}{1 + e^{s \inner{f(q_i)}{f(x)} + b}} \right] ,
 \end{equation}
 
-\red{With $T_i(x) \in \{0, 1\}$ this is Eq.~\eqref{eq:trad-siglip}.
-In our implementation the two labeled cells of each row and the $2B - 2$ cross-row cells are averaged separately and mixed with equal weight, for both the graded loss and its binary control, so that the per-row signal is not outvoted by the cross-row cells.}
-
-CoSENT.
-\red{CoSENT reads its labels only through their ordering, so we assign each pair $(q_i, x_i)$ one of three ranks:}
+The unifying factor among these modifications is to regress towards the condition 
 
 \begin{equation}
-    \label{eq:ours-cosent-rank}
-    \red{\boldsymbol{r_i}} =
-    \begin{cases}
-        \red{\boldsymbol{1}} & \text{if } x_i \text{ is the positive} \\
-        \red{\boldsymbol{\tfrac{1}{2}}} & \text{if } x_i \text{ is a hard negative} \\
-        \red{\boldsymbol{0}} & \text{if } x_i \text{ is an easy negative,}
-    \end{cases}
+    \inner{f(q)}{f(x_1)} - \inner{f(q)}{f(x_2)} = (d(q, x_2) - d(q, x_1))/V
 \end{equation}
 
-and the loss is unchanged:
+% Earlier variant (ours-siglip), superseded by the target form above on 2026-09-14: the linear
+% target T_i(x) = 1 - d(x, q_i)/V, i.e. 1 for the own positive, 1 - d/V for the own hard negative,
+% and 1 - eta/V for every cross-row candidate.
+% Implementation detail, cut 2026-09-15 to keep the paragraph to the ours/traditional difference:
+% the two labeled cells of each row and the 2B - 2 cross-row cells are averaged separately and
+% mixed with equal weight, for both the graded loss and its binary control, so that the per-row
+% signal is not outvoted by the cross-row cells.
 
-\begin{equation}
-    \label{eq:ours-cosent}
-    \mathcal{L}_\text{CoSENT} = \log \Big( 1 + \sum_{r_i > r_j} \exp\big( s \big( \cos(q_j, x_j) - \cos(q_i, x_i) \big) \big) \Big) ,
-\end{equation}
+\paragraph{CoSENT:}
+We assign rank 1 to positives, 1/2 to hard negatives, and 0 to easy negatives. 
+The algorithm otherwise remains unchanged.
+% \red{CoSENT reads its labels only through their ordering, so we assign each pair $(q_i, x_i)$ one of three ranks:}
 
-\red{The distance $d$ does not enter: a hard negative violating one constraint and one violating ten are ranked equally, above every easy negative and below the positive.}
+% \begin{equation}
+%     \label{eq:ours-cosent-rank}
+%     \red{\boldsymbol{r_i}} =
+%     \begin{cases}
+%         \red{\boldsymbol{1}} & \text{if } x_i \text{ is the positive} \\
+%         \red{\boldsymbol{\tfrac{1}{2}}} & \text{if } x_i \text{ is a hard negative} \\
+%         \red{\boldsymbol{0}} & \text{if } x_i \text{ is an easy negative,}
+%     \end{cases}
+% \end{equation}
+
+% and the loss is unchanged:
+
+% \begin{equation}
+%     \label{eq:ours-cosent}
+%     \mathcal{L}_\text{CoSENT} = \log \Big( 1 + \sum_{r_i > r_j} \exp\big( s \big( \inner{f(q_j)}{f(x_j)} - \inner{f(q_i)}{f(x_i)} \big) \big) \Big) ,
+% \end{equation}
+
+% \red{The distance $d$ does not enter: a hard negative violating one constraint and one violating ten are ranked equally, above every easy negative and below the positive.}
 
 
-In Section \ref{???} we describe a data synthesis pipeline to construct training triples with known target values of $\sum_{i=1}^{k} \ind{x^- \not\models c_i}$.
-The target margin is zero when the document satisfies every constraint (positive) and grows by $1/V$ per violated constraint (hard negative).
-This contrasts with binary classification training regimes, such as traditional triplet loss, where examples are either strictly correct or incorrect.
+% In Section \ref{???} we describe a data synthesis pipeline to construct training triples with known target values of $\sum_{i=1}^{k} \ind{x^- \not\models c_i}$.
+% The target margin is zero when the document satisfies every constraint (positive) and grows by $1/V$ per violated constraint (hard negative).
+% This contrasts with binary classification training regimes, such as traditional triplet loss, where examples are either strictly correct or incorrect.
 
-One can imagine this loss function attempting to approximate bit-wise filtering on a table of $n$ documents and arbitrarily many columns of attributes. 
-Because for any given query $q_k$, only the $k$ attributes present in the query are relevant, the space requirement of this dataset can be bounded by $\mathcal{O}(nk)$.
+% One can imagine this loss function attempting to approximate bit-wise filtering on a table of $n$ documents and arbitrarily many columns of attributes. 
+% Because for any given query $q_k$, only the $k$ attributes present in the query are relevant, the space requirement of this dataset can be bounded by $\mathcal{O}(nk)$.
 
 ...
 
@@ -380,7 +409,7 @@ for all $\ell \in S$
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{figs/embedding_fig.pdf}
+    \includegraphics[width=0.8\linewidth]{figs/embedding_fig.pdf}
     % \caption{An idealized embedding space in $\mathcal{R}^4$, projected into $\mathcal{R}^3$. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed embed.; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
     \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate. Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see. The query is the normalized sum of its attributes' linear probes $b_i$. With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$. Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
     \label{fig:embedding}
@@ -643,9 +672,6 @@ Substituting the second identity into the first gives Eq.~\eqref{eq:app-decomp}.
 \end{proof}
 
 \subsection{Main results}
-
-The forward direction constructs the query representation explicitly; it is an existence statement, and whether training produces this vector is a question about optimization rather than about capacity.
-\red{The constructed vector is unit norm, as the trainer requires, and the scale $V$ enters the bound.}
 
 {\color{red}%
 \begin{theorem}[Recovery implies low loss]
@@ -917,7 +943,7 @@ InfoNCE \citep{oord2018representation} treats every document in a batch of $B$ t
 
 \begin{equation}
     \label{eq:trad-infonce}
-    \mathcal{L}(q_i) = - \log \frac{\exp\big( s \cos(q_i, x_i^+) \big)}{\sum_{j=1}^{B} \exp\big( s \cos(q_i, x_j^+) \big) + \exp\big( s \cos(q_i, x_j^-) \big)} ,
+    \mathcal{L}(q_i) = - \log \frac{\exp\big( s \inner{f(q_i)}{f(x_i^+)} \big)}{\sum_{j=1}^{B} \exp\big( s \inner{f(q_i)}{f(x_j^+)} \big) + \exp\big( s \inner{f(q_i)}{f(x_j^-)} \big)} ,
 \end{equation}
 
 where $(q_i, x_i^+, x_i^-)$ is the $i$-th triple and the sum runs over the $2B$ positives and negatives of the batch.
@@ -927,7 +953,7 @@ SigLIP \citep{zhai2023sigmoid} replaces the softmax over candidates with an inde
 
 \begin{equation}
     \label{eq:trad-siglip}
-    \mathcal{L} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \log \sigma\Big( t_i(x) \big( s \cos(q_i, x) + b \big) \Big) ,
+    \mathcal{L} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \log \sigma\Big( t_i(x) \big( s \inner{f(q_i)}{f(x)} + b \big) \Big) ,
 \end{equation}
 
 where $X$ is the set of $2B$ candidate documents in the batch, $t_i(x) = +1$ if $x = x_i^+$ and $-1$ otherwise, and $s$ and $b$ are a learnable scale and bias.
@@ -938,7 +964,7 @@ CoSENT \citep{huang2024cosent} consumes pairs $(q_i, x_i)$ with ordinal relevanc
 
 \begin{equation}
     \label{eq:trad-cosent}
-    \mathcal{L} = \log \Big( 1 + \sum_{r_i > r_j} \exp\big( s \big( \cos(q_j, x_j) - \cos(q_i, x_i) \big) \big) \Big) ,
+    \mathcal{L} = \log \Big( 1 + \sum_{r_i > r_j} \exp\big( s \big( \inner{f(q_j)}{f(x_j)} - \inner{f(q_i)}{f(x_i)} \big) \big) \Big) ,
 \end{equation}
 
 where the sum runs over all ordered pairs of pairs in the batch with $r_i > r_j$.

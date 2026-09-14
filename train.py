@@ -74,6 +74,7 @@ class TrainingStyle(Enum):
     OURS_SIGLIP = "ours-siglip"
     OURS_INFONCE_MARGIN = "ours-infonce-margin"
     INFONCE_OURS_V3 = "infonce-ours-v3"
+    SIGLIP_V3 = "siglip-v3"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
     MSE = "mse"
@@ -96,6 +97,7 @@ LABELED_STYLES = (
     TrainingStyle.OURS_SIGLIP.value,
     TrainingStyle.OURS_INFONCE_MARGIN.value,
     TrainingStyle.INFONCE_OURS_V3.value,
+    TrainingStyle.SIGLIP_V3.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
     TrainingStyle.CLASSIC_MSE.value,
 )
@@ -505,6 +507,11 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # target stays one-hot, so the ranking pressure is unchanged and the grading
         # only sets where each negative's push-down stops. See utils/graded_losses.py.
         return MarginInfoNCELoss(model=model, easy_label=easy_label)
+    if training_style == TrainingStyle.SIGLIP_V3.value:
+        # ours-siglip with the hard negative's target exp(-s * label) instead of 1 - label and
+        # every other non-positive cell at 0: siglip-mined plus a graded own-negative cell,
+        # the relation infonce-ours-v3 has to infonce-mined. See utils/graded_losses.py.
+        return GradedSigLIPLoss(model=model, easy_label=easy_label, exponential=True, batch_size=batch_size)
     if training_style == TrainingStyle.SIGLIP_MINED.value:
         # ours-siglip's binary ablation: same layout, scale/bias and weighting, but
         # one-hot targets -- the mined negative is just 0, no graded signal.
@@ -795,7 +802,8 @@ def main():
         # be silently retargeted to easy_weight. Every other graded loss only fills
         # cross-row cells with easy_label and is unaffected.
         if label_stats["easy_collides"] and training_style in (
-                TrainingStyle.OURS_INFONCE.value, TrainingStyle.INFONCE_OURS_V3.value):
+                TrainingStyle.OURS_INFONCE.value, TrainingStyle.INFONCE_OURS_V3.value,
+                TrainingStyle.SIGLIP_V3.value):
             raise ValueError(
                 f"training-style {training_style} cannot use easy_negative_value="
                 f"{easy_negative_value}: it equals the largest measured hard-negative "
