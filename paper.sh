@@ -808,7 +808,8 @@ text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,seed=44,
 multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
 multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
 multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
-# mixed group: V sweep on the mixed in-context validation split (ours-cosent has no V)
+# mixed group: V sweep on the mixed in-context validation split (ours-cosent has no V).
+# The graded style per family is the newest one: ours-mse-batched, siglip-v3, ours-cosent.
 text        ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 text        ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
@@ -817,33 +818,46 @@ multimodal  ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s1
 multimodal  ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 multimodal  ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-siglip       rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-siglip       rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-siglip       rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-siglip       rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-# mixed group: 3 seeds. ours-cosent now; ours-mse-batched / ours-siglip once V is selected (fill V, uncomment)
+# 2026-09-15: the siglip family's mixed group moved to siglip-v3, so its mixed bar uses the
+# family's newest graded style the way infonce's uses infonce-ours-v3. The ours-siglip sweep
+# below ran 2026-09-13 and is superseded; its models stay in models/ unused.
+# text        ours-siglip       rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# text        ours-siglip       rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# text        ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# text        ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# multimodal  ours-siglip       rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# multimodal  ours-siglip       rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# multimodal  ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# multimodal  ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# siglip-v3 has no easy axis (random and cross-row cells target 0), so its mixed sweep is V alone.
+text        siglip-v3         rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        siglip-v3         rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+text        siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  siglip-v3         rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  siglip-v3         rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# mixed group: 3 seeds, V selected 2026-09-15 on the mixed val sweep above (ours-cosent has no V):
+# ours-mse-batched text 20 / image 80, siglip-v3 text 20 / image 80.
 text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
 text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
 text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
 multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
 multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-# text        ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-# text        ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-# text        ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-# multimodal  ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-# multimodal  ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-# multimodal  ours-mse-batched  rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-# text        ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-# text        ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-# text        ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-# multimodal  ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-# multimodal  ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-# multimodal  ours-siglip       rephrased  V   easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
+text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # Random-negative control (2026-09-13), in-context only: each family's ungraded style on the
 # random_hard_negs.py sibling, where every train-split hard negative is a uniform random

@@ -9,10 +9,17 @@ modality:
     dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_human
     dataset/processed/deepfashion-inshop-image-triplets_hf_20000_human
 
-Each output is a row-subset of the corresponding base processed dataset -- same columns, same
-values -- plus the human columns (`human_query`, `human_query_alt`, `human_pos_attributes`,
-`human_neg_attributes`, `annotator`). `human_query` is the column the `human` query kind reads
-in test.py, mirroring `nl_query` for synthetic and `rephrased_query` for rephrased.
+Each output is a row-subset of the corresponding base processed dataset -- minus the
+hard-negative columns -- plus the human columns (`human_query`, `human_query_alt`,
+`human_pos_attributes`, `human_neg_attributes`, `annotator`). `human_query` is the column the
+`human` query kind reads in test.py, mirroring `nl_query` for synthetic and `rephrased_query`
+for rephrased.
+
+The pair's hard negative is dropped: an annotator writes a free-form query, and nothing
+establishes that the product the synthetic pipeline picked as that pair's negative fails the
+query the annotator actually wrote. Its `query_distance` counts violations of the synthetic
+query, not of the human one. Carrying either column would invite scoring a human query against
+an unverified negative, so the columns are removed rather than left for a caller to skip.
 
 Every output row is `split == "test"`: the human set is evaluation-only, so test.py's split
 logic keeps all of it and train.py never sees it (train.py has no `human` query kind).
@@ -255,6 +262,13 @@ def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative
     out = base.select(selected).flatten_indices()
     for column in extras[0]:
         out = out.add_column(column, [e[column] for e in extras])
+    # The hard negative is not a verified negative for the query the annotator wrote (see the
+    # module docstring), so drop it and everything derived from it.
+    unverified = [c for c in (negative_column, "negative_example", "negative_example_source",
+                              "negative_category", "query_distance", "distance_source")
+                  if c in out.column_names]
+    out = out.remove_columns(unverified)
+    print(f"  dropped hard-negative columns: {', '.join(unverified)}")
     # Evaluation-only: every row is test, whatever split the base assigned the pair.
     if "split" in out.column_names:
         out = out.remove_columns(["split"])

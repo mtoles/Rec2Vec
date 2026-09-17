@@ -67,8 +67,13 @@ def load_eval_split(dataset_path, query_key, split_seed, split="test"):
         if column in dataset.column_names:
             dataset = dataset.remove_columns([column])
     dataset = dataset.rename_column("positive_example", "positive")
-    dataset = dataset.rename_column("negative_example", "negative")
-    dataset = dataset.filter(lambda x: x["positive"] != x["negative"] and bool(x["anchor"]))
+    # The human sets carry no hard negative (download_human_labels.py drops it as unverified
+    # against the query the annotator wrote), so everything keyed on it is conditional.
+    if "negative_example" in dataset.column_names:
+        dataset = dataset.rename_column("negative_example", "negative")
+        dataset = dataset.filter(lambda x: x["positive"] != x["negative"] and bool(x["anchor"]))
+    else:
+        dataset = dataset.filter(lambda x: bool(x["anchor"]))
 
     _, val_dataset, test_dataset = split_dataset(dataset, seed=split_seed)
     return {"validation": val_dataset, "test": test_dataset}[split]
@@ -138,9 +143,11 @@ def main():
     # Per-row triplet similarities reuse the corpus/query embeddings via index lookup.
     anchor_ids = torch.tensor([query_to_qid[a] for a in test_dataset["anchor"]])
     pos_ids = [corpus_to_idx[p] for p in test_dataset["positive"]]
-    neg_ids = [corpus_to_idx[n] for n in test_dataset["negative"]]
+    has_negatives = "negative" in test_dataset.column_names
     sim_pos = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(pos_ids)])
-    sim_neg = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(neg_ids)])
+    if has_negatives:
+        neg_ids = [corpus_to_idx[n] for n in test_dataset["negative"]]
+        sim_neg = pair_similarities(query_embeddings[anchor_ids], corpus_embeddings[torch.tensor(neg_ids)])
 
     preds_dir = os.path.join(args.run_dir, PREDS_SUBDIRS["human" if args.query_kind == "human" else args.split])
     os.makedirs(preds_dir, exist_ok=True)
@@ -159,17 +166,21 @@ def main():
     ])
 
     passthrough = [c for c in PASSTHROUGH_COLUMNS if c in test_dataset.column_names]
-    write_jsonl(os.path.join(preds_dir, "triplets.jsonl"), [
-        {
-            "query_id": int(anchor_ids[i]),
-            "positive_corpus_id": pos_ids[i],
-            "negative_corpus_id": neg_ids[i],
-            "sim_pos": round(float(sim_pos[i]), 5),
-            "sim_neg": round(float(sim_neg[i]), 5),
-            **{c: test_dataset[i][c] for c in passthrough},
-        }
-        for i in range(len(test_dataset))
-    ])
+    # triplets.jsonl is one row per (query, positive, hard negative); a dataset with no
+    # negative has no triplet to write, and the win-rate analysis reads this file only for
+    # the splits that have one.
+    if has_negatives:
+        write_jsonl(os.path.join(preds_dir, "triplets.jsonl"), [
+            {
+                "query_id": int(anchor_ids[i]),
+                "positive_corpus_id": pos_ids[i],
+                "negative_corpus_id": neg_ids[i],
+                "sim_pos": round(float(sim_pos[i]), 5),
+                "sim_neg": round(float(sim_neg[i]), 5),
+                **{c: test_dataset[i][c] for c in passthrough},
+            }
+            for i in range(len(test_dataset))
+        ])
 
     metrics = quick_metrics(top_ids, positives)
     print("Quick metrics:", metrics)

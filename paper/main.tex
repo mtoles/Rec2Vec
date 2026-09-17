@@ -1,4 +1,7 @@
 % @Claude NEVER edit this without explicit instruction to do so
+% One sentence per line!
+% @claude: make edits in red
+% @codex: make edits in green
 \documentclass{article} % For LaTeX2e
 \usepackage{iclr2026_conference,times}
 
@@ -244,14 +247,18 @@ We choose the best of $n=8$ hyperparameter combinations based on a grid search \
 \begin{table}[t]
 \centering
 \input{figs/baseline_loss_table.tex}
-\caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives. +NV indicates the model was trained using negatives mined with NV-Retriever.}
+\caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever. \red{delete?}}
 \label{tab:baseline-loss}
 \end{table}
 
+\subsection{Model Details}
 
+We fine-tune \texttt{all-mpnet-base-v2} on text and \texttt{clip-ViT-B-32} on images, both as distributed by Sentence-Transformers \red{(cite)}; the text tower encodes queries in both modalities, and we normalise every representation to unit length.
+We optimise with AdamW \red{(cite)} at learning rate $2 \times 10^{-5}$, a cosine schedule warming up over the first 10\% of steps, and bf16, training each condition three times and report the mean over those trials.
 
 
 \section{Methods}
+\label{sec:methods}
 
 Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product similarity is defined as
 
@@ -289,24 +296,25 @@ Formally, we define Attribute Hamming Distance $d$ as
 
 \begin{equation}
     d(x, q) =
-    \begin{cases}
-        \eta & \text{if } x \text{ is an easy negative} \\
-        \sum_{i=1}^{k} \ind{x \not\models c_i} & \text{otherwise}
-    \end{cases}
+    % \begin{cases}
+        % \eta & \text{if } x \text{ is an easy negative} \\
+        \sum_{i=1}^{k} \ind{x \not\models c_i} %& \text{otherwise}
+    % \end{cases}
 \end{equation}
 
-We then modify modify each loss function, with the modification in \textbf{bold}:
+We then modify modify each loss function, with the modification marked by an underbrace:
 
 \paragraph{Margin-MSE:}
 We set the margin term to $d/V$:
 
 \begin{equation}
 \label{eq:hamming}
-    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \boldsymbol{\tfrac{d}{V}} \Big)^2
+    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \underbrace{\tfrac{d}{V}}_{\text{ours}} \Big)^2
 \end{equation}
 
-Where the violation scale hyperparameter $V$ controls the penalty per violation and easy negative distance $\eta > 0$ controls the penalty for easy negatives.
+Where the violation scale hyperparameter $V$ controls the penalty per violation.
 Let $K^*$ be the maximum number of constraints violated by any example.
+In Margin-MSE only, we set $d(x,q)=\eta \geq K^*$ in the case when x is an easy negative.
 Choosing $V \geq \text{max}(\eta, K^*)$ ensures the $d/V$ term is in $[0, 1]$.
 
 \paragraph{InfoNCE:}
@@ -321,10 +329,10 @@ Every document in a batch of $B$ triples is a candidate for every query: the $B$
         0 & \text{otherwise,}
     \end{cases} \\[0.5em]
     \label{eq:ours-infonce}
-    \mathcal{L}_\text{INCE}(q_i) &= - \sum_{x \in X} \boldsymbol{\frac{T_i(x)}{\sum_{x' \in X} T_i(x')}} \log \frac{\exp\big( s \inner{f(q_i)}{f(x)} \big)}{\sum_{x' \in X} \exp\big( s \inner{f(q_i)}{f(x')} \big)} .
+    \mathcal{L}_\text{INCE}(q_i) &= - \sum_{x \in X} \underbrace{\frac{T_i(x)}{\sum_{x' \in X} T_i(x')}}_{\text{ours}} \log \frac{\exp\big( s \inner{f(q_i)}{f(x)} \big)}{\sum_{x' \in X} \exp\big( s \inner{f(q_i)}{f(x')} \big)} .
 \end{align}
 
-$V \rightarrow 0$ this becomes equivalent to the original InfoNCE loss.
+As $V \rightarrow 0$ this becomes equivalent to the original InfoNCE loss.
 
 % Earlier variant (ours-infonce-margin), superseded by the target-mass form above on 2026-09-03:
 % margins d/V added to each candidate's cosine inside the softmax, target one-hot.
@@ -332,11 +340,11 @@ $V \rightarrow 0$ this becomes equivalent to the original InfoNCE loss.
 % with d = 0 on the own positive, the measured d on the own hard negative, and eta on every cross-row candidate.
 
 \paragraph{SigLIP:}
-\red{In place of the original binary target, we weight each pair with $T_i(x)$:}
+In place of the original binary target, we weight each pair with $T_i(x)$:
 
 \begin{equation}
     \label{eq:ours-siglip}
-    \mathcal{L}_\text{SigLIP} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \left[ \boldsymbol{T_i(x)} \log \frac{1}{1 + e^{-\left( s \inner{f(q_i)}{f(x)} + b \right)}} + \big( \boldsymbol{1 - T_i(x)} \big) \log \frac{1}{1 + e^{s \inner{f(q_i)}{f(x)} + b}} \right] ,
+    \mathcal{L}_\text{SigLIP} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \left[ \underbrace{T_i(x)}_{\text{ours}} \log \frac{1}{1 + e^{-\left( s \inner{f(q_i)}{f(x)} + b \right)}} + \underbrace{\big( 1 - T_i(x) \big)}_{\text{ours}} \log \frac{1}{1 + e^{s \inner{f(q_i)}{f(x)} + b}} \right] ,
 \end{equation}
 
 The unifying factor among these modifications is to regress towards the condition 
@@ -442,35 +450,57 @@ for all $\ell \in S$
 \centering
 \label{tab:datasets}
 \vspace{1em}
-\begin{tabular}{lrr}
+\small
+\begin{tabular}{lrrrr}
     \toprule
-    & Amazon ESCI & DeepFashion In-Shop \\
-    % & (text) & (image) \\
+    & \multicolumn{2}{c}{\red{Text}} & \multicolumn{2}{c}{\red{Image}} \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5}
+    & \red{Synthetic} & \red{Human} & \red{Synthetic} & \red{Human} \\
     \midrule
-    Corpus documents               & 224{,}791 & 28{,}387 \\
-    Training documents             & 195{,}006 & 24{,}151 \\
-    Validation documents           & 41{,}049  & 3{,}773 \\
-    Test documents                 & 41{,}047  & 3{,}767 \\
-    Words per document             & 190.0     & 71.0 \\
-    Words per generated query      & 38.1      & 35.2 \\
-    Attributes per generated query & 10.0      & 9.8 \\
+    % \red{Domain} & \multicolumn{2}{c}{\red{Amazon product descriptions}} & \multicolumn{2}{c}{\red{Clothing images}} \\
+    Corpus documents               & \red{144{,}859} & \red{131} & \red{27{,}431} & \red{55} \\
+    Training documents             & \red{123{,}416} & \red{---} & \red{23{,}379} & \red{---} \\
+    Validation documents           & \red{10{,}419}  & \red{---} & \red{3{,}776}  & \red{---} \\
+    Test documents                 & \red{11{,}061}  & \red{131} & \red{3{,}765}  & \red{55} \\
+    Words per document             & \red{186.4}     & \red{186.6} & \red{---} & \red{---} \\
+    Words per query                & \red{37.5}      & \red{11.4} & \red{34.0}  & \red{9.4} \\
+    \red{Attributes stated per query}          & \red{9.9} & \red{2.9} & \red{9.8} & \red{3.1} \\
+    \red{Differentiating attributes per query} & \red{5.1} & \red{---} & \red{5.1} & \red{---} \\
     \bottomrule
 \end{tabular}
-\caption{Dataset summary statistics}
+\caption{Dataset summary statistics. Document counts for Synthetic include hard negative pairs while Human documents are positive-only.}
 \end{table}
 
-\subsection{Model Details}
+
 
 \subsection{Ours Details}
 
+For each modified loss function, we perform a hyperparameter sweep on the validation set across $V \in \{10, 20, 40, 80\}$, and also $\eta \in \{10, 20, 40\}$ for Margin-MSE. 
+We perform ablations that only use our dataset creation process without modifying baseline loss functions.
+\red{Finally, we explore mixing data 50-50 from our dataset creation and hard negatives mined with NV-Retriever, based on \cite{moreira2024nv}'s analysis that NV-Retriever improves training stability while our method trains discrimination of fine-grained conjunctive attributes.}
 
 ...
 
 \section{Results}
 
-...
+We present results in Figure \ref{fig:text-vs-image}.
+On the larger synthetic test set, we see significant improvement compared to baselines applying both attribute-aware mining and attribute Hamming loss.
+Overall accuracy is stratified by loss function, with InfoNCE ranking highest on both modalities, both for our proposed methods and baselines.
+Both baseline NV-Retriever and attribute-aware mining significantly increase recall on text, but improvement on images is mixed and modality dependent.
+Attribute-aware mining is more effective than NV-Retriever on both modalities using the two strongest loss functions, InfoNCE and SigLIP.
+After applying attribute Hamming loss, however, our method surpasses all baselines using all loss functions in all modalities.
+One exception is InfoNCE Image, where our method ties the unmined baseline, possibly due to saturation.
+\red{Finally, when trained on a mix of examples mined by NV-Retriever and attribute aware mining, we see improvement on CoSENT Image and a slight improvement on both InfoNCE modalities, though check statistical significance.}
+
 
 \red{main results, we beat baselines}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figs/text_vs_image_recall.pdf}
+    \caption{Text Recall@5 vs. image Recall@20 on the test split ($n=3$ per point). Arrow direction indicate that one training strategy builds on another. Unfilled shapes indicate baselines.}
+    \label{fig:text-vs-image}
+\end{figure}
 
 \red{more positives = easier, more negatives = no relation}
 
@@ -936,6 +966,23 @@ The two documents with $z_1 = 0$ satisfy neither $C$ nor $c_1$ and so share the 
 \bibliographystyle{iclr2026_conference}
 
 \appendix
+\section{\red{Full Results}}
+\label{app:full-results}
+
+\begin{table}[h]
+\centering
+\input{figs/main_results_table.tex}
+\caption{\red{Test-split recall of every loss and negative-selection group, mean of $n=3$ seeds with the lowest and highest seed in brackets. Bold is the best value in a column; underline is the best within a loss. Synthetic queries are the ones each model trained on; human queries are the human-written set, scored on the same model. Text is Recall@5 and image Recall@20.}}
+\label{tab:main-results}
+\end{table}
+
+\begin{table}[h]
+\centering
+\input{figs/significance_table.tex}
+\caption{\red{Paired permutation tests for the differences Figure~\ref{fig:text-vs-image} argues about: $A - B$ in recall at each modality's cutoff, each group the mean of $n=3$ seeds, on the same queries as Table~\ref{tab:main-results}. The null distribution flips the sign of each positive product's per-query differences (text test queries share products; image and human queries are one per product); $p$ is one-sided, that $A$ is better than $B$, over 10{,}000 Monte Carlo flips with the add-one correction. Bold is $p < 0.05$.}}
+\label{tab:significance}
+\end{table}
+
 \section{Loss Functions}
 \label{app:loss-functions}
 
@@ -953,7 +1000,7 @@ SigLIP \citep{zhai2023sigmoid} replaces the softmax over candidates with an inde
 
 \begin{equation}
     \label{eq:trad-siglip}
-    \mathcal{L} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \log \sigma\Big( t_i(x) \big( s \inner{f(q_i)}{f(x)} + b \big) \Big) ,
+    \mathcal{L} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \log \frac{1}{1 + e^{-t_i(x) \left( s \inner{f(q_i)}{f(x)} + b \right)}} ,
 \end{equation}
 
 where $X$ is the set of $2B$ candidate documents in the batch, $t_i(x) = +1$ if $x = x_i^+$ and $-1$ otherwise, and $s$ and $b$ are a learnable scale and bias.
