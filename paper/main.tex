@@ -1,4 +1,4 @@
-% @Claude NEVER edit this without explicit instruction to do so
+% @Claude and @codex NEVER edit this without explicit instruction to do so
 % One sentence per line!
 % @claude: make edits in red
 % @codex: make edits in green
@@ -48,6 +48,8 @@
 %% Red text for drafting notes/highlights: \red{...}
 \newcommand{\red}[1]{\textcolor{red}{#1}}
 \newcommand{\green}[1]{\textcolor{green}{#1}}
+\definecolor{darkgreen}{RGB}{0,100,0}
+\newcommand{\darkgreen}[1]{\textcolor{darkgreen}{#1}}
 
 %% Dark blue for the Notes section
 \definecolor{darkblue}{RGB}{0,0,139}
@@ -58,7 +60,7 @@
 %% Inner product: \inner{q}{d}
 \newcommand{\inner}[2]{\left\langle #1, #2 \right\rangle}
 
-\title{Dense Retrieval with }
+\title{Partial Credit Improves Retrieval Embeddings on Conjunctive Queries}
 
 % Authors must not appear in the submitted version. They should be hidden
 % as long as the \iclrfinalcopy macro remains commented out below.
@@ -75,15 +77,20 @@ Institution \\
 \begin{abstract}
 % \red{TODO: abstract.}
 
-% Embedding-based dense retrieval is an important step in many search systems, including e-commerce product retrieval, image search, and others.
-As users refine search system queries, they tend to add requirements as conjunctions, making each query more specific than the last.
+As users refine search queries, especially in e-commerce, they tend to add requirements as conjunctions, making each query more specific than the last.
 Prior work has shown that embedding-based retrieval accuracy degrades as the number of conditions grows, motivating methods that remain robust under conjunctive queries.
-One limitation in existing training paradigms is the binary training objective; hard negatives that subtly conflict with the query are considered incorrect as easy, obviously irrelevant negatives.
-To leverage the wasted information, we present \green{Ours}, a strategy for training embedding systems to handle conjunctive queries.
-\green{Ours} combines two strategies to improve models' discrimination: a synthetic data pipeline to infer the number of conditions violated by hard negatives, and a loss function proportional to this count.
-We prove that under broad assumptions, our loss is driven to zero by a query vector formed as a superposition of linear probes, one per condition.
-In contrast, we show that binary relevance supervision does not confer this structure: embeddings can attain zero binary loss while leaving queried attributes linearly unrecoverable.
-\green{Ours} improves \red{baselines}, achieving state-of-the-art performance when combined with \red{InfoNCE(?)}.
+One limitation in existing training paradigms is the binary training objective; hard negatives that subtly conflict with the query are considered equally incorrect as easy, obviously irrelevant negatives.
+To leverage the wasted information, we present the Graded Objective for Learning Distinctions, or \textsc{gold} mining, a hard negative mining strategy that generates hard negatives with known violations of query conditions.
+Additionally, we contribute \textsc{gold} reweighting, a loss function modification strategy that assigns partial credit to hard negatives that nearly satisfy the query.
+We demonstrate that both \textsc{gold} mining and \textsc{gold} reweighting are compatible with four common existing loss function families.
+Applying both achieves equal or better recall than random and mined negatives across all tested loss functions and both text and image modalities.
+We attribute this improvement to the following property: under suitable query and comparison coverage assumptions, low loss on the \textsc{gold} Margin-MSE objective implies approximate affine recoverability of attributes, a property not satisfiable by the standard objective.
+
+
+% Given limited assumptions, theoretical analysis of \green{Ours} applied to Margin-MSE shows that the graded loss objective can be satisfied when the query vector serves as an affine probe for the conjunctive conditions in the query, and that .
+
+% \darkgreen{Under explicit norm and scale assumptions, the hard-negative Margin-MSE objective admits low-loss cosine query representations formed from signed sums of the vector parts of affine attribute probes.}
+% \darkgreen{Under a coverage assumption, low count loss on a query pair differing in one condition implies approximate affine recovery of the deleted attribute, whereas zero binary Margin-MSE loss on the same query family need not.}
 
 
 
@@ -92,32 +99,11 @@ In contrast, we show that binary relevance supervision does not confer this stru
 \section{Introduction}
 
 Embedding-based retrieval aims to recall a match set of semantically relevant documents satisfying the user's query.
-Such embeddings are often used in retrieval tasks, such as RAG, product search, and image search, where fine-grained matching of details between the query and the document determine relevance.
+Such embeddings are often used in retrieval tasks, such as RAG, product search, and image search, where fine-grained matching of details between the query and the document determine relevance. 
 
-Much of this progress is due to broadly applicable techniques, such as instruction tuning and chain of thought.
-However, these strategies are not applicable to embedding models.
-Combined with the parameter count, representational constraints, and document corpus size on embedding models, this results in a significant language modeling gap between embedding models and generative models; it is common for embedding models to erroneously retrieve documents that a similarly sized generative model can trivially identify as irrelevant.
-Thus, we seek a method for distilling the relevant categorization capabilities of a generative model directly into and embedding model.
-
-Specifically, we concentrate on improving conjuntive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
-This focus is motivated by patterns in user queries and the design of pre-existing non-embedding search systems.
-For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as ``screen size $>30$\,cm'' for laptops.
-Users find such categories useful both in searching for and understanding products. 
-Unfortunately, attribute ontologies are usually fixed, failing when a user desires a product with or without a novel attribute.
-Because unique and novel attributes differentiate products, sellers are well motivated to include them in product descriptions to differentiate their products. 
-As a result, natural language search systems, such as dense retrieval, are better suited for the long tail of highly specific queries.
-Similar use cases exist other retrieval tasks, including for images, videos, resumes, patents, and real estate.
-
-% mechanics - why our system works
-
-Unfortunately, publicly available retrieval datasets, such as \red{cite} mainly contain simple queries, with little to no conjunction or negation.
-Instead, datasets like the popular ECSI \red{cite} focus on providing hard negatives---similar pairs of similar documents, only one of which is valid.
-This neglects an important dynamic in the user experience of search systems wherein queries tend to gain attributes over time as users refine them. 
-\citet{hirsch2020query} find that over 50\% of queries on Ebay occur during a reformulation session, with queries growing in length over time.
-Longer queries were associated with increased purchase rates, indicating that support for highly specific queries should be a priority.
 
 There is evidence to believe that queries are underspecified because users doubt the capabilities of recommender systems \citep{kato2014cognitive}.
-\citet{papenmeier2020modern} find that the length of users' free-form text descriptions of their desired laptops include on average 29 words and 3.83 attributes. 
+\citet{papenmeier2020modern} find that the length of users' free-form text descriptions of their desired product include on average 29 words and 3.83 attributes. 
 However, when Amazon product search, they entered only 2.2 words, indicating that users do not feel including additional attributes would be helpful. 
 
 Users' pessimism is not unfounded, as bi-encoders have known limitations in their expressivity.
@@ -125,16 +111,51 @@ Users' pessimism is not unfounded, as bi-encoders have known limitations in thei
 These include negation \citep{zhang2025excluir, weller2024nevir}, set operations \citep{killingback2025benchmarking}, constraint dilution \citep{lu2025multiconir}, and attribute binding \citep{yuksekgonul2022and}.
 It then follows that user query behavior may suffer from a chicken-and-egg problem; users do not use complex queries because they expect models to fail, while practicioners to do not optimize for complex queries because they do not appear in user data.
 
-To address this gap, we introduce Ours, a strategy for training strong embedding models for conjunctive queries.
-We first use an LLM to extract attributes of each document in structured form, creating a large, synthetic dataset with LLM-level accuracy.
-We then use a Hamming distance-based loss function to train the embedding model.
+% mechanics - why our system works
+
+% Unfortunately, available retrieval datasets, such as MS-Marco \citep{bajaj2018msmarcohumangenerated}, Beir  \citep{thakur2021beir}, and  mainly contain simple queries, with little to no conjunction or negation.
+Unfortunately, publicly available product retrieval datasets such as \cite{??} lack conjunctive queries.
+Instead, datasets like the popular ECSI \cite{reddy2022shopping} focus on providing hard negatives---similar pairs of similar documents, only one of which is valid.
+This neglects an important dynamic in the user experience of search systems wherein queries tend to gain attributes over time as users refine them. 
+\citet{hirsch2020query} find that over 50\% of queries on Ebay occur during a reformulation session, with queries growing in length over time.
+Longer queries were associated with increased purchase rates, indicating that support for highly specific queries should be a priority.
+
+Thus, we identify dense retrieval as understudied across three axes: data, methods, and evaluations.
+Specifically, we concentrate on improving conjuntive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
+This focus is further grounded in patterns in user queries and the design of pre-existing non-embedding search systems.
+For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as ``screen size $>30$\,cm'' for laptops.
+% Users find such categories useful both in searching for and understanding products. 
+Unfortunately, attribute ontologies are usually fixed, failing when a user desires a product with or without a novel attribute.
+% Because unique and novel attributes differentiate products, sellers are well motivated to include them in product descriptions to differentiate their products. 
+As a result, natural language search systems, such as dense retrieval, are better suited for the long tail of highly specific queries.
+Similar use cases exist other retrieval tasks, including for images, videos, resumes, patents, and real estate.
+
+
+
+To address this gap, we introduce \textbf{G}raded \textbf{O}bjective for \textbf{L}earning \textbf{D}istinctions, or \textsc{gold} mining, a strategy for generating hard negatives differing by a strict subset of conjunctive conditions in the query.
+We combine it with \textsc{gold} reweighting, a broadly applicable loss function modification that assigns partial credit to hard negatives that partially satisfy those conditions.
+\textsc{gold} mining uses a generative LLM to extract attributes of each document in structured form, creating a large, synthetic dataset.
+Then, we construct triplets consisting of a natural language query, positive document, and hard negative document based on the structured attributes.
+Leveraging the structured attribute lists allows us to calculate the number of query conditions violated by the hard negative, which we use the \textsc{gold} reweighting training objective.
+% We then use a Hamming distance-based loss function to train the embedding model.
 This contrasts with baseline loss functions that treat all negatives as equally wrong.
-For the query ``warm red hoodie'', the document ``warm blue jacket'' is considered just as incorrect as ``gas-powered lawnmower''.
-On the other hand, Ours sets the loss proportional to the squared number of attributes that must be changed to satisfy the query, and much higher if the subject (hoodie vs. lawnmower) must be changed.
+% For the query ``warm red hoodie'', the document ``warm blue jacket'' is considered just as incorrect as ``gas-powered lawnmower''.
+% On the other hand, Ours sets the loss proportional to the squared number of attributes that must be changed to satisfy the query, and much higher if the subject (hoodie vs. lawnmower) must be changed.
 
-\red{Details on results}
+% With global e-commerce sales exceeding \$28 trillion USD in 2024 and numerous multimodal reasoning tasks' reliance on fine-grained visual understanding, 
 
-\red{Details on theory}
+We demonstrate the effectiveness of these strategies on both the text and image modalities.
+We choose textual product search due to its economic importance, with annual e-commerce sales exceeding \$28 trillion USD in 2024 \citep{unctadstat2026digital}. 
+We choose apparel image search because it requires objective reasoning over fine-grained visual details, a foundational skill in numerous multimodal tasks.
+Our results show that \textsc{gold} mining improves recall across all four loss functions, especially on the text domain. 
+In most cases, this improvement exceeds that of the state-of-the-art NV-Retreiver mining algorithm. 
+When \textsc{gold} reweighting is applied on top of \textsc{gold} mining, we achieve top recall across all loss functions and both modalities.
+
+We attribute this improvement to the following property: under suitable query and comparison coverage assumptions, low loss on the \textsc{gold} Margin-MSE objective ignoring easy negatives implies approximate affine recoverability of attributes, a property not guaranteed by the standard objective.
+The converse is also true: affine recoverability of attributes permits low loss on the \textsc{gold} Margin-MSE objective under a reasonable scale assumption.
+Finally, we show that an embedding of fixed length $d$ can represent exponentially many attributes with low loss.
+
+
 
 \section{Related Work}
 
@@ -143,7 +164,7 @@ Dense bi-encoders enable efficient first-stage retrieval by mapping queries and 
 % Their effectiveness, however, depends strongly on the selection and supervision of negative examples.
 Methods such as ANCE and RocketQA improve training by retrieving challenging negatives, sharing negatives across batches, or denoising mined candidates~\cite{xiong2020approximate,qu-etal-2021-rocketqa}.
 Other approaches move beyond uniform positive--negative separation by distilling continuous teacher-score differences, as in MarginMSE and TAS-Balanced~\cite{hofstatter2020improving,hofstatter2021tas}, or by using relevance- and attribute-dependent margins in metric-learning objectives~\cite{zhou2020ladder,Jeong_2021_ICCV,Zhao2019}.
-\red{todo: discuss ColBERTv2 KL distillation over mined candidates (https://arxiv.org/abs/2112.01488), BGE/C-Pack rank-window ANN mining (https://arxiv.org/abs/2309.07597), NV-Retriever positive-aware negative filtering (https://arxiv.org/abs/2407.15831)}
+% \red{todo: discuss ColBERTv2 KL distillation over mined candidates (https://arxiv.org/abs/2112.01488), BGE/C-Pack rank-window ANN mining (https://arxiv.org/abs/2309.07597), NV-Retriever positive-aware negative filtering (https://arxiv.org/abs/2407.15831)}
 % These methods demonstrate the value of informative negatives and graded training signals, but generally derive the degree of separation from teacher scores, relevance labels, or broad semantic relationships.
 % In contrast, we derive supervision from the discrete structure of the query: candidates are graded by the number of query-relevant feature edits required to make them satisfy its constraints.
 
@@ -166,7 +187,9 @@ CoN-CLIP and NegationCLIP improve sensitivity to negated concepts, while CoLLM u
 \paragraph{Synthetic supervision for retrieval.}
 Large language models have increasingly been used to generate targeted supervision for dense retrieval.
 Syntriever and SyNeg generate queries, relevant examples, or challenging negatives that expose distinctions absent from conventional training data~\cite{kim-baek-2025-syntriever,li2024syneg}.
-\red{todo: discuss LLM-generated negatives in Promptagator (https://arxiv.org/abs/2209.11755), E5-mistral synthetic data (https://arxiv.org/abs/2401.00368), Gecko (https://arxiv.org/abs/2403.20327)}
+Promptagator \citep{dai2022promptagatorfewshotdenseretrieval} uses LLMs for few shot dense retrieval.
+\cite{wang2024improvingtextembeddingslarge, lee2024geckoversatiletextembeddings} distill embeddings from LLMs.
+% \red{E5-mistral synthetic data (https://arxiv.org/abs/2401.00368), Gecko (https://arxiv.org/abs/2403.20327)}
 In product retrieval, Agapaki and Gill combine structured product information with LLM-based relevance assessment to identify difficult training examples~\cite{agapaki2026negative}.
 % These approaches show that synthetic data can control which distinctions a retriever encounters during training.
 % Our use of generated information differs in an important respect: generated feature annotations specify the candidate structure, but do not directly determine the supervision target.
@@ -260,19 +283,21 @@ We optimise with AdamW \red{(cite)} at learning rate $2 \times 10^{-5}$, a cosin
 \section{Methods}
 \label{sec:methods}
 
-Traditional Margin-MSE loss \citep{hofstatter2020improving} using inner product similarity is defined as
+Traditional Margin-MSE loss \citep{hofstatter2020improving} \darkgreen{using cosine similarity between normalized representations} is defined as
 
 % \begin{equation}
 %     \mathcal{L}{q, x^+, x^-} = \Big( \inner{f(q)}{f(x^+)} - \inner{f(q)}{f(x^-)} \Big)^2
 % \end{equation}
 \begin{equation}
     \label{eq:trad-mse}
-    \mathcal{L}(q, x^+, x^-) = \Big( \inner{f(q)}{f(x^+) - f(x^-)} - y \Big)^2 .
+    \mathcal{L}(q, x^+, x^-) = \Big( \operatorname{cos}(f(q), f(x^+)) - \operatorname{cos}(f(q), f(x^-)) - y \Big)^2 .
 \end{equation}
 
 Where $q$ is a query, $x^+$ is a relevant document, $x^-$ is a less relevant document, and $y$ is a scalar representing the margin between their relevance as determined by a teacher model.
 $f$ is a function mapping queries or documents to their embeddings. 
-Throughout this paper we take $\inner{\cdot}{\cdot}$ to be cosine similarity.
+\darkgreen{Retrieval scores use cosine similarity, $\operatorname{cos}(a,b)=a^\top b/(\|a\|\|b\|)$, while $\inner{a}{b}=a^\top b$ denotes the Euclidean inner product.}
+\darkgreen{Because $f$ returns unit-norm embeddings, $\operatorname{cos}(f(q),f(x))=\inner{f(q)}{f(x)}$, so a difference of cosine scores equals $\inner{f(q)}{f(x^+)-f(x^-)}$.}
+\darkgreen{The difference vector and the probe vectors below are not normalized.}
 
 
 
@@ -309,7 +334,7 @@ We set the margin term to $d/V$:
 
 \begin{equation}
 \label{eq:hamming}
-    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+) - f(x^-)} - \underbrace{\tfrac{d}{V}}_{\text{ours}} \Big)^2
+    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \operatorname{cos}(f(q_k), f(x^+)) - \operatorname{cos}(f(q_k), f(x^-)) - \underbrace{\tfrac{d}{V}}_{\text{ours}} \Big)^2
 \end{equation}
 
 Where the violation scale hyperparameter $V$ controls the penalty per violation.
@@ -393,9 +418,8 @@ The algorithm otherwise remains unchanged.
 % One can imagine this loss function attempting to approximate bit-wise filtering on a table of $n$ documents and arbitrarily many columns of attributes. 
 % Because for any given query $q_k$, only the $k$ attributes present in the query are relevant, the space requirement of this dataset can be bounded by $\mathcal{O}(nk)$.
 
-...
 
-\subsection{Relation to Linear Probing}
+\subsection{{Relation to Affine Probing}}
 
 % For a given $c_i$, 
 Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ being queries or documents composed of sequences of tokens.
@@ -406,20 +430,29 @@ Note that the value of $z_i$ only depends on the text.
 
 % Under the Linear Representation Hypothesis, we assume that for a set of features $z_1, ..., z_m : L \rightarrow \mathbb{R}$
 
-Under the Linear Representation Hypothesis, we say a feature is $(\epsilon, S)-$ linearly recovered for some linear probe vector $b_i \in \mathbb{R}^d$ if 
+\darkgreen{We say a feature is $(\epsilon, S)$-affinely recovered by a probe $(b_i,\beta_i)\in\mathbb{R}^d\times\mathbb{R}$ if}
 % Let $b_i \in \mathbb{R}^d$ be a probe vector for attribute $z_i$ such that
 
 \begin{equation}
-    |\inner{b_i}{f(\ell)} - z_i(\ell)| < \epsilon 
+    |\inner{b_i}{f(\ell)} + \beta_i - z_i(\ell)| < \epsilon
 \end{equation}
 
-for all $\ell \in S$
+for all $\ell \in S$.
+
+\darkgreen{Under the assumptions of Theorem~\ref{thm:forward}, affine recoverability of attributes permits low Margin-MSE Attribute Hamming Loss.}
+\darkgreen{Conversely, uniformly low loss across all positive--negative comparisons for two queries differing by one condition, each with nonempty positive and negative sets, implies approximate affine recovery of that condition's attribute (Theorem~\ref{thm:back}).}
+\darkgreen{Binary-target Margin-MSE provides no such guarantee: zero loss can coexist with an unrecoverable attribute (Proposition~\ref{prop:binary}).}
+\darkgreen{Finally, for documents with at most $k'$ active attributes from a vocabulary of size $m$, queries with at most $k$ conditions, and $V\ge kk'$, we construct unit document and query embeddings in dimension $d=O\!\left(\frac{k'^2}{\epsilon^2}\log m\right)$ that affinely recover every attribute with error below $\epsilon$ and achieve loss below $(2k\epsilon/V)^2$ on every valid comparison (Corollary~\ref{cor:capacity}).}
 
 \begin{figure}
     \centering
     \includegraphics[width=0.8\linewidth]{figs/embedding_fig.pdf}
     % \caption{An idealized embedding space in $\mathcal{R}^4$, projected into $\mathcal{R}^3$. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed embed.; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
-    \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate. Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see. The query is the normalized sum of its attributes' linear probes $b_i$. With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$. Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
+    \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate.
+    Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see.
+    \darkgreen{The query is the normalized sum of the vector parts $b_i$ of its attributes' affine probes, whose biases are zero in this example.}
+    With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$.
+    Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
     \label{fig:embedding}
 \end{figure}
 
@@ -508,458 +541,201 @@ One exception is InfoNCE Image, where our method ties the unmined baseline, poss
 
 
 \section{Notes}
-\begingroup\color{darkblue}
 
 \red{Working notes --- not for submission.}
 
-We characterize the optimum of the attribute Hamming objective.
-For a training triple the label equals a signed difference of attribute values, $y = \sum_{i \in C} s_i ( z_i(x^+) - z_i(x^-) )$, so a query representation formed as the signed sum of per-attribute probes matches the regression target termwise.
-The correspondence holds in both directions: if every queried attribute is linearly recoverable from the document embeddings at error $\epsilon$, the query vector $\sum_{i \in C} s_i b_i$ attains loss below $\red{(2k\epsilon/V)^2}$ (Theorem~\ref{thm:forward}); conversely, if the query family is closed under deleting a condition, a model with loss below $\delta^2$ on every triple yields a probe recovering each queried attribute at error $\red{2V\delta}$ (Corollary~\ref{cor:delete}).
-Under these hypotheses, minimizing the objective and making the query embedding a simultaneous linear probe for the attributes it names are the same requirement.
-Triplet and in-batch objectives constrain only the ordering of scores and are satisfied by any embedding that ranks the positive first by at least the margin; constraining the margin's magnitude to a count makes partial constraint satisfaction a graded, linearly decodable quantity.
-Under the additional assumption that document embeddings satisfy the linear representation hypothesis with $k'$-sparse attribute vectors, the construction of \citet{garg2026many} realizes loss $\delta^2$ at dimension $d = O(k'^2 k^2 \delta^{-2} \log m)$ (Corollary~\ref{cor:capacity}).
-The dependence on the number of attributes is logarithmic, so a fixed-width embedding supports exponentially many.
-% Throughout, the objective is the dot-product form of Definition~\ref{def:obj}; normalization enters only through the label scale (Remark~\ref{rem:scale}).
-% These are statements of capacity, not optimization: they establish that representations with this structure exist and that the objective's optimum has it.
-
-% \paragraph{Motivation.}
-% The optimum of our objective is a query embedding that acts as a simultaneous linear probe for the
-% attributes the query names, in the sense of \citet{garg2026many}, with the two directions agreeing
-% up to a factor $2k$ in the error.
-% Three things follow.
-% \begin{enumerate}
-%     \item \emph{A capacity statement for attribute-conditioned retrieval.}
-%     \citet{garg2026many} answer how many features a $d$-dimensional representation can store and
-%     linearly decode. That question is about language models, and on its own says nothing about
-%     retrieval. Corollary~\ref{cor:capacity} supplies the bridge. Assuming document embeddings are
-%     linearly represented with $k'$-sparse attribute vectors, loss $\delta^2$ on $k$-condition
-%     queries is realizable at $d = O(k'^2 k^2 \delta^{-2} \log m)$, polynomial in the sparsities and
-%     logarithmic in the attribute vocabulary, so exponentially many attributes fit at fixed width.
-%     This is the formal version of the claim that the open-vocabulary long tail
-%     described in the introduction is reachable at all.
-%     \item \emph{A mechanism for why graded supervision helps.}
-%     Triplet and in-batch objectives, on the other hand, constrain only the \emph{ordering} of scores, and are satisfied
-%     by any embedding that ranks the positive first. Ours constrains the margin to equal a
-%     \emph{count}, and Theorem~\ref{thm:forward} shows this is what forces each queried attribute onto
-%     a linear direction. This is the precise content of the claim that we distill categorization structure into
-%     the embedding.
-%     \item \emph{A prediction we can measure.}
-%     Theorem~\ref{thm:back} and Corollary~\ref{cor:delete} say a model with loss below $\delta^2$
-%     on every triple admits probes of error $O(\delta)$. Fitting
-%     linear probes post hoc on our checkpoints therefore tests the theory directly, and predicts that
-%     baselines trained to comparable loss yield worse probes.
-%     \red{Run this against the attribute labels in \texttt{analysis/}.}
-% \end{enumerate}
-% The scope is capacity, not optimization: the bounds certify that suitable embeddings and query
-% representations exist at a given dimension, not that training finds them.
-
-
-% The following is a self-contained proof that minimizing the attribute Hamming objective is equivalent, up to a factor $2k$ in the error, to requiring the query embedding to act as a simultaneous linear probe for the attributes its conditions name, in the sense of \citet{garg2026many}.
-% We first fix notation and record four elementary lemmas, then prove the two directions.
+We analyze the hard-negative Margin-MSE objective with measured violation counts, assuming the presence of no easy negatives.
+\darkgreen{Theorem~\ref{thm:forward} constructs cosine queries from affine attribute probes under explicit norm and scale assumptions.}
+\darkgreen{Theorem~\ref{thm:back} shows that, under complete comparison coverage, low count loss on a query pair differing in one condition implies affine recovery of the deleted attribute.}
+Proposition~\ref{prop:binary} compares this result with binary supervision within Margin-MSE, which can fit the same query pair without preserving the deleted attribute.
+These results describe feasible representations and information required by low-loss embeddings.
+Corollary~\ref{cor:capacity} gives a unit-norm construction with logarithmic dependence on the attribute vocabulary size under an explicit sufficient bound on $V$.
 
 \subsection{Setup}
 
-\begin{definition}[Attributes and conditions]
-\label{def:attr}
-Let $L$ be the set of texts, comprising both queries and documents, and let $z_i : L \rightarrow \{0,1\}$ for $i \in [m]$ be attribute indicators, with $z_i(x) = 1$ when $x$ has attribute $i$.
-A \emph{condition} $c_i$ names an attribute $i$ together with a \emph{polarity} $s_i \in \{-1, +1\}$.
-A document $x$ \emph{satisfies} $c_i$, written $x \models c_i$, when $z_i(x) = 1$ in the case $s_i = +1$, and when $z_i(x) = 0$ in the case $s_i = -1$.
-A query $q_C$ carries a set of conditions $C$ with $|C| = k$, and $x \models C$ means $x \models c_i$ for every $i \in C$.
-\end{definition}
-
-Note that $s_i^2 = |s_i| = 1$, used repeatedly below.
-
-\begin{definition}[Embedding and objective]
-\label{def:obj}
-Let $f : L \rightarrow \mathbb{R}^d$ assign a \red{unit-norm} representation\red{, $\|f(\ell)\| = 1$,} to each text\red{, so that $\inner{\cdot}{\cdot}$ is cosine similarity}.
-Training consumes triples $(q_C, x^+, x^-)$ in which $x^+ \models C$ and $x^-$ is a hard negative.
-The model predicts the \emph{margin}, $M$, and is regressed onto the \emph{label}, $y$,
-\begin{equation}
-\label{eq:app-obj}
-    M(q_C, x^+, x^-) = \inner{f(q_C)}{f(x^+) - f(x^-)} ,
-    \qquad
-    y(q_C, x^-) = \sum_{i \in C} \ind{x^- \not\models c_i} ,
-\end{equation}
-under the squared loss $\mathcal{L}(q_C, x^+, x^-) = \big( M(q_C, x^+, x^-) - \red{y(q_C, x^-) / V} \big)^2$\red{, where $V > 0$ is a fixed scale}.
-\end{definition}
-
-\red{The scale $V$ is a hyperparameter of the trainer. Under the unit-norm constraint it cannot be absorbed into $f(q_C)$ by rescaling, so it appears explicitly in the bounds below.}
-
-\begin{definition}[Linear recovery, after \citealp{garg2026many}]
-\label{def:rec}
-Let $S \subseteq L$ and $\epsilon > 0$.
-Attribute $z_i$ is \emph{$(\epsilon, S)$-linearly recovered} by a probe $(b_i, \beta_i) \in \mathbb{R}^d \times \mathbb{R}$ if
-\begin{equation}
-\label{eq:app-rec}
-    \big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < \epsilon
-    \qquad \text{for all } x \in S .
-\end{equation}
-We write $r_i(x) = \inner{b_i}{f(x)} + \beta_i - z_i(x)$ for the \emph{residual}, so that Eq.~\eqref{eq:app-rec} reads $|r_i(x)| < \epsilon$ on $S$.
-\citet{garg2026many} state linear accessibility with a strictly linear probe, $g_i(x) = \inner{b_i}{x}$; we allow the offset $\beta_i$, which is the usual linear probe with bias and is exactly linear recovery of $z_i$ from the homogeneous lift $(f(x), 1) \in \mathbb{R}^{d+1}$.
-On the upper-bound side the offset is free, since affine probes contain linear ones (take $\beta_i = 0$) and existence results transfer verbatim.
-On the lower-bound side, their Theorem 12 extends the dimension lower bound to binary-valued features, and its Corollary 13 shows that a bias and a monotonic activation do not raise the asymptotic capacity, so allowing $\beta_i$ does not let the model evade the bound; the binary restriction of our attributes is settled by the same theorem.
-\end{definition}
-
-Throughout, $S$ is the set of documents appearing in training triples, and we abbreviate
-\begin{equation}
-\label{eq:deltas}
-    \Delta f = f(x^+) - f(x^-) ,
-    \qquad
-    \Delta z_i = z_i(x^+) - z_i(x^-) ,
-    \qquad
-    \Delta r_i = r_i(x^+) - r_i(x^-) .
-\end{equation}
-
-{\color{red}%
-Let $U = \operatorname{span}\{ f(x) : x \in S \}$ be the span of the document embeddings.
-We assume $U \neq \mathbb{R}^d$: the document embeddings occupy a proper subspace, as observed for trained encoders \textcolor{orange}{(cite)}.
-Since every $f(x)$ lies in $U$, replacing a probe vector $b_i$ by its orthogonal projection onto $U$ leaves $\inner{b_i}{f(x)}$ unchanged for all $x \in S$ and so preserves Eq.~\eqref{eq:app-rec}; we therefore take $b_i \in U$ without loss of generality.
-}
-
-\subsection{Four lemmas}
-
-The first lemma replaces the case split of Definition~\ref{def:attr} by a single arithmetic expression, which is what allows positive and negated conditions to be handled together.
-
-\begin{lemma}[Polarity identity]
-\label{lem:polarity}
-For every $x \in L$ and every condition $c_i$,
-\begin{equation}
-\label{eq:app-polarity}
-    \ind{x \not\models c_i} = \tfrac{1}{2}\big( 1 - s_i ( 2 z_i(x) - 1 ) \big) .
-\end{equation}
-\end{lemma}
-
-\begin{proof}
-Both sides take values in $\{0,1\}$, so it suffices to check the four combinations of $s_i$ and $z_i(x)$.
-If $s_i = +1$ the right-hand side is $\tfrac{1}{2}(1 - 2z_i(x) + 1) = 1 - z_i(x)$, which is $0$ when $z_i(x) = 1$ and $1$ when $z_i(x) = 0$; by Definition~\ref{def:attr} a positive condition is satisfied exactly when $z_i(x) = 1$, so this agrees with the left-hand side in both cases.
-If $s_i = -1$ the right-hand side is $\tfrac{1}{2}(1 + 2z_i(x) - 1) = z_i(x)$, which is $0$ when $z_i(x) = 0$ and $1$ when $z_i(x) = 1$; a negated condition is satisfied exactly when $z_i(x) = 0$, so again the two sides agree.
-\end{proof}
-
-\begin{lemma}[Attribute values of the positive]
-\label{lem:pos}
-If $x^+ \models C$, then $z_i(x^+) = \tfrac{1}{2}(1 + s_i)$ for every $i \in C$.
-\end{lemma}
-
-\begin{proof}
-Fix $i \in C$.
-Since $x^+ \models c_i$ we have $\ind{x^+ \not\models c_i} = 0$, so Lemma~\ref{lem:polarity} gives $\tfrac{1}{2}(1 - s_i(2 z_i(x^+) - 1)) = 0$, that is, $s_i (2 z_i(x^+) - 1) = 1$.
-Multiplying both sides by $s_i$ and using $s_i^2 = 1$ yields $2 z_i(x^+) - 1 = s_i$, and solving for $z_i(x^+)$ gives the claim.
-\end{proof}
-
-% The value $\tfrac{1}{2}(1 + s_i)$ is $1$ for a positive condition and $0$ for a negated one, as it must be: the positive document has every attribute the query requires and none it forbids.
-
-The next lemma is the pivot of the whole argument.
-The label of Definition~\ref{def:obj} is a count computed from $x^-$ alone, yet the margin it is regressed onto is antisymmetric in $x^+$ and $x^-$.
-Lemma~\ref{lem:label} shows the two are nonetheless compatible, by rewriting the count as a signed difference.
-
-\begin{lemma}[Antisymmetric form of the label]
-\label{lem:label}
-If $x^+ \models C$, then
+Let $S$ be a document set, let $f$ map queries and documents to unit vectors in $\mathbb{R}^d$, and fix $V>0$.
+For a condition $c$, define its satisfaction indicator $h_c(x)=\ind{x\models c}$, equal to $z_i(x)$ when $c$ requires attribute $i$ and $1-z_i(x)$ when it forbids that attribute.
+For a query $q_C$ with $k=|C|\ge1$ conditions, define
 \begin{equation}
 \label{eq:app-label}
-    y(q_C, x^-) = \sum_{i \in C} s_i \, \Delta z_i .
+    H_C(x)=\sum_{c\in C}h_c(x),
+    \qquad y_C(x)=k-H_C(x).
 \end{equation}
-\end{lemma}
-
-\begin{proof}
-Fix $i \in C$.
-Expanding Lemma~\ref{lem:polarity} at $x^-$ and collecting terms,
+Write $P_C=\{x\in S:H_C(x)=k\}$ and $N_C=S\setminus P_C$.
+For $p\in P_C$ and $n\in N_C$, the target count is $y_C(n)=H_C(p)-H_C(n)$ and the cosine margin is
 \begin{equation}
-    \ind{x^- \not\models c_i}
-    = \tfrac{1}{2}\big( 1 - s_i(2 z_i(x^-) - 1) \big)
-    = \tfrac{1}{2}(1 + s_i) - s_i z_i(x^-) .
+\label{eq:app-obj}
+\begin{aligned}
+    M_C(p,n)&=\operatorname{cos}(f(q_C),f(p))-\operatorname{cos}(f(q_C),f(n)) \\
+             &=\inner{f(q_C)}{f(p)-f(n)},
+    \qquad \mathcal{L}(q_C,p,n)=\big(M_C(p,n)-y_C(n)/V\big)^2.
+\end{aligned}
 \end{equation}
-By Lemma~\ref{lem:pos} the leading term is exactly $z_i(x^+)$, and multiplying it by $s_i^2 = 1$ lets us write it as $s_i z_i(x^+)$.
-Hence
+The inner product is Euclidean; the equality uses unit embeddings and does not normalize the difference $f(p)-f(n)$.
+
+An affine probe $(b,\beta)$ recovers a function $h$ with error $\epsilon>0$ on $S$ if
 \begin{equation}
-    \ind{x^- \not\models c_i} = s_i z_i(x^+) - s_i z_i(x^-) = s_i \, \Delta z_i .
+\label{eq:app-rec}
+    |\inner{b}{f(x)}+\beta-h(x)|<\epsilon
+    \qquad\text{for all }x\in S.
 \end{equation}
-Summing over $i \in C$ and applying Definition~\ref{def:obj} gives Eq.~\eqref{eq:app-label}.
-\end{proof}
-
-\begin{remark}
-\label{rem:constant}
-The rewriting in Lemma~\ref{lem:label} is not cosmetic.
-Written in terms of $x^-$ alone the label is $y = \tfrac{1}{2}\big(k + \sum_{i \in C} s_i\big) - \sum_{i \in C} s_i z_i(x^-)$, whose leading term is a nonzero constant.
-A margin is antisymmetric, $M(q_C, x, x) = 0$, and so can never reproduce a constant; it is only because $x^+ \models C$ forces that constant to equal $\sum_{i \in C} s_i z_i(x^+)$ that the label takes a form a margin can match.
-This is also why the objective of Eq.~\eqref{eq:hamming} is stated over triples rather than over single documents.
-\end{remark}
-
-\begin{lemma}[Margin decomposition]
-\label{lem:decomp}
-Let $b_i \in \mathbb{R}^d$ for $i \in C$ and set \red{$u = \sum_{i \in C} s_i b_i$}.
-Then
-\begin{equation}
-\label{eq:app-decomp}
-    \red{\inner{u}{\Delta f}} = \sum_{i \in C} s_i \Big( \inner{b_i}{f(x^+)} - \inner{b_i}{f(x^-)} \Big) .
-\end{equation}
-\end{lemma}
-
-\begin{proof}
-The inner product is bilinear, hence linear in its first argument: $\inner{\sum_{i \in C} s_i b_i}{\Delta f} = \sum_{i \in C} s_i \inner{b_i}{\Delta f}$.
-It is also linear in its second argument, so $\inner{b_i}{\Delta f} = \inner{b_i}{f(x^+)} - \inner{b_i}{f(x^-)}$ by Eq.~\eqref{eq:deltas}.
-Substituting the second identity into the first gives Eq.~\eqref{eq:app-decomp}.
-\end{proof}
+\darkgreen{This extends the linear accessibility definition of \citet[Section~1.1]{garg2026many}, whose probes have no bias.}
+If $(b_i,\beta_i)$ recovers $z_i$, then $(-b_i,1-\beta_i)$ recovers $1-z_i$ with the same error, so recovering a condition indicator and recovering its attribute are equivalent.
 
 \subsection{Main results}
 
-{\color{red}%
-\begin{theorem}[Recovery implies low loss]
+\begin{theorem}[\darkgreen{Affine recoverability permits low loss}]
 \label{thm:forward}
-Let $S \subseteq L$ and $\epsilon > 0$, suppose every attribute $z_i$ with $i \in C$ is $(\epsilon, S)$-linearly recovered by a probe $(b_i, \beta_i)$ with $b_i \in U$, and let $u = \sum_{i \in C} s_i b_i$.
-If $V \ge \|u\|$, then the unit-norm query representation
+Let $U=\operatorname{span}\{f(x):x\in S\}$ be a proper subspace of $\mathbb{R}^d$.
+Suppose every $h_c$, $c\in C$, has an affine probe $(b_c,\beta_c)$ with error $\epsilon>0$ on $S$ and $b_c\in U$, and put $u=\sum_{c\in C}b_c$.
+Using the attribute probes above, $u$ is their signed sum: required attributes contribute $b_i$ and forbidden attributes contribute $-b_i$.
+If $V\ge\|u\|$, the unit query
 \begin{equation}
 \label{eq:app-unitq}
-    f(q_C) = \frac{1}{V} ( u + w ) ,
-    \qquad
-    w \perp U ,
-    \quad
-    \|w\|^2 = V^2 - \|u\|^2 ,
+    f(q_C)=(u+w)/V,
+    \qquad w\perp U,
+    \qquad \|w\|^2=V^2-\|u\|^2
 \end{equation}
-satisfies
-\begin{equation}
-    \mathcal{L}(q_C, x^+, x^-) < \Big( \frac{2 k \epsilon}{V} \Big)^2
-\end{equation}
-for every triple with $x^+, x^- \in S$ and $x^+ \models C$.
+attains $\mathcal{L}(q_C,p,n)<(2k\epsilon/V)^2$ for every $(p,n)\in P_C\times N_C$.
 \end{theorem}
 
 \begin{proof}
-A vector $w \perp U$ of the stated norm exists because $U \neq \mathbb{R}^d$, and $\|f(q_C)\|^2 = V^{-2} ( \|u\|^2 + \|w\|^2 ) = 1$ because $u \in U$ and $w \perp U$.
-Since $\Delta f \in U$ we have $\inner{w}{\Delta f} = 0$, so $M = V^{-1} \inner{u}{\Delta f}$ and
+The assumptions ensure that $w$ exists, that $\|f(q_C)\|=1$, and that $w$ contributes nothing to document scores.
+Set $r_c(x)=\inner{b_c}{f(x)}+\beta_c-h_c(x)$.
+The probe biases cancel in each difference, giving
 \begin{equation}
-    M - y / V = V^{-1} \big( \inner{u}{\Delta f} - y \big) .
+    VM_C(p,n)-y_C(n)=\sum_{c\in C}\big(r_c(p)-r_c(n)\big).
 \end{equation}
-By Lemma~\ref{lem:decomp} the quantity $\inner{u}{\Delta f}$ decomposes over conditions, and by Lemma~\ref{lem:label} so does the label.
-Subtracting them termwise,
-\begin{equation}
-    \inner{u}{\Delta f} - y
-    = \sum_{i \in C} s_i \Big( \big( \inner{b_i}{f(x^+)} - \inner{b_i}{f(x^-)} \big) - \Delta z_i \Big) .
-\end{equation}
-Regrouping each summand by document rather than by quantity, and using $\Delta z_i = z_i(x^+) - z_i(x^-)$,
-\begin{equation}
-    \inner{u}{\Delta f} - y
-    = \sum_{i \in C} s_i \Big( \big( \inner{b_i}{f(x^+)} - z_i(x^+) \big) - \big( \inner{b_i}{f(x^-)} - z_i(x^-) \big) \Big)
-    = \sum_{i \in C} s_i \, \Delta r_i ,
-\end{equation}
-by Definition~\ref{def:rec}, the offsets $\beta_i$ cancelling because each appears once at $x^+$ and once at $x^-$.
-The error of the objective is therefore exactly a signed sum of differences of probe residuals, divided by $V$.
-Applying the triangle inequality to the sum, then $|s_i \Delta r_i| = |s_i| \, |\Delta r_i| = |\Delta r_i|$, and then the triangle inequality again inside each term,
-\begin{equation}
-    \big| \inner{u}{\Delta f} - y \big|
-    \;\le\; \sum_{i \in C} \big| \Delta r_i \big|
-    \;\le\; \sum_{i \in C} \Big( \big| r_i(x^+) \big| + \big| r_i(x^-) \big| \Big)
-    \;<\; \sum_{i \in C} 2\epsilon
-    \;=\; 2 k \epsilon ,
-\end{equation}
-where the strict inequality applies Eq.~\eqref{eq:app-rec} once at $x^+$ and once at $x^-$ for each of the $k$ conditions, both being members of $S$.
-Squaring preserves the inequality for nonnegative quantities, giving $\mathcal{L} = V^{-2} \big( \inner{u}{\Delta f} - y \big)^2 < (2k\epsilon / V)^2$.
+Each summand has magnitude below $2\epsilon$, so $|M_C-y_C/V|<2k\epsilon/V$; squaring proves the claim.
 \end{proof}
 
-If $U = \mathbb{R}^d$ the construction forces $w = 0$ and hence $V = \|u\|$: the scale is then fixed by the probes of each query rather than being a single free constant.
-}
+Corollary~\ref{cor:capacity} below constructs document embeddings and probes satisfying these assumptions when $V\ge kk'$, where $k'$ bounds the number of active attributes per document.
 
-Combining Theorem~\ref{thm:forward} with the construction of \citet{garg2026many} bounds the dimension required to realize the objective.
-Their theorem assumes linear representation, $f(x) = A z(x)$ with sparse attribute vectors, which is stronger than the linear accessibility used above; we adopt it as a hypothesis.
-The corollary is therefore an existence result about representations, not a property of the trained encoder.
-
-\begin{corollary}[Conditional capacity]
-\label{cor:capacity}
-Assume additionally that document embeddings are linearly represented, $f(x) = A z(x)$ with $A \in \mathbb{R}^{d \times m}$ drawn as in the random construction of \citet{garg2026many}, and that the attribute vector $z(x) \in \{0,1\}^m$ of every $x \in S$ has at most $k'$ nonzero entries.
-Their upper bound is stated as $d = O_\epsilon(k'^2 \log m)$; the random construction proving it supplies, for any $\epsilon > 0$, probes attaining Eq.~\eqref{eq:app-rec} once $d = O(k'^2 \epsilon^{-2} \log m)$, the $\epsilon^{-2}$ entering through the incoherence $\mu \approx \epsilon / k'$ of the random directions.
-Taking $\epsilon = \delta / 2k$ and applying Theorem~\ref{thm:forward}, margin loss below \red{$(\delta / V)^2$, i.e., error $\delta$ on the count scale,} on every $k$-condition query over these documents is realizable once
-\begin{equation}
-\label{eq:app-capacity}
-    d = O\!\left( \frac{k'^2 k^2}{\delta^2} \, \log m \right) ,
-    \qquad \text{equivalently} \qquad
-    m = \exp\!\left( \Omega\!\left( \frac{d \, \delta^2}{k^2 k'^2} \right) \right) .
-\end{equation}
-\end{corollary}
-
-The dependence on the number of attributes is logarithmic.
-The polynomial factor arises because Theorem~\ref{thm:forward} requires per-probe error $\epsilon = \delta / 2k$, while the $d = O_\epsilon(k^2 \log m)$ form of \citet{garg2026many} holds at fixed $\epsilon$.
-\red{The hypothesis $V \ge \|u\|$ of Theorem~\ref{thm:forward}, on the norm of the signed sum of the constructed probes, is taken as part of the assumption on the construction.}
-
-The converse recovers probes from a trained model in two steps: differencing two queries isolates a single attribute, and a single positive document then fixes the offset.
-
-\begin{theorem}[Low loss implies aggregate recovery]
+\begin{theorem}[\darkgreen{Low loss implies affine recoverability}]
 \label{thm:back}
-Let $\delta > 0$ and suppose $\mathcal{L}(q_C, x^+, x^-) < \delta^2$ for every triple with $x^+, x^- \in S$ and $x^+ \models C$.
-Then
+Let $\delta>0$, suppose $P_C,N_C$ are nonempty, and assume $\mathcal{L}(q_C,p,n)<\delta^2$ for every $(p,n)\in P_C\times N_C$.
+Choose $x_0\in P_C$ and define
 \begin{equation}
 \label{eq:app-agg}
-    \Big| \red{V} \inner{f(q_C)}{\Delta f} - \sum_{i \in C} s_i \, \Delta z_i \Big| < \red{V} \delta
+    a_C=k-V\inner{f(q_C)}{f(x_0)},
+    \qquad G_C(x)=V\inner{f(q_C)}{f(x)}+a_C.
 \end{equation}
-for every such triple.
+Then $|G_C(x)-H_C(x)|<2V\delta$ for every $x\in S$.
+For $c\in C$, if $D=C\setminus\{c\}$ is also queried and satisfies the same hypotheses on $S$ with the same $V,\delta$, define $G_D$ using $|D|$ in place of $k$ and the same reference $x_0\in P_C\subseteq P_D$.
+\darkgreen{Then $G_C-G_D$ affinely recovers $h_c$, and hence its underlying attribute, with error $4V\delta$; the probe for $h_c$ is}
+\begin{equation}
+\label{eq:app-probe}
+    b=V\big(f(q_C)-f(q_D)\big),
+    \qquad \beta=a_C-a_D.
+\end{equation}
 \end{theorem}
 
 \begin{proof}
-Both $\mathcal{L}$ and $\delta^2$ are nonnegative, so $\mathcal{L} < \delta^2$ is equivalent to $|M - \red{y / V}| < \delta$\red{, and multiplying by $V > 0$ gives $|VM - y| < V\delta$}.
-Substituting Eq.~\eqref{eq:app-obj} for $M$ and Lemma~\ref{lem:label} for $y$ gives Eq.~\eqref{eq:app-agg}.
+For $x\in N_C$, $G_C(x)-H_C(x)=y_C(x)-VM_C(x_0,x)$ has magnitude below $V\delta$ by the loss assumption.
+For $x\in P_C$, choose $n\in N_C$ and subtract the controlled margins $M_C(x,n)$ and $M_C(x_0,n)$.
+Their targets agree, giving $|G_C(x)-H_C(x)|=V|M_C(x,n)-M_C(x_0,n)|<2V\delta$.
+Applying the same argument to $D$ and using $H_C-H_D=h_c$ gives
+\begin{equation}
+    |(G_C-G_D)(x)-h_c(x)|
+    \le |G_C(x)-H_C(x)|+|G_D(x)-H_D(x)|<4V\delta.
+\end{equation}
 \end{proof}
 
-Theorem~\ref{thm:back} constrains only the aggregate $\sum_{i \in C} s_i \Delta z_i$: a model could err on one condition and compensate on another without violating it.
-Isolating a single attribute requires comparing two queries that differ in exactly one condition, which is the content of the following corollary.
+At fixed $\delta$, the recovery bound $4V\delta$ grows linearly with $V$; zero loss gives exact recovery.
 
-\begin{corollary}[Per-attribute recovery under deletion closure]
-\label{cor:delete}
-Assume in addition that the query family contains $q_{C \setminus \{i\}}$ for some $i \in C$, that it assigns the same polarity to every condition the two queries share, and that both queries satisfy the hypothesis of Theorem~\ref{thm:back}.
-Fix any reference $x_0 \in S$ with $x_0 \models C$; at least one exists, since every triple contains a positive.
-Then $z_i$ is $(\red{2V\delta}, S)$-linearly recovered by the probe
-\begin{equation}
-\label{eq:app-probe}
-    b_i = s_i \red{V} \big( f(q_C) - f(q_{C \setminus \{i\}}) \big) ,
-    \qquad
-    \beta_i = z_i(x_0) - \inner{b_i}{f(x_0)} .
-\end{equation}
-\end{corollary}
+To compare binary and count supervision within Margin-MSE, we use the same queries and comparisons with binary target $1$ for every positive--negative pair.
 
-\begin{proof}
-Applying Eq.~\eqref{eq:app-agg} to $q_C$ and to $q_{C \setminus \{i\}}$ in turn,
-\begin{equation}
-    \Big| \red{V} \inner{f(q_C)}{\Delta f} - \sum_{j \in C} s_j \Delta z_j \Big| < \red{V} \delta ,
-    \qquad
-    \Big| \red{V} \inner{f(q_{C \setminus \{i\}})}{\Delta f} - \sum_{j \in C \setminus \{i\}} s_j \Delta z_j \Big| < \red{V} \delta .
-\end{equation}
-Because the two queries agree in polarity on their shared conditions, the two sums differ in exactly the single term $s_i \Delta z_i$.
-Subtracting the second bound from the first and applying the triangle inequality, together with linearity of the inner product in its first argument,
-\begin{equation}
-    \Big| \inner{\red{V} \big( f(q_C) - f(q_{C \setminus \{i\}}) \big)}{\Delta f} - s_i \Delta z_i \Big| < \red{2V\delta} .
-\end{equation}
-Multiplying the quantity inside the absolute value by $s_i$ leaves the value unchanged, since $|s_i| = 1$, and $s_i^2 = 1$ reduces $s_i \cdot s_i \Delta z_i$ to $\Delta z_i$, giving
-\begin{equation}
-\label{eq:app-diff}
-    \big| \inner{b_i}{\Delta f} - \Delta z_i \big| < \red{2V\delta}
-    \qquad \text{for every triple.}
-\end{equation}
-It remains to fix the offset.
-The hypothesis of Theorem~\ref{thm:back} ranges over every triple with $x^+, x^- \in S$ and $x^+ \models C$, so we may take $x^+ = x_0$ and let $x^- = x$ range over all of $S$.
-For such a pair Eq.~\eqref{eq:app-diff} reads
-\begin{equation}
-    \big| \inner{b_i}{f(x_0)} - \inner{b_i}{f(x)} - z_i(x_0) + z_i(x) \big| < \red{2V\delta} .
-\end{equation}
-By the definition of $\beta_i$ in Eq.~\eqref{eq:app-probe} we have $\inner{b_i}{f(x_0)} - z_i(x_0) = -\beta_i$, so the quantity inside is $-\big( \inner{b_i}{f(x)} + \beta_i - z_i(x) \big)$, whose absolute value is unchanged by the sign.
-Hence $\big| \inner{b_i}{f(x)} + \beta_i - z_i(x) \big| < \red{2V\delta}$ for all $x \in S$, which is Eq.~\eqref{eq:app-rec} with $\epsilon = \red{2V\delta}$.
-\end{proof}
-
-{\color{red}%
-The scale $V$ enters the two directions oppositely.
-Theorem~\ref{thm:forward} gives loss $(2k\epsilon / V)^2$, which falls as $V$ grows, while Corollary~\ref{cor:delete} recovers each attribute only to error $2V\delta$, which rises.
-A larger $V$ makes the objective easier to satisfy and its optimum less informative about individual attributes, which is the trade-off behind selecting $V$ on validation data in our experiments.
-}
-
-{\color{red}% binary supervision
-The graded label is what carries the per-attribute structure.
-Replacing it with the binary relevance target $\ind{x^- \not\models C}$ under the same squared loss still recovers each query's conjunction, but no longer its individual attributes: the deletion pair that suffices in Corollary~\ref{cor:delete} does not suffice here.
-
-\begin{proposition}[Binary supervision recovers conjunctions, not attributes]
+\begin{proposition}[Binary Margin-MSE can discard attributes]
 \label{prop:binary}
-Let $\mathcal{L}_{\mathrm{bin}}(q_C, x^+, x^-) = \big( M(q_C, x^+, x^-) - \ind{x^- \not\models C} / V \big)^2$.
-\begin{enumerate}
-    \item[(i)] If $\mathcal{L}_{\mathrm{bin}} < \delta^2$ for every triple with $x^+, x^- \in S$ and $x^+ \models C$, then the conjunction indicator $x \mapsto \ind{x \models C}$ is $(V\delta, S)$-linearly recovered, in the sense of Eq.~\eqref{eq:app-rec}, by the probe $\big( V f(q_C),\, 1 - V \inner{f(q_C)}{f(x_0)} \big)$ for any $x_0 \in S$ with $x_0 \models C$.
-    \item[(ii)] For every $V \ge \sqrt{2}$ there exist $S$, conditions $C = \{c_1, c_2\}$ of positive polarity, and a unit-norm embedding with $d = 4$ attaining $\mathcal{L}_{\mathrm{bin}} = 0$ on every triple of $q_C$ and of $q_{C \setminus \{2\}}$, such that $z_2$ is not $(\epsilon, S)$-linearly recovered by any probe for any $\epsilon \le \tfrac{1}{2}$.
-\end{enumerate}
+There are unit embeddings and a query pair $C=\{c_1,c_2\}$, $D=\{c_1\}$, both conditions positive, with zero binary Margin-MSE loss
+\begin{equation}
+    \mathcal{L}_{\mathrm{bin}}(q_C,p,n)
+    =\big(M_C(p,n)-1\big)^2
+\end{equation}
+on every positive--negative pair for both queries, although every affine probe for $z_2$ has maximum error at least $1/2$ on the document set.
 \end{proposition}
 
 \begin{proof}
-(i) Fix $x \in S$ and apply the hypothesis to the triple $(q_C, x_0, x)$, writing its label as $\ind{x \not\models C} = 1 - \ind{x \models C}$ and multiplying by $V$:
+Take one document for each $(z_1,z_2)\in\{0,1\}^2$ and choose $f(q_C)=e_1$, $f(q_D)=e_2$ in $\mathbb{R}^3$, with
 \begin{equation}
-    \big| V \inner{f(q_C)}{f(x_0) - f(x)} - 1 + \ind{x \models C} \big| < V\delta .
+    \begin{array}{c|c}
+        (z_1,z_2)&f(x)\\ \hline
+        (0,0)&(-\tfrac12,-\tfrac12,\tfrac{1}{\sqrt2})\\[2pt]
+        (0,1)&(-\tfrac12,-\tfrac12,\tfrac{1}{\sqrt2})\\[2pt]
+        (1,0)&(-\tfrac12,\tfrac12,\tfrac{1}{\sqrt2})\\[2pt]
+        (1,1)&(\tfrac12,\tfrac12,\tfrac{1}{\sqrt2}).
+    \end{array}
 \end{equation}
-Negating the quantity inside the absolute value gives $\big| \inner{V f(q_C)}{f(x)} + \big( 1 - V \inner{f(q_C)}{f(x_0)} \big) - \ind{x \models C} \big| < V\delta$, which is Eq.~\eqref{eq:app-rec} for the stated probe.
-
-(ii) Let $S$ contain four documents realizing the four values of $(z_1, z_2)$, let $e_1, \dots, e_4$ be orthonormal in $\mathbb{R}^4$, set $a = 1/V \le 1/\sqrt{2}$, and define
-\begin{equation}
-    f(x) = a \, \ind{x \models C} \, e_1 + a \, \ind{x \models c_1} \, e_2 + \sqrt{1 - a^2 \big( \ind{x \models C} + \ind{x \models c_1} \big)} \; e_3 ,
-    \qquad
-    f(q_C) = e_1 ,
-    \qquad
-    f(q_{C \setminus \{2\}}) = e_2 .
-\end{equation}
-The square root is real because $a^2 \big( \ind{x \models C} + \ind{x \models c_1} \big) \le 2a^2 \le 1$, and every embedding is unit norm by construction; the document embeddings lie in $\operatorname{span}\{e_1, e_2, e_3\}$, so $U \neq \mathbb{R}^4$ as assumed throughout.
-Since $x^+$ satisfies its query's conditions, the margin of any triple of $q_C$ is $a \big( \ind{x^+ \models C} - \ind{x^- \models C} \big) = \ind{x^- \not\models C} / V$, and likewise $\ind{x^- \not\models c_1} / V$ for $q_{C \setminus \{2\}}$: exactly the scaled binary labels, so $\mathcal{L}_{\mathrm{bin}} = 0$ on every triple.
-The two documents with $z_1 = 0$ satisfy neither $C$ nor $c_1$ and so share the embedding $e_3$, yet differ in $z_2$; any probe $(b_2, \beta_2)$ assigns both the value $v = \inner{b_2}{e_3} + \beta_2$, and Eq.~\eqref{eq:app-rec} at the two documents requires $|v| < \epsilon$ and $|v - 1| < \epsilon$; then $1 \le |v| + |v - 1| < 2\epsilon$ forces $\epsilon > \tfrac{1}{2}$.
+All vectors have unit norm and give margin $1$ on every required pair.
+Any probe assigns the same value to $(0,0)$ and $(0,1)$, so one of its errors for $z_2$ is at least $1/2$.
 \end{proof}
-}
 
+Using our attribute Hamming loss, on the other hand, $(0,0)$ and $(0,1)$ have different targets because they violate two conditions and one condition of $C$, respectively.
+\darkgreen{Per Theorem~\ref{thm:back}, sufficiently small loss on these two queries implies that $z_2$ is approximately recoverable by an affine probe, even without a query for $z_2$ alone.}
+% Theorem~\ref{thm:back} shows that uniformly small count loss on these two queries makes $z_2$ approximately recoverable, even without a query for $z_2$ alone.
 
-% \subsection{Remarks}
+\subsection{Capacity with unit embeddings}
 
-% \begin{remark}[Identifiability]
-% \label{rem:diff}
-% Eq.~\eqref{eq:app-diff} constrains $b_i$ only through its action on the observed differences, so $b_i$ is determined only up to components orthogonal to their span.
-% Corollary~\ref{cor:delete} requires only that some probe attain the bound, so nothing downstream depends on this.
-% The offset $\beta_i$ is pinned by the single reference document, which the triple structure supplies for free.
-% The hypotheses quantify over triples on which the loss is controlled; empirically, this is the training set.
-% \end{remark}
+We adapt the approximately orthogonal construction of \citet{garg2026many} by applying one common scale and adding two coordinates.
+One coordinate normalizes the document embeddings; the other normalizes the query embeddings.
 
-% \begin{remark}[Cost of query complexity]
-% \label{rem:cost}
-% Theorem~\ref{thm:forward} loses a factor $2k$, so attaining loss $\delta^2$ on $k$-condition queries demands per-probe error $\epsilon < \delta / 2k$.
-% Through Corollary~\ref{cor:capacity} this quantity is priced in dimension quadratically in the document sparsity and again in the query size, so the width requirement is driven by the sparsities rather than by the size of the corpus.
-% \end{remark}
+\begin{corollary}[Capacity for cosine Margin-MSE]
+\label{cor:capacity}
+Let $m\ge2$, $k\ge1$, and $1\le k'\le m$ be integers, let $0<\epsilon\le1$, and suppose $z(x)\in\{0,1\}^m$ has at most $k'$ nonzero entries for every $x\in S$.
+For every $V\ge kk'$, there exist unit document and query embeddings in dimension
+\begin{equation}
+\label{eq:app-capacity}
+    d=O\!\left(\frac{k'^2}{\epsilon^2}\log m\right)
+\end{equation}
+such that every attribute is affinely recovered with error $\epsilon$ on $S$, and every query with $1\le|C|\le k$, allowing positive and negated conditions, has $\mathcal{L}(q_C,p,n)<(2k\epsilon/V)^2$ for every $(p,n)\in P_C\times N_C$.
+\end{corollary}
 
-% \begin{remark}[Non-discriminating conditions]
-% \label{rem:disc}
-% Under the standing assumption $x^+ \models C$, a condition fails to discriminate on a triple precisely when the negative also satisfies it; then $\Delta z_i = 0$ and, by Lemma~\ref{lem:label}, the condition contributes nothing to the \emph{label}, which is why the recorded \texttt{query\_distance} counts only discriminating conditions.
-% The \emph{error budget} is not reduced in the same way: in Theorem~\ref{thm:forward} the residual term $s_i \Delta r_i$ of a non-discriminating condition is bounded by $2\epsilon$ but need not vanish, so the $k$ in $(2k\epsilon)^2$ must be read as the full number of queried conditions $|C|$.
-% Queried conditions that do not discriminate thus add residual noise to the margin without adding signal to the label, a formal counterpart of constraint dilution.
-% \end{remark}
+\begin{proof}
+Set $\mu=\epsilon/k'$.
+Lemma~5 of the cited work constructs $m$ unit vectors $a_i\in\mathbb{R}^{d_0}$ with $|\inner{a_i}{a_j}|<\mu$ for $i\ne j$, using $d_0=O(\mu^{-2}\log m)$ coordinates.
+Here $d_0$ is the dimension before the two normalization coordinates are added; put $A=[a_1\ \cdots\ a_m]$.
+Since $\|Az(x)\|\le k'$, define document embeddings and attribute probes in $\mathbb{R}^{d_0+2}$ by
+\begin{equation}
+\label{eq:app-capacity-padding}
+    f(x)=\left(\frac{Az(x)}{k'},\sqrt{1-\frac{\|Az(x)\|^2}{k'^2}},0\right),
+    \qquad \widetilde b_i=(k'a_i,0,0).
+\end{equation}
+Every $f(x)$ has unit norm, including when $z(x)=0$, and the added coordinates contribute nothing to probe outputs.
+Since each column has unit norm and distinct columns have inner products bounded in magnitude by $\mu$, we have
+\begin{equation}
+    \left|\inner{\widetilde b_i}{f(x)}-z_i(x)\right|
+    =\left|\sum_{j\ne i}z_j(x)\inner{a_i}{a_j}\right|<k'\mu=\epsilon.
+\end{equation}
+Project $\widetilde b_i$ onto the document span $U$ to obtain $b_i$; this preserves all probe outputs and gives $\|b_i\|\le k'$.
+The last coordinate of every document is zero, so $U$ is a proper subspace.
+Positive and negated conditions use $(b_i,0)$ and $(-b_i,1)$, respectively, giving
+\begin{equation}
+    \left\|\sum_{c\in C}b_c\right\|\le |C|k'\le kk'\le V.
+\end{equation}
+Theorem~\ref{thm:forward} therefore supplies unit queries with loss below $(2|C|\epsilon/V)^2\le(2k\epsilon/V)^2$.
+Substituting $\mu=\epsilon/k'$ into the construction's dimension bound gives $d_0=O(k'^2\epsilon^{-2}\log m)$.
+The two added coordinates change this by an additive constant, so $d=d_0+2=O(k'^2\epsilon^{-2}\log m)$.
+\end{proof}
 
-% \begin{remark}[Consistency with the generator]
-% \label{rem:gen}
-% Our queries draw positive conditions from the features unique to $x^+$ and from those common to both products, and negated conditions from the features unique to $x^-$ and from those applying to neither.
-% Common and neither features are satisfied by both documents, so by Remark~\ref{rem:disc} they contribute nothing to the label, and $y$ reduces to the count of unique-positive plus unique-negative features, which is the \texttt{query\_distance} recorded by our preprocessing.
-% \end{remark}
+For fixed document sparsity $k'$ and attribute recovery error $\epsilon$, the sufficient dimension is logarithmic in $m$.
+\darkgreen{The padding preserves attribute recovery with zero bias, a special case of affine recovery, although the complete embedding need not be linear in $z$.}
+The condition $V\ge kk'$ is sufficient and is not claimed to be necessary; the corollary is an existence result under this scale condition, not a guarantee about the embeddings learned by training.
 
-% \begin{remark}[Normalization and the label scale]
-% \label{rem:scale}
-% The deployed encoder $\ell_2$-normalizes both sides, so that $\inner{f(q)}{f(x)}$ is a cosine similarity and $|M| \le 2$, while the raw label can reach $k$.
-% The label scale addresses this. The trainer's target is $y / V$, attainable only if $V \ge k_{\max} / 2$.
-% In our pipeline hard-negative labels are capped by \texttt{max\_distance} $= 10$ and easy negatives are remapped to $15$, so $V = 25$ places every target in $[0, 0.6]$, inside $[-2, 2]$.
-% Under normalization $V$ is not absorbable: a unit-norm query realizes the probe sum $B_C = \sum_{i \in C} s_i b_i$ only through its direction $B_C / \lVert B_C \rVert$, with $V$ standing in for $\lVert B_C \rVert$, and the margin error becomes $2 k \epsilon / \lVert B_C \rVert$ plus a scale-mismatch term $y \, \lvert V - \lVert B_C \rVert \rvert / ( V \lVert B_C \rVert )$, vanishing when $\lVert B_C \rVert = V$.
-% \red{If the normalized statement is needed exactly, add the norm-matching assumption $\lVert B_C \rVert = V$ or carry the mismatch term through Theorem~\ref{thm:forward}.}
-% \end{remark}
-
-\paragraph{Glossary.}
+\paragraph{Notation.}
 \begin{description}\setlength{\itemsep}{0pt}
-    \item[$L$] Input set, the queries and documents composed of sequences of tokens. Not to be
-    confused with the loss $\mathcal{L}$.
-    \item[$S$] The subset of $L$ on which recovery is required; here the documents appearing in
-    training triples. Easy negatives are excluded.
-    \item[$f$] The embedding $f : L \rightarrow \mathbb{R}^d$. The analysis imposes no norm
-    constraint; the deployed encoder normalizes its outputs.
-    \item[$d$] Embedding dimension.
-    \item[$x$] A document. $x^+$ is a positive, satisfying every condition of the query; $x^-$ is a
-    hard negative drawn from the same annotated product pair.
-    \item[$z_i$] Attribute indicator $z_i : L \rightarrow \{0,1\}$, equal to $1$ when the text has
-    attribute $i$. Depends only on the text.
-    \item[$m$] Total number of attributes in the corpus.
-    \item[$q_C$] Query with condition set $C$.
-    \item[$c_i$] A single condition, naming attribute $i$ together with a polarity.
-    \item[$C$] The set of conditions of a query.
-    \item[$k$] Number of conditions, $|C|$. The label depends only on discriminating conditions,
-    but error bounds use the full $|C|$.
-    \item[$k'$] Maximum number of attributes present in a single document; document-side
-    sparsity, used only in Corollary~\ref{cor:capacity}.
-    \item[$s_i$] Polarity of condition $c_i$; $+1$ when the query requires attribute $i$ to be
-    present, $-1$ when it requires it absent. Always $|s_i| = 1$.
-    \item[$b_i$] Linear probe vector for attribute $i$. A property of the attribute, not of the
-    query: one probe serves both polarities.
-    \item[$\beta_i$] Scalar offset of the probe for attribute $i$, fixed by a reference document.
-    Equivalent to one extra coordinate, see Definition~\ref{def:rec}.
-    \item[$M$] The margin $\inner{f(q_C)}{f(x^+) - f(x^-)}$, the quantity the model predicts.
-    \item[$y$] The label, the number of conditions the negative violates.
-    \item[$\mathcal{L}$] The loss $(M - y)^2$ on a triple.
-    \item[$\epsilon$] Probe error: the tolerance in the recovery condition Eq.~\eqref{eq:app-rec}.
-    \item[$\delta$] Margin error: the square root of the loss achieved on every triple.
-    \item[$V$] Fixed label scale applied by the trainer. Absorbable for the unconstrained
-    objective, and set to $1$ in the analysis.
-    \item[$\ind{\cdot}$] Indicator, $1$ when its argument holds and $0$ otherwise.
-    \item[$\models$] Satisfaction: $x \models c_i$ when document $x$ meets condition $c_i$, and
-    $x \models C$ when it meets all of them.
+    \item[$S,f,d$] Document set, unit embedding map, and embedding dimension.
+    \item[$z_i,h_c,H_C$] Attribute indicator, condition satisfaction indicator, and number of conditions satisfied.
+    \item[$C,k,q_C$] Condition set, its size $k=|C|$, and its query; in Corollary~\ref{cor:capacity}, $k$ bounds the query size.
+    \item[$P_C,N_C$] Documents satisfying all conditions and documents violating at least one.
+    \item[$b_i,\beta_i$] Affine probe for attribute $z_i$; $(b_c,\beta_c)$ denotes a probe for condition indicator $h_c$.
+    \item[$U,u,w$] Document span, sum of condition-probe vectors, and orthogonal query component in Theorem~\ref{thm:forward}.
+    \item[$M_C,y_C,V$] Cosine margin, violation count, and fixed positive label scale.
+    \item[$\epsilon,\delta$] Uniform probe-error and margin-error tolerances; loss is below $\delta^2$ on each comparison assumed in Theorem~\ref{thm:back}.
+    \item[$G_C,a_C$] Affine predictor of $H_C$ and its offset fixed by a reference positive.
+    \item[$m,k'$] Attribute vocabulary size and document sparsity in Corollary~\ref{cor:capacity}.
+    \item[$A,d_0,\mu$] Matrix of unit attribute columns, dimension before padding, and bound on off-diagonal inner products in the capacity construction.
 \end{description}
 
-\endgroup
 
 
 \bibliography{related-work}
