@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# paper.sh — single entry point that produces every result in the paper.
+# paper.sh — in-context rephrased training/evaluation for every active paper experiment.
+# EVAL_HUMAN=1 opts into the separate human study; off by default.
+# Legacy condition rows are retained as comments; their checkpoints live in models/old/.
 #
 # Phase 1 trains every missing model, in parallel across GPUs (one GPU per job;
 # DDP/NCCL is broken on this node). Phase 2 runs test-set inference for every
@@ -56,6 +58,8 @@ SMOKE=${SMOKE:-0}
 DRY_RUN=${DRY_RUN:-0}
 FORCE_TRAIN=${FORCE_TRAIN:-0}
 FORCE_TEST=${FORCE_TEST:-0}
+# Human-study inference is opt-in and outside the synthetic paper refresh.
+EVAL_HUMAN=${EVAL_HUMAN:-0}
 ONLY=${ONLY:-}
 # CPU threads per training process. Unset, torch spawns one per core (208 on emu) in every
 # process; 8 such processes thrash the node (load 550, GPUs starved) and an image epoch takes
@@ -137,6 +141,7 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 
 # ---------------------------------------------------------------------------
 CONDITIONS="
+
 # 2026-09-09: synthetic test-split rows are commented out; the paper reports original and
 # rephrased only. Their models and preds stay on disk; the synthetic val rows below remain
 # as the record of each style's hparam selection.
@@ -159,42 +164,42 @@ CONDITIONS="
 # text        baseline-triplet  original   -   -
 # text        baseline-triplet  synthetic  -   -
 # text        baseline-triplet  rephrased  -   -
-text        infonce           original   -   -
-text        infonce-mined     original   -   -
-text        siglip-mined      original   -   -
+# archived/retired: text        infonce           original   -   -
+# archived/retired: text        infonce-mined     original   -   -
+# archived/retired: text        siglip-mined      original   -   -
 # text        infonce           synthetic  -   -
 # text        infonce-mined     synthetic  -   -
 # text        siglip-mined      synthetic  -   -
-text        infonce           rephrased  -   -
-text        infonce-mined     rephrased  -   -
-text        siglip-mined      rephrased  -   -
-text        cosent            original   -   -
+# archived/retired: text        infonce           rephrased  -   -
+# archived/retired: text        infonce-mined     rephrased  -   -
+# archived/retired: text        siglip-mined      rephrased  -   -
+# archived/retired: text        cosent            original   -   -
 # text        cosent            synthetic  -   -
-text        cosent            rephrased  -   -
-text        ours-cosent       original   -   -
+# archived/retired: text        cosent            rephrased  -   -
+# archived/retired: text        ours-cosent       original   -   -
 # text        ours-cosent       synthetic  -   -
-text        ours-cosent       rephrased  -   -
+# archived/retired: text        ours-cosent       rephrased  -   -
 # text        classic-mse       original   40  -
 # text        classic-mse       synthetic  40  -
 # text        classic-mse       rephrased  40  -
-text        ours-mse          original   40  easy=10
-text        ours-infonce      original   40  -
-text        ours-siglip       original   20  easy=10
-text        ours-infonce-margin original  80  easy=10
+# archived/retired: text        ours-mse          original   40  easy=10
+# archived/retired: text        ours-infonce      original   40  -
+# archived/retired: text        ours-siglip       original   20  easy=10
+# archived/retired: text        ours-infonce-margin original  80  easy=10
 # text        ours-mse          synthetic  40  easy=10
 # text        ours-infonce      synthetic  40  -
 # text        ours-siglip       synthetic  20  easy=10
 # text        ours-infonce-margin synthetic 80  easy=10
-text        ours-mse          rephrased  40  easy=10
-text        ours-infonce      rephrased  40  -
-text        ours-siglip       rephrased  20  easy=10
-text        ours-infonce-margin rephrased 80  easy=10
-text        ours-mse-batched  original   40  easy=10
+# archived/retired: text        ours-mse          rephrased  40  easy=10
+# archived/retired: text        ours-infonce      rephrased  40  -
+# archived/retired: text        ours-siglip       rephrased  20  easy=10
+# archived/retired: text        ours-infonce-margin rephrased 80  easy=10
+# archived/retired: text        ours-mse-batched  original   40  easy=10
 # text        ours-mse-batched  synthetic  40  easy=10
-text        ours-mse-batched  rephrased  40  easy=10
-text        mse-mined         original   40  easy=10
+# archived/retired: text        ours-mse-batched  rephrased  40  easy=10
+# archived/retired: text        mse-mined         original   40  easy=10
 # text        mse-mined         synthetic  40  easy=10
-text        mse-mined         rephrased  40  easy=10
+# archived/retired: text        mse-mined         rephrased  40  easy=10
 # The image dataset has no real search queries (original_query is empty for all 12,957 rows),
 # so multimodal runs synthetic and rephrased only.
 # multimodal  untrained         synthetic  -   -
@@ -204,29 +209,29 @@ text        mse-mined         rephrased  40  easy=10
 # multimodal  infonce           synthetic  -   -
 # multimodal  infonce-mined     synthetic  -   -
 # multimodal  siglip-mined      synthetic  -   -
-multimodal  infonce           rephrased  -   -
-multimodal  infonce-mined     rephrased  -   -
-multimodal  siglip-mined      rephrased  -   -
+# archived/retired: multimodal  infonce           rephrased  -   -
+# archived/retired: multimodal  infonce-mined     rephrased  -   -
+# archived/retired: multimodal  siglip-mined      rephrased  -   -
 # multimodal  cosent            synthetic  -   -
-multimodal  cosent            rephrased  -   -
+# archived/retired: multimodal  cosent            rephrased  -   -
 # multimodal  ours-cosent       synthetic  -   -
-multimodal  ours-cosent       rephrased  -   -
+# archived/retired: multimodal  ours-cosent       rephrased  -   -
 # multimodal  classic-mse       synthetic  40  -
 # multimodal  classic-mse       rephrased  40  -
 # multimodal  ours-mse          synthetic  80  easy=10
 # multimodal  ours-infonce      synthetic  40  -
 # multimodal  ours-siglip       synthetic  20  easy=10
 # multimodal  ours-infonce-margin synthetic 80  easy=10
-multimodal  ours-mse          rephrased  80  easy=10
-multimodal  ours-infonce      rephrased  40  -
+# archived/retired: multimodal  ours-mse          rephrased  80  easy=10
+# archived/retired: multimodal  ours-infonce      rephrased  40  -
 # multimodal  ours-siglip       rephrased  20  easy=10   # synthetic-val pick; per-query-kind val (2026-09-05) selects V=40
-multimodal  ours-siglip       rephrased  40  easy=10
-multimodal  ours-infonce-margin rephrased 80  easy=10
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=10
+# archived/retired: multimodal  ours-infonce-margin rephrased 80  easy=10
 # multimodal  ours-mse-batched  synthetic  80  easy=10
 # multimodal  ours-mse-batched  rephrased  80  easy=10   # synthetic-val pick; per-query-kind val (2026-09-05) selects V=20
-multimodal  ours-mse-batched  rephrased  20  easy=10
+# archived/retired: multimodal  ours-mse-batched  rephrased  20  easy=10
 # multimodal  mse-mined         synthetic  80  easy=10
-multimodal  mse-mined         rephrased  80  easy=10
+# archived/retired: multimodal  mse-mined         rephrased  80  easy=10
 
 # ---------------------------------------------------------------------------
 # V ablation: 20/40/60 on synthetic queries for every graded style. The V=40 point
@@ -236,24 +241,24 @@ multimodal  mse-mined         rephrased  80  easy=10
 # text        ours-mse          synthetic  60  -
 # text        ours-mse-batched  synthetic  20  -
 # text        ours-mse-batched  synthetic  60  -
-text        ours-infonce      synthetic  20  split=val
-text        ours-infonce      synthetic  60  split=val
+# archived/retired: text        ours-infonce      synthetic  20  split=val
+# archived/retired: text        ours-infonce      synthetic  60  split=val
 # text        ours-siglip       synthetic  20  split=val
 # text        ours-siglip       synthetic  60  split=val
-text        ours-infonce-margin synthetic 10  split=val
-text        ours-infonce-margin synthetic 20  split=val
-text        ours-infonce-margin synthetic 60  split=val
+# archived/retired: text        ours-infonce-margin synthetic 10  split=val
+# archived/retired: text        ours-infonce-margin synthetic 20  split=val
+# archived/retired: text        ours-infonce-margin synthetic 60  split=val
 # multimodal  ours-mse          synthetic  20  -
 # multimodal  ours-mse          synthetic  60  -
 # multimodal  ours-mse-batched  synthetic  20  -
 # multimodal  ours-mse-batched  synthetic  60  -
-multimodal  ours-infonce      synthetic  20  split=val
-multimodal  ours-infonce      synthetic  60  split=val
+# archived/retired: multimodal  ours-infonce      synthetic  20  split=val
+# archived/retired: multimodal  ours-infonce      synthetic  60  split=val
 # multimodal  ours-siglip       synthetic  20  split=val
 # multimodal  ours-siglip       synthetic  60  split=val
-multimodal  ours-infonce-margin synthetic 10  split=val
-multimodal  ours-infonce-margin synthetic 20  split=val
-multimodal  ours-infonce-margin synthetic 60  split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic 10  split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic 20  split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic 60  split=val
 
 # ---------------------------------------------------------------------------
 # Easy-value ablation: where does the random-negative penalty sit on the scale?
@@ -262,20 +267,20 @@ multimodal  ours-infonce-margin synthetic 60  split=val
 # placement from V, which the V ablation alone conflates (easy label = 20/V there).
 # ours-infonce is exempt: its easy rows are one-hot regardless of the easy value.
 # ---------------------------------------------------------------------------
-text        classic-mse       synthetic  40  easy=30,split=val
-text        classic-mse       synthetic  40  easy=40,split=val
-text        ours-mse          synthetic  40  easy=30,split=val
-text        ours-mse          synthetic  40  easy=40,split=val
-text        ours-mse-batched  synthetic  40  easy=30,split=val
-text        ours-mse-batched  synthetic  40  easy=40,split=val
+# archived/retired: text        classic-mse       synthetic  40  easy=30,split=val
+# archived/retired: text        classic-mse       synthetic  40  easy=40,split=val
+# archived/retired: text        ours-mse          synthetic  40  easy=30,split=val
+# archived/retired: text        ours-mse          synthetic  40  easy=40,split=val
+# archived/retired: text        ours-mse-batched  synthetic  40  easy=30,split=val
+# archived/retired: text        ours-mse-batched  synthetic  40  easy=40,split=val
 # text        ours-siglip       synthetic  40  easy=30,split=val
 # text        ours-siglip       synthetic  40  easy=40,split=val
-multimodal  classic-mse       synthetic  40  easy=30,split=val
-multimodal  classic-mse       synthetic  40  easy=40,split=val
-multimodal  ours-mse          synthetic  40  easy=30,split=val
-multimodal  ours-mse          synthetic  40  easy=40,split=val
-multimodal  ours-mse-batched  synthetic  40  easy=30,split=val
-multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
+# archived/retired: multimodal  classic-mse       synthetic  40  easy=30,split=val
+# archived/retired: multimodal  classic-mse       synthetic  40  easy=40,split=val
+# archived/retired: multimodal  ours-mse          synthetic  40  easy=30,split=val
+# archived/retired: multimodal  ours-mse          synthetic  40  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  40  easy=30,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
 # multimodal  ours-siglip       synthetic  40  easy=30,split=val
 # multimodal  ours-siglip       synthetic  40  easy=40,split=val
 
@@ -294,33 +299,33 @@ multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
 # ours-infonce is deprecated in favour of ours-infonce-margin and is deliberately absent:
 # no further ours-infonce runs unless something turns out to be badly wrong with margin.
 # -------------------------------------------------------------------------
-text        ours-mse          synthetic  20  easy=10,split=val
-text        ours-mse          synthetic  40  easy=10,split=val
-text        ours-mse          synthetic  80  easy=10,split=val
-text        ours-mse          synthetic  20  easy=20,split=val
-text        ours-mse          synthetic  40  easy=20,split=val
-text        ours-mse          synthetic  80  easy=20,split=val
-text        ours-mse          synthetic  20  easy=40,split=val
-text        ours-mse          synthetic  40  easy=40,split=val
-text        ours-mse          synthetic  80  easy=40,split=val
-text        ours-mse-batched  synthetic  20  easy=10,split=val
-text        ours-mse-batched  synthetic  40  easy=10,split=val
-text        ours-mse-batched  synthetic  80  easy=10,split=val
-text        ours-mse-batched  synthetic  20  easy=20,split=val
-text        ours-mse-batched  synthetic  40  easy=20,split=val
-text        ours-mse-batched  synthetic  80  easy=20,split=val
-text        ours-mse-batched  synthetic  20  easy=40,split=val
-text        ours-mse-batched  synthetic  40  easy=40,split=val
-text        ours-mse-batched  synthetic  80  easy=40,split=val
-text        ours-siglip       synthetic  20  easy=10,split=val
-text        ours-siglip       synthetic  40  easy=10,split=val
-text        ours-siglip       synthetic  80  easy=10,split=val
-text        ours-siglip       synthetic  20  easy=20,split=val
-text        ours-siglip       synthetic  40  easy=20,split=val
-text        ours-siglip       synthetic  80  easy=20,split=val
-text        ours-siglip       synthetic  20  easy=40,split=val
-text        ours-siglip       synthetic  40  easy=40,split=val
-text        ours-siglip       synthetic  80  easy=40,split=val
+# archived/retired: text        ours-mse          synthetic  20  easy=10,split=val
+# archived/retired: text        ours-mse          synthetic  40  easy=10,split=val
+# archived/retired: text        ours-mse          synthetic  80  easy=10,split=val
+# archived/retired: text        ours-mse          synthetic  20  easy=20,split=val
+# archived/retired: text        ours-mse          synthetic  40  easy=20,split=val
+# archived/retired: text        ours-mse          synthetic  80  easy=20,split=val
+# archived/retired: text        ours-mse          synthetic  20  easy=40,split=val
+# archived/retired: text        ours-mse          synthetic  40  easy=40,split=val
+# archived/retired: text        ours-mse          synthetic  80  easy=40,split=val
+# archived/retired: text        ours-mse-batched  synthetic  20  easy=10,split=val
+# archived/retired: text        ours-mse-batched  synthetic  40  easy=10,split=val
+# archived/retired: text        ours-mse-batched  synthetic  80  easy=10,split=val
+# archived/retired: text        ours-mse-batched  synthetic  20  easy=20,split=val
+# archived/retired: text        ours-mse-batched  synthetic  40  easy=20,split=val
+# archived/retired: text        ours-mse-batched  synthetic  80  easy=20,split=val
+# archived/retired: text        ours-mse-batched  synthetic  20  easy=40,split=val
+# archived/retired: text        ours-mse-batched  synthetic  40  easy=40,split=val
+# archived/retired: text        ours-mse-batched  synthetic  80  easy=40,split=val
+# archived/retired: text        ours-siglip       synthetic  20  easy=10,split=val
+# archived/retired: text        ours-siglip       synthetic  40  easy=10,split=val
+# archived/retired: text        ours-siglip       synthetic  80  easy=10,split=val
+# archived/retired: text        ours-siglip       synthetic  20  easy=20,split=val
+# archived/retired: text        ours-siglip       synthetic  40  easy=20,split=val
+# archived/retired: text        ours-siglip       synthetic  80  easy=20,split=val
+# archived/retired: text        ours-siglip       synthetic  20  easy=40,split=val
+# archived/retired: text        ours-siglip       synthetic  40  easy=40,split=val
+# archived/retired: text        ours-siglip       synthetic  80  easy=40,split=val
 # text        ours-siglip       synthetic  20  easy=10,split=val
 # text        ours-siglip       synthetic  40  easy=10,split=val
 # text        ours-siglip       synthetic  80  easy=10,split=val
@@ -330,42 +335,42 @@ text        ours-siglip       synthetic  80  easy=40,split=val
 # text        ours-siglip       synthetic  20  easy=40,split=val
 # text        ours-siglip       synthetic  40  easy=40,split=val
 # text        ours-siglip       synthetic  80  easy=40,split=val
-text        ours-infonce-margin synthetic  20  easy=10,split=val
-text        ours-infonce-margin synthetic  40  easy=10,split=val
-text        ours-infonce-margin synthetic  80  easy=10,split=val
-text        ours-infonce-margin synthetic  20  easy=20,split=val
-text        ours-infonce-margin synthetic  40  easy=20,split=val
-text        ours-infonce-margin synthetic  80  easy=20,split=val
-text        ours-infonce-margin synthetic  20  easy=40,split=val
-text        ours-infonce-margin synthetic  40  easy=40,split=val
-text        ours-infonce-margin synthetic  80  easy=40,split=val
-multimodal  ours-mse          synthetic  20  easy=10,split=val
-multimodal  ours-mse          synthetic  40  easy=10,split=val
-multimodal  ours-mse          synthetic  80  easy=10,split=val
-multimodal  ours-mse          synthetic  20  easy=20,split=val
-multimodal  ours-mse          synthetic  40  easy=20,split=val
-multimodal  ours-mse          synthetic  80  easy=20,split=val
-multimodal  ours-mse          synthetic  20  easy=40,split=val
-multimodal  ours-mse          synthetic  40  easy=40,split=val
-multimodal  ours-mse          synthetic  80  easy=40,split=val
-multimodal  ours-mse-batched  synthetic  20  easy=10,split=val
-multimodal  ours-mse-batched  synthetic  40  easy=10,split=val
-multimodal  ours-mse-batched  synthetic  80  easy=10,split=val
-multimodal  ours-mse-batched  synthetic  20  easy=20,split=val
-multimodal  ours-mse-batched  synthetic  40  easy=20,split=val
-multimodal  ours-mse-batched  synthetic  80  easy=20,split=val
-multimodal  ours-mse-batched  synthetic  20  easy=40,split=val
-multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
-multimodal  ours-mse-batched  synthetic  80  easy=40,split=val
-multimodal  ours-siglip       synthetic  20  easy=10,split=val
-multimodal  ours-siglip       synthetic  40  easy=10,split=val
-multimodal  ours-siglip       synthetic  80  easy=10,split=val
-multimodal  ours-siglip       synthetic  20  easy=20,split=val
-multimodal  ours-siglip       synthetic  40  easy=20,split=val
-multimodal  ours-siglip       synthetic  80  easy=20,split=val
-multimodal  ours-siglip       synthetic  20  easy=40,split=val
-multimodal  ours-siglip       synthetic  40  easy=40,split=val
-multimodal  ours-siglip       synthetic  80  easy=40,split=val
+# archived/retired: text        ours-infonce-margin synthetic  20  easy=10,split=val
+# archived/retired: text        ours-infonce-margin synthetic  40  easy=10,split=val
+# archived/retired: text        ours-infonce-margin synthetic  80  easy=10,split=val
+# archived/retired: text        ours-infonce-margin synthetic  20  easy=20,split=val
+# archived/retired: text        ours-infonce-margin synthetic  40  easy=20,split=val
+# archived/retired: text        ours-infonce-margin synthetic  80  easy=20,split=val
+# archived/retired: text        ours-infonce-margin synthetic  20  easy=40,split=val
+# archived/retired: text        ours-infonce-margin synthetic  40  easy=40,split=val
+# archived/retired: text        ours-infonce-margin synthetic  80  easy=40,split=val
+# archived/retired: multimodal  ours-mse          synthetic  20  easy=10,split=val
+# archived/retired: multimodal  ours-mse          synthetic  40  easy=10,split=val
+# archived/retired: multimodal  ours-mse          synthetic  80  easy=10,split=val
+# archived/retired: multimodal  ours-mse          synthetic  20  easy=20,split=val
+# archived/retired: multimodal  ours-mse          synthetic  40  easy=20,split=val
+# archived/retired: multimodal  ours-mse          synthetic  80  easy=20,split=val
+# archived/retired: multimodal  ours-mse          synthetic  20  easy=40,split=val
+# archived/retired: multimodal  ours-mse          synthetic  40  easy=40,split=val
+# archived/retired: multimodal  ours-mse          synthetic  80  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  20  easy=10,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  40  easy=10,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  80  easy=10,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  20  easy=20,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  40  easy=20,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  80  easy=20,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  20  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  40  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  synthetic  80  easy=40,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  20  easy=10,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  40  easy=10,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  80  easy=10,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  20  easy=20,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  40  easy=20,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  80  easy=20,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  20  easy=40,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  40  easy=40,split=val
+# archived/retired: multimodal  ours-siglip       synthetic  80  easy=40,split=val
 # multimodal  ours-siglip       synthetic  20  easy=10,split=val
 # multimodal  ours-siglip       synthetic  40  easy=10,split=val
 # multimodal  ours-siglip       synthetic  80  easy=10,split=val
@@ -375,15 +380,15 @@ multimodal  ours-siglip       synthetic  80  easy=40,split=val
 # multimodal  ours-siglip       synthetic  20  easy=40,split=val
 # multimodal  ours-siglip       synthetic  40  easy=40,split=val
 # multimodal  ours-siglip       synthetic  80  easy=40,split=val
-multimodal  ours-infonce-margin synthetic  20  easy=10,split=val
-multimodal  ours-infonce-margin synthetic  40  easy=10,split=val
-multimodal  ours-infonce-margin synthetic  80  easy=10,split=val
-multimodal  ours-infonce-margin synthetic  20  easy=20,split=val
-multimodal  ours-infonce-margin synthetic  40  easy=20,split=val
-multimodal  ours-infonce-margin synthetic  80  easy=20,split=val
-multimodal  ours-infonce-margin synthetic  20  easy=40,split=val
-multimodal  ours-infonce-margin synthetic  40  easy=40,split=val
-multimodal  ours-infonce-margin synthetic  80  easy=40,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  20  easy=10,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  40  easy=10,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  80  easy=10,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  20  easy=20,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  40  easy=20,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  80  easy=20,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  20  easy=40,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  40  easy=40,split=val
+# archived/retired: multimodal  ours-infonce-margin synthetic  80  easy=40,split=val
 
 # -------------------------------------------------------------------------
 # infonce-ours-v3 (2026-09-03): ours-infonce with the hard negative's target mass put through
@@ -403,27 +408,27 @@ multimodal  ours-infonce-margin synthetic  80  easy=40,split=val
 # put the ungraded control on the same split (models exist; inference only); ours-infonce-margin
 # at its selected V=80/easy=10 is already scored there by the easy x V grid above.
 # -------------------------------------------------------------------------
-text        infonce-ours-v3   synthetic  10  split=val
-text        infonce-ours-v3   synthetic  20  split=val
-text        infonce-ours-v3   synthetic  40  split=val
-text        infonce-ours-v3   synthetic  80  split=val
-multimodal  infonce-ours-v3   synthetic  10  split=val
-multimodal  infonce-ours-v3   synthetic  20  split=val
-multimodal  infonce-ours-v3   synthetic  40  split=val
-multimodal  infonce-ours-v3   synthetic  80  split=val
-text        infonce-mined     synthetic  -   split=val
-multimodal  infonce-mined     synthetic  -   split=val
+# archived/retired: text        infonce-ours-v3   synthetic  10  split=val
+# archived/retired: text        infonce-ours-v3   synthetic  20  split=val
+# archived/retired: text        infonce-ours-v3   synthetic  40  split=val
+# archived/retired: text        infonce-ours-v3   synthetic  80  split=val
+# archived/retired: multimodal  infonce-ours-v3   synthetic  10  split=val
+# archived/retired: multimodal  infonce-ours-v3   synthetic  20  split=val
+# archived/retired: multimodal  infonce-ours-v3   synthetic  40  split=val
+# archived/retired: multimodal  infonce-ours-v3   synthetic  80  split=val
+# archived/retired: text        infonce-mined     synthetic  -   split=val
+# archived/retired: multimodal  infonce-mined     synthetic  -   split=val
 # Main-grid rows at the V selected on the sweep (analysis.ipynb section 2): text V=20 (Recall@5;
 # V=10 and V=20 tie to 2e-4, and the V=10 rows were trained once before the metric changed),
 # image V=10 (Recall@20). Fill V in, then
 # uncomment; the synthetic rows share their model with the sweep and are inference only.
-text        infonce-ours-v3   original   10  -
+# archived/retired: text        infonce-ours-v3   original   10  -
 # text        infonce-ours-v3   synthetic  10  -         # recall@10 pick; recall@5 val (2026-09-05) selects V=20
 # text        infonce-ours-v3   synthetic  20  -
 # text        infonce-ours-v3   rephrased  10  -         # synthetic-val pick; per-query-kind val (2026-09-05) selects V=20
-text        infonce-ours-v3   rephrased  20  -
+# archived/retired: text        infonce-ours-v3   rephrased  20  -
 # multimodal  infonce-ours-v3   synthetic  10  -
-multimodal  infonce-ours-v3   rephrased  10  -
+# archived/retired: multimodal  infonce-ours-v3   rephrased  10  -
 # -------------------------------------------------------------------------
 # Per-query-kind hparam search (2026-09-04). The grids above select on synthetic val and
 # transfer that choice to the original/rephrased core rows. These sweep the same grid on
@@ -431,72 +436,72 @@ multimodal  infonce-ours-v3   rephrased  10  -
 # val split. Text is scored at recall@5, image at recall@20 (analysis.ipynb K_TEXT/K_IMAGE).
 # Cells that coincide with a current core row share its model and are inference only.
 # -------------------------------------------------------------------------
-text        ours-siglip       original   20  easy=10,split=val
-text        ours-siglip       original   40  easy=10,split=val
-text        ours-siglip       original   80  easy=10,split=val
-text        ours-siglip       original   20  easy=20,split=val
-text        ours-siglip       original   40  easy=20,split=val
-text        ours-siglip       original   80  easy=20,split=val
-text        ours-siglip       original   20  easy=40,split=val
-text        ours-siglip       original   40  easy=40,split=val
-text        ours-siglip       original   80  easy=40,split=val
-text        ours-siglip       rephrased  20  easy=10,split=val
-text        ours-siglip       rephrased  40  easy=10,split=val
-text        ours-siglip       rephrased  80  easy=10,split=val
-text        ours-siglip       rephrased  20  easy=20,split=val
-text        ours-siglip       rephrased  40  easy=20,split=val
-text        ours-siglip       rephrased  80  easy=20,split=val
-text        ours-siglip       rephrased  20  easy=40,split=val
-text        ours-siglip       rephrased  40  easy=40,split=val
-text        ours-siglip       rephrased  80  easy=40,split=val
-multimodal  ours-siglip       rephrased  20  easy=10,split=val
-multimodal  ours-siglip       rephrased  40  easy=10,split=val
-multimodal  ours-siglip       rephrased  80  easy=10,split=val
-multimodal  ours-siglip       rephrased  20  easy=20,split=val
-multimodal  ours-siglip       rephrased  40  easy=20,split=val
-multimodal  ours-siglip       rephrased  80  easy=20,split=val
-multimodal  ours-siglip       rephrased  20  easy=40,split=val
-multimodal  ours-siglip       rephrased  40  easy=40,split=val
-multimodal  ours-siglip       rephrased  80  easy=40,split=val
-text        ours-mse-batched  original   20  easy=10,split=val
-text        ours-mse-batched  original   40  easy=10,split=val
-text        ours-mse-batched  original   80  easy=10,split=val
-text        ours-mse-batched  original   20  easy=20,split=val
-text        ours-mse-batched  original   40  easy=20,split=val
-text        ours-mse-batched  original   80  easy=20,split=val
-text        ours-mse-batched  original   20  easy=40,split=val
-text        ours-mse-batched  original   40  easy=40,split=val
-text        ours-mse-batched  original   80  easy=40,split=val
-text        ours-mse-batched  rephrased  20  easy=10,split=val
-text        ours-mse-batched  rephrased  40  easy=10,split=val
-text        ours-mse-batched  rephrased  80  easy=10,split=val
-text        ours-mse-batched  rephrased  20  easy=20,split=val
-text        ours-mse-batched  rephrased  40  easy=20,split=val
-text        ours-mse-batched  rephrased  80  easy=20,split=val
-text        ours-mse-batched  rephrased  20  easy=40,split=val
-text        ours-mse-batched  rephrased  40  easy=40,split=val
-text        ours-mse-batched  rephrased  80  easy=40,split=val
-multimodal  ours-mse-batched  rephrased  20  easy=10,split=val
-multimodal  ours-mse-batched  rephrased  40  easy=10,split=val
-multimodal  ours-mse-batched  rephrased  80  easy=10,split=val
-multimodal  ours-mse-batched  rephrased  20  easy=20,split=val
-multimodal  ours-mse-batched  rephrased  40  easy=20,split=val
-multimodal  ours-mse-batched  rephrased  80  easy=20,split=val
-multimodal  ours-mse-batched  rephrased  20  easy=40,split=val
-multimodal  ours-mse-batched  rephrased  40  easy=40,split=val
-multimodal  ours-mse-batched  rephrased  80  easy=40,split=val
-text        infonce-ours-v3   original   10  split=val
-text        infonce-ours-v3   original   20  split=val
-text        infonce-ours-v3   original   40  split=val
-text        infonce-ours-v3   original   80  split=val
-text        infonce-ours-v3   rephrased  10  split=val
-text        infonce-ours-v3   rephrased  20  split=val
-text        infonce-ours-v3   rephrased  40  split=val
-text        infonce-ours-v3   rephrased  80  split=val
-multimodal  infonce-ours-v3   rephrased  10  split=val
-multimodal  infonce-ours-v3   rephrased  20  split=val
-multimodal  infonce-ours-v3   rephrased  40  split=val
-multimodal  infonce-ours-v3   rephrased  80  split=val
+# archived/retired: text        ours-siglip       original   20  easy=10,split=val
+# archived/retired: text        ours-siglip       original   40  easy=10,split=val
+# archived/retired: text        ours-siglip       original   80  easy=10,split=val
+# archived/retired: text        ours-siglip       original   20  easy=20,split=val
+# archived/retired: text        ours-siglip       original   40  easy=20,split=val
+# archived/retired: text        ours-siglip       original   80  easy=20,split=val
+# archived/retired: text        ours-siglip       original   20  easy=40,split=val
+# archived/retired: text        ours-siglip       original   40  easy=40,split=val
+# archived/retired: text        ours-siglip       original   80  easy=40,split=val
+# archived/retired: text        ours-siglip       rephrased  20  easy=10,split=val
+# archived/retired: text        ours-siglip       rephrased  40  easy=10,split=val
+# archived/retired: text        ours-siglip       rephrased  80  easy=10,split=val
+# archived/retired: text        ours-siglip       rephrased  20  easy=20,split=val
+# archived/retired: text        ours-siglip       rephrased  40  easy=20,split=val
+# archived/retired: text        ours-siglip       rephrased  80  easy=20,split=val
+# archived/retired: text        ours-siglip       rephrased  20  easy=40,split=val
+# archived/retired: text        ours-siglip       rephrased  40  easy=40,split=val
+# archived/retired: text        ours-siglip       rephrased  80  easy=40,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  20  easy=10,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  80  easy=10,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  20  easy=20,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=20,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  80  easy=20,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  20  easy=40,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=40,split=val
+# archived/retired: multimodal  ours-siglip       rephrased  80  easy=40,split=val
+# archived/retired: text        ours-mse-batched  original   20  easy=10,split=val
+# archived/retired: text        ours-mse-batched  original   40  easy=10,split=val
+# archived/retired: text        ours-mse-batched  original   80  easy=10,split=val
+# archived/retired: text        ours-mse-batched  original   20  easy=20,split=val
+# archived/retired: text        ours-mse-batched  original   40  easy=20,split=val
+# archived/retired: text        ours-mse-batched  original   80  easy=20,split=val
+# archived/retired: text        ours-mse-batched  original   20  easy=40,split=val
+# archived/retired: text        ours-mse-batched  original   40  easy=40,split=val
+# archived/retired: text        ours-mse-batched  original   80  easy=40,split=val
+# archived/retired: text        ours-mse-batched  rephrased  20  easy=10,split=val
+# archived/retired: text        ours-mse-batched  rephrased  40  easy=10,split=val
+# archived/retired: text        ours-mse-batched  rephrased  80  easy=10,split=val
+# archived/retired: text        ours-mse-batched  rephrased  20  easy=20,split=val
+# archived/retired: text        ours-mse-batched  rephrased  40  easy=20,split=val
+# archived/retired: text        ours-mse-batched  rephrased  80  easy=20,split=val
+# archived/retired: text        ours-mse-batched  rephrased  20  easy=40,split=val
+# archived/retired: text        ours-mse-batched  rephrased  40  easy=40,split=val
+# archived/retired: text        ours-mse-batched  rephrased  80  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  20  easy=10,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  40  easy=10,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  80  easy=10,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  20  easy=20,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  40  easy=20,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  80  easy=20,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  20  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  40  easy=40,split=val
+# archived/retired: multimodal  ours-mse-batched  rephrased  80  easy=40,split=val
+# archived/retired: text        infonce-ours-v3   original   10  split=val
+# archived/retired: text        infonce-ours-v3   original   20  split=val
+# archived/retired: text        infonce-ours-v3   original   40  split=val
+# archived/retired: text        infonce-ours-v3   original   80  split=val
+# archived/retired: text        infonce-ours-v3   rephrased  10  split=val
+# archived/retired: text        infonce-ours-v3   rephrased  20  split=val
+# archived/retired: text        infonce-ours-v3   rephrased  40  split=val
+# archived/retired: text        infonce-ours-v3   rephrased  80  split=val
+# archived/retired: multimodal  infonce-ours-v3   rephrased  10  split=val
+# archived/retired: multimodal  infonce-ours-v3   rephrased  20  split=val
+# archived/retired: multimodal  infonce-ours-v3   rephrased  40  split=val
+# archived/retired: multimodal  infonce-ours-v3   rephrased  80  split=val
 
 # -------------------------------------------------------------------------
 # Retrieval-mined negatives (2026-09-04): the standard hard-negative baseline. Datasets are
@@ -510,13 +515,13 @@ multimodal  infonce-ours-v3   rephrased  80  split=val
 # these rows until a labeling pass measures each mined negative's distance.
 # Uncomment once the five mined datasets exist; a missing dataset aborts the plan.
 # -------------------------------------------------------------------------
-text        infonce-mined     original   -   negs=mined
+# archived/retired: text        infonce-mined     original   -   negs=mined
 # text        infonce-mined     synthetic  -   negs=mined
 # text        infonce-mined     rephrased  -   negs=mined   # default mining; the sweep (below) selects m0.025_s10 on val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10
 # multimodal  infonce-mined     synthetic  -   negs=mined
 # multimodal  infonce-mined     rephrased  -   negs=mined   # default mining; the sweep (below) selects m0.025_s10 on val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10
 # -------------------------------------------------------------------------
 # Graded losses on retrieval-mined negatives (2026-09-08): the same rows as the five
 # negs=mined rows above, after label_mined_negs.py measured each mined negative's
@@ -524,16 +529,16 @@ multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10
 # identical negatives; hparams are each style's per-query-kind selection on labeled rows.
 # Uncomment once the five _graded datasets exist.
 # -------------------------------------------------------------------------
-text        infonce-ours-v3   original   10  negs=mined-graded
+# archived/retired: text        infonce-ours-v3   original   10  negs=mined-graded
 # text        infonce-ours-v3   synthetic  20  negs=mined-graded
-text        infonce-ours-v3   rephrased  20  negs=mined-graded
+# archived/retired: text        infonce-ours-v3   rephrased  20  negs=mined-graded
 # multimodal  infonce-ours-v3   synthetic  10  negs=mined-graded
-multimodal  infonce-ours-v3   rephrased  10  negs=mined-graded
-text        ours-infonce-margin original  80  easy=10,negs=mined-graded
+# archived/retired: multimodal  infonce-ours-v3   rephrased  10  negs=mined-graded
+# archived/retired: text        ours-infonce-margin original  80  easy=10,negs=mined-graded
 # text        ours-infonce-margin synthetic 80  easy=10,negs=mined-graded
-text        ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
+# archived/retired: text        ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
 # multimodal  ours-infonce-margin synthetic 80  easy=10,negs=mined-graded
-multimodal  ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
+# archived/retired: multimodal  ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
 # -------------------------------------------------------------------------
 # NV-Retriever mining sweep for the infonce-mined baseline (2026-09-09), rephrased only.
 # relative margin {0.025, 0.05, 0.1, 0.2} x survivor {first (s0), skip top 10 (s10)},
@@ -541,22 +546,22 @@ multimodal  ours-infonce-margin rephrased 80  easy=10,negs=mined-graded
 # (0.05, s0) cell is the default dataset and reuses the core row's model. Datasets come
 # from logs/mine/run_nv_sweep.sh; uncomment once they exist.
 # -------------------------------------------------------------------------
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s0,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s0,split=val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,split=val
-text        infonce-mined     rephrased  -   negs=mined,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,split=val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.05_s10,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s10,split=val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s0,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.1_s0,split=val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,split=val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.2_s0,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.2_s0,split=val
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.2_s10,split=val
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.2_s10,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s0,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s0,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.05_s10,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s10,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s0,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.1_s0,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.2_s0,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.2_s0,split=val
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.2_s10,split=val
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.2_s10,split=val
 # -------------------------------------------------------------------------
 # Repeated trials (2026-09-10): the headline comparison, rephrased, both modalities, at
 # each row's selected hparams -- infonce-ours-v3 (ours, graded), infonce-mined on labeled
@@ -565,18 +570,18 @@ multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.2_s10,split=va
 # has 3 trials (cut from 5 on 2026-09-11; the seed 45/46 rows stay commented). analysis.ipynb
 # reports mean and a 95% CI over the healthy trials.
 # -------------------------------------------------------------------------
-text        infonce-ours-v3   rephrased  20  seed=43
-multimodal  infonce-ours-v3   rephrased  10  seed=43
-text        infonce-mined     rephrased  -   seed=43
-multimodal  infonce-mined     rephrased  -   seed=43
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43
-text        infonce-ours-v3   rephrased  20  seed=44
-multimodal  infonce-ours-v3   rephrased  10  seed=44
-text        infonce-mined     rephrased  -   seed=44
-multimodal  infonce-mined     rephrased  -   seed=44
-text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44
+# archived/retired: text        infonce-ours-v3   rephrased  20  seed=43
+# archived/retired: multimodal  infonce-ours-v3   rephrased  10  seed=43
+# archived/retired: text        infonce-mined     rephrased  -   seed=43
+# archived/retired: multimodal  infonce-mined     rephrased  -   seed=43
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=43
+# archived/retired: text        infonce-ours-v3   rephrased  20  seed=44
+# archived/retired: multimodal  infonce-ours-v3   rephrased  10  seed=44
+# archived/retired: text        infonce-mined     rephrased  -   seed=44
+# archived/retired: multimodal  infonce-mined     rephrased  -   seed=44
+# archived/retired: text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44
+# archived/retired: multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,seed=44
 # text        infonce-ours-v3   rephrased  20  seed=45
 # multimodal  infonce-ours-v3   rephrased  10  seed=45
 # text        infonce-mined     rephrased  -   seed=45
@@ -601,10 +606,10 @@ text        siglip-mined      rephrased  -   rephrase=in-context
 text        cosent            rephrased  -   rephrase=in-context
 text        ours-cosent       rephrased  -   rephrase=in-context
 text        mse               rephrased  -   rephrase=in-context
-text        ours-mse          rephrased  40  easy=10,rephrase=in-context
-text        ours-infonce      rephrased  40  rephrase=in-context
-text        ours-siglip       rephrased  20  easy=10,rephrase=in-context
-text        ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
+# archived/retired: text        ours-mse          rephrased  40  easy=10,rephrase=in-context
+# archived/retired: text        ours-infonce      rephrased  40  rephrase=in-context
+# archived/retired: text        ours-siglip       rephrased  20  easy=10,rephrase=in-context
+# archived/retired: text        ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
 text        ours-mse-batched  rephrased  40  easy=10,rephrase=in-context
 text        mse-mined         rephrased  40  easy=10,rephrase=in-context
 multimodal  infonce           rephrased  -   rephrase=in-context
@@ -613,10 +618,10 @@ multimodal  siglip-mined      rephrased  -   rephrase=in-context
 multimodal  cosent            rephrased  -   rephrase=in-context
 multimodal  ours-cosent       rephrased  -   rephrase=in-context
 multimodal  mse               rephrased  -   rephrase=in-context
-multimodal  ours-mse          rephrased  80  easy=10,rephrase=in-context
-multimodal  ours-infonce      rephrased  40  rephrase=in-context
-multimodal  ours-siglip       rephrased  40  easy=10,rephrase=in-context
-multimodal  ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
+# archived/retired: multimodal  ours-mse          rephrased  80  easy=10,rephrase=in-context
+# archived/retired: multimodal  ours-infonce      rephrased  40  rephrase=in-context
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,rephrase=in-context
+# archived/retired: multimodal  ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
 multimodal  ours-mse-batched  rephrased  20  easy=10,rephrase=in-context
 multimodal  mse-mined         rephrased  80  easy=10,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  rephrase=in-context
@@ -769,10 +774,10 @@ text        ours-mse-batched  rephrased  40  easy=10,seed=43,rephrase=in-context
 text        ours-mse-batched  rephrased  40  easy=10,seed=44,rephrase=in-context
 multimodal  ours-mse-batched  rephrased  20  easy=10,seed=43,rephrase=in-context
 multimodal  ours-mse-batched  rephrased  20  easy=10,seed=44,rephrase=in-context
-text        ours-siglip       rephrased  20  easy=10,seed=43,rephrase=in-context
-text        ours-siglip       rephrased  20  easy=10,seed=44,rephrase=in-context
-multimodal  ours-siglip       rephrased  40  easy=10,seed=43,rephrase=in-context
-multimodal  ours-siglip       rephrased  40  easy=10,seed=44,rephrase=in-context
+# archived/retired: text        ours-siglip       rephrased  20  easy=10,seed=43,rephrase=in-context
+# archived/retired: text        ours-siglip       rephrased  20  easy=10,seed=44,rephrase=in-context
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,seed=43,rephrase=in-context
+# archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,seed=44,rephrase=in-context
 text        ours-cosent       rephrased  -   seed=43,rephrase=in-context
 text        ours-cosent       rephrased  -   seed=44,rephrase=in-context
 multimodal  ours-cosent       rephrased  -   seed=43,rephrase=in-context
@@ -938,6 +943,46 @@ text        siglip-v3         rephrased  80  seed=44,rephrase=in-context
 multimodal  siglip-v3         rephrased  80  rephrase=in-context
 multimodal  siglip-v3         rephrased  80  seed=43,rephrase=in-context
 multimodal  siglip-v3         rephrased  80  seed=44,rephrase=in-context
+
+# In-context labelled validation sweeps (seed 42); selection precedes main trials.
+text        infonce-ours-v3 rephrased 10 split=val,rephrase=in-context
+text        infonce-ours-v3 rephrased 20 split=val,rephrase=in-context
+text        infonce-ours-v3 rephrased 40 split=val,rephrase=in-context
+text        infonce-ours-v3 rephrased 80 split=val,rephrase=in-context
+text        ours-mse-batched rephrased 20 easy=10,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 40 easy=10,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 80 easy=10,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 20 easy=20,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 40 easy=20,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 80 easy=20,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 20 easy=40,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 40 easy=40,split=val,rephrase=in-context
+text        ours-mse-batched rephrased 80 easy=40,split=val,rephrase=in-context
+text        mse-mined          rephrased 40 split=val,rephrase=in-context,easy=10
+text        mse-mined          rephrased 40 split=val,rephrase=in-context,easy=10,seed=43
+text        mse-mined          rephrased 40 split=val,rephrase=in-context,easy=10,seed=44
+text        ours-cosent        rephrased - split=val,rephrase=in-context
+text        ours-cosent        rephrased - split=val,rephrase=in-context,seed=43
+text        ours-cosent        rephrased - split=val,rephrase=in-context,seed=44
+multimodal  infonce-ours-v3 rephrased 10 split=val,rephrase=in-context
+multimodal  infonce-ours-v3 rephrased 20 split=val,rephrase=in-context
+multimodal  infonce-ours-v3 rephrased 40 split=val,rephrase=in-context
+multimodal  infonce-ours-v3 rephrased 80 split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 20 easy=10,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 40 easy=10,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 80 easy=10,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 20 easy=20,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 40 easy=20,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 80 easy=20,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 20 easy=40,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 40 easy=40,split=val,rephrase=in-context
+multimodal  ours-mse-batched rephrased 80 easy=40,split=val,rephrase=in-context
+multimodal  mse-mined          rephrased 80 split=val,rephrase=in-context,easy=10
+multimodal  mse-mined          rephrased 80 split=val,rephrase=in-context,easy=10,seed=43
+multimodal  mse-mined          rephrased 80 split=val,rephrase=in-context,easy=10,seed=44
+multimodal  ours-cosent        rephrased - split=val,rephrase=in-context
+multimodal  ours-cosent        rephrased - split=val,rephrase=in-context,seed=43
+multimodal  ours-cosent        rephrased - split=val,rephrase=in-context,seed=44
 "
 
 # ---------------------------------------------------------------------------
@@ -1142,6 +1187,10 @@ while read -r modality style qk v extra; do
   # in the plan, while run_dir does not, so the second one reuses the first one's model.
   row_split=""; row_easy=""; row_transform=""; row_negs=""; row_mining=""; row_rephrase=""
   parse_extra "$extra" row_easy row_transform row_split row_negs row_mining row_seed_unused row_rephrase
+  if [[ $qk != rephrased || $row_rephrase != in-context ]]; then
+    echo "ERROR: active paper conditions must use rephrased-in-context: $run_name" >&2
+    exit 1
+  fi
   key=$run_name
   [[ $row_split == val ]] && key="$run_name@val"
   run_dir=$MODELS_ROOT/$run_name
@@ -1208,7 +1257,7 @@ echo
 # Every human eval set a test row of the plan will score on: one per (modality, rephrase).
 declare -A HUMAN_NEEDED=()
 for key in "${KEYS[@]}"; do
-  [[ ${K_SPLIT[$key]} == val ]] && continue
+  [[ $EVAL_HUMAN != 1 || ${K_SPLIT[$key]} == val ]] && continue
   HUMAN_NEEDED["${K_MODALITY[$key]}|${K_REPHRASE[$key]}"]=1
 done
 for need in "${!HUMAN_NEEDED[@]}"; do
@@ -1307,8 +1356,8 @@ for key in "${KEYS[@]}"; do
 
   # Human queries are a test set, so val rows (hparam sweeps) do not score them: selecting
   # on a test set is what the val split exists to prevent.
-  if [[ ${K_SPLIT[$key]} == val ]]; then
-    HUMAN_STATUS[$key]="n/a (val row)"
+  if [[ $EVAL_HUMAN != 1 || ${K_SPLIT[$key]} == val ]]; then
+    HUMAN_STATUS[$key]="not requested"
     continue
   fi
   human_dataset=$(human_dataset_for "$modality" "${K_REPHRASE[$key]}")

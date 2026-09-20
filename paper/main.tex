@@ -1,4 +1,4 @@
-% @Claude and @codex NEVER edit this without explicit instruction to do so
+% @Claude and @codex NEVER edit this without explicit instruction to do so. If adding a figure, table or other non-text content, DO NOT edit the text without instruction to do so, even to add a reference to the new content.
 % One sentence per line!
 % @claude: make edits in red
 % @codex: make edits in green
@@ -9,6 +9,8 @@
 \usepackage{url}
 \usepackage{xcolor}
 \usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{placeins}
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{dsfont} % \mathds{1} indicator (Type 1 fonts, unlike bbm)
@@ -108,27 +110,26 @@ However, when Amazon product search, they entered only 2.2 words, indicating tha
 
 Users' pessimism is not unfounded, as bi-encoders have known limitations in their expressivity.
 % \citet{zhang2025excluir} and \citet{weller2024nevir} show that embedding models struggle to model negation.
-These include negation \citep{zhang2025excluir, weller2024nevir}, set operations \citep{killingback2025benchmarking}, constraint dilution \citep{lu2025multiconir}, and attribute binding \citep{yuksekgonul2022and}.
-It then follows that user query behavior may suffer from a chicken-and-egg problem; users do not use complex queries because they expect models to fail, while practicioners to do not optimize for complex queries because they do not appear in user data.
+These include negation \citep{zhang2025excluir, weller2024nevir}, set operations \citep{malaviya-etal-2023-quest}, constraint dilution \citep{lu2025multiconir, killingback2025benchmarking}, and attribute binding \citep{yuksekgonul2022and}.
+It then follows that user query behavior may suffer from a chicken-and-egg problem; users do not use complex queries because they expect models to fail, while practitioners to do not optimize for complex queries because they do not appear in user data.
 
 % mechanics - why our system works
 
 % Unfortunately, available retrieval datasets, such as MS-Marco \citep{bajaj2018msmarcohumangenerated}, Beir  \citep{thakur2021beir}, and  mainly contain simple queries, with little to no conjunction or negation.
-Unfortunately, publicly available product retrieval datasets such as \cite{??} lack conjunctive queries.
-Instead, datasets like the popular ECSI \cite{reddy2022shopping} focus on providing hard negatives---similar pairs of similar documents, only one of which is valid.
+Unfortunately, publicly available product retrieval datasets such as Amazon ESCI \cite{reddy2022shopping} lack conjunctive queries.
 This neglects an important dynamic in the user experience of search systems wherein queries tend to gain attributes over time as users refine them. 
 \citet{hirsch2020query} find that over 50\% of queries on Ebay occur during a reformulation session, with queries growing in length over time.
 Longer queries were associated with increased purchase rates, indicating that support for highly specific queries should be a priority.
 
-Thus, we identify dense retrieval as understudied across three axes: data, methods, and evaluations.
-Specifically, we concentrate on improving conjuntive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
+Thus, we identify dense retrieval for conjunctive queries as understudied across three axes: data, methods, and evaluations.
+Specifically, we concentrate on improving conjunctive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
 This focus is further grounded in patterns in user queries and the design of pre-existing non-embedding search systems.
-For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as ``screen size $>30$\,cm'' for laptops.
+For example, the conjunctive filtering paradigm already exists in product search in the form of attribute filters on e-commerce sites, such as ``screen size $\geq 38$ cm'' for laptops.
 % Users find such categories useful both in searching for and understanding products. 
 Unfortunately, attribute ontologies are usually fixed, failing when a user desires a product with or without a novel attribute.
 % Because unique and novel attributes differentiate products, sellers are well motivated to include them in product descriptions to differentiate their products. 
 As a result, natural language search systems, such as dense retrieval, are better suited for the long tail of highly specific queries.
-Similar use cases exist other retrieval tasks, including for images, videos, resumes, patents, and real estate.
+Similar use cases exist in other retrieval tasks, including for images, videos, resumes, patents, and real estate.
 
 
 
@@ -221,7 +222,7 @@ Due to the lack of structured attributes in existing datasets, we construct a sy
 In effect, this pipeline seeks to distill fine-grained attribute extraction from large, generative models into small embedding models.
 
 We target two domains, e-commerce products and images, to demonstrate the multimodal capabilities of our system.
-For e-commerce, we choose the ESCI corpus of Amazon products \red{cite} due to its large size.
+For e-commerce, we choose the ESCI corpus of Amazon products \citep{reddy2022shopping} due to its large size.
 For images, we choose the DeepFashion In-Shop because it contains images with subtle but objectively differing attributes.
 
 To extract document attributes, we prompt Gemini 2.5 Flash with a matched positive and negative document pair, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
@@ -252,32 +253,33 @@ We manually annotate \red{xx} attributes across \red{xx} products in each datase
 \section{Baselines}
 
 Numerous training objectives have been proposed for dense retrieval.
-We choose MSE, CoSENT, SigLIP, and InfoNCE \red{cite} as our baseline loss functions based on their applicability to triple-supervised training and coverage of high level loss strategy families. 
+We choose Margin-MSE \citep{hofstatter2020improving}, CoSENT \citep{huang2024cosent}, SigLIP \citep{tschannen2025siglip}, and InfoNCE \citep{oord2019representationlearningcontrastivepredictive} as our baseline loss functions based on their applicability to triple-supervised training and coverage of high level loss strategy families. 
 MSE regresses query-document pairs onto a binary target; CoSENT ranks pairs ordinally; SigLIP classifies in-batch pairs independently; InfoNCE scores each in-batch candidate against the others using a softmax function.
 We include their definitions in Appendix \ref{app:loss-functions} for reference.
 Because batch size affects CoSENT, SigLIP, and InfoNCE training dynamics through pairwise in-batch comparisons, we hold batch size constant across all runs.
 To do so, we expand the batch to include $B$ positives and $B$ negatives, comparing all positives to all positives and all negatives, for a total of $2B^2$ comparisons, as opposed to $B^2$, conventionally.
-This permits imcorporating the baseline NV-Retriever and our proposed hard negative mining algorithms without confounding comparisons per batch \red{(Section \ref{??})}.
+This permits evaluating the baseline NV-Retriever and \textsc{gold} mining without confounding the number of comparisons per batch.
 We design our experiments such that each model sees each training triple once per epoch.
 We train every model for one epoch with 32 rows per forward pass and 4 forward passes per optimizer step.
 The pair-based losses (MSE, CoSENT) emit two pairs per training triple, so their batches contain about half as many positives as the triple-based losses.
-We train baseline models using hyperparameters listed in \red{Appendix \ref{??}}, concluding that InfoNCE is the strongest (Table \ref{tab:baseline-loss}).
+We train baseline models using hyperparameters listed in Section \ref{sec:model-details} concluding that InfoNCE is the strongest (Table \ref{tab:baseline-loss}).
 % \red{To further strengthen our baseline, we adopt the positive-aware hard negative mining of NV-Retriever \citep{moreira2024nv}, which the survey of \citet{wischounig2026negative} classifies under false-negative filtering and which underlies the top retrieval model on the MTEB leaderboard in their Table 5 \textcolor{orange}{(cite NV-Embed-v2)}, and apply it to InfoNCE.}
 To further strengthen our baseline, we apply the positive-aware hard negative mining algorithm NV-Retriever, a key component of NV-Embed-v2 \citep{lee2024nv}, the strongest model based on hard negative mining listed in \citet{wischounig2026negative}.
-We choose the best of $n=8$ hyperparameter combinations based on a grid search \red{(Appendix \ref{??})}.
+% We choose the best of $n=8$ hyperparameter combinations based on a grid search \red{(Appendix \ref{??})}.
 
 
 \begin{table}[t]
 \centering
 \input{figs/baseline_loss_table.tex}
-\caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever. \red{delete?}}
+\caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever.}
 \label{tab:baseline-loss}
 \end{table}
 
 \subsection{Model Details}
+\label{sec:model-details}
 
-We fine-tune \texttt{all-mpnet-base-v2} on text and \texttt{clip-ViT-B-32} on images, both as distributed by Sentence-Transformers \red{(cite)}; the text tower encodes queries in both modalities, and we normalise every representation to unit length.
-We optimise with AdamW \red{(cite)} at learning rate $2 \times 10^{-5}$, a cosine schedule warming up over the first 10\% of steps, and bf16, training each condition three times and report the mean over those trials.
+We fine-tune \texttt{all-mpnet-base-v2} on text and \texttt{clip-ViT-B-32} on images, both as distributed by Sentence-Transformers \citep{reimers-gurevych-2019-sentence}; the text tower encodes queries in both modalities, and we normalise every representation to unit length.
+We optimise with AdamW \citep{loshchilov2017decoupled} at learning rate $2 \times 10^{-5}$, a cosine schedule warming up over the first 10\% of steps, and bf16, training each condition three times and report the mean over those trials.
 
 
 \section{Methods}
@@ -450,14 +452,13 @@ for all $\ell \in S$.
     % \caption{An idealized embedding space in $\mathcal{R}^4$, projected into $\mathcal{R}^3$. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed embed.; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
     \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate.
     Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see.
-    \darkgreen{The query is the normalized sum of the vector parts $b_i$ of its attributes' affine probes, whose biases are zero in this example.}
     With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$.
     Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
     \label{fig:embedding}
 \end{figure}
 
 
-\section{Experiments}
+% \section{Experiments}
 
 
 
@@ -506,15 +507,14 @@ for all $\ell \in S$.
 
 
 
-\subsection{Ours Details}
+\subsection{Implementation Details}
 
 For each modified loss function, we perform a hyperparameter sweep on the validation set across $V \in \{10, 20, 40, 80\}$, and also $\eta \in \{10, 20, 40\}$ for Margin-MSE. 
 We perform ablations that only use our dataset creation process without modifying baseline loss functions.
-\red{Finally, we explore mixing data 50-50 from our dataset creation and hard negatives mined with NV-Retriever, based on \cite{moreira2024nv}'s analysis that NV-Retriever improves training stability while our method trains discrimination of fine-grained conjunctive attributes.}
 
 ...
 
-\section{Results}
+\section{Results and Discussion}
 
 We present results in Figure \ref{fig:text-vs-image}.
 On the larger synthetic test set, we see significant improvement compared to baselines applying both attribute-aware mining and attribute Hamming loss.
@@ -523,23 +523,62 @@ Both baseline NV-Retriever and attribute-aware mining significantly increase rec
 Attribute-aware mining is more effective than NV-Retriever on both modalities using the two strongest loss functions, InfoNCE and SigLIP.
 After applying attribute Hamming loss, however, our method surpasses all baselines using all loss functions in all modalities.
 One exception is InfoNCE Image, where our method ties the unmined baseline, possibly due to saturation.
-\red{Finally, when trained on a mix of examples mined by NV-Retriever and attribute aware mining, we see improvement on CoSENT Image and a slight improvement on both InfoNCE modalities, though check statistical significance.}
+
+We observe that across 7/8 loss function - modality pairs, \textsc{gold} mining increases both recall and win rate compared to random and NV-Retriever baselines.
+However, applying \textsc{gold} reweighting consistently improves recall at the expense of win rate.
+I.e., \textsc{gold} mining improves accuracy more on hard negatives while \textsc{gold} reweighting trades accuracy on hard negatives for accuracy on easy negatives.
+This is the expected result of penalizing errors in hard negatives less than easy negatives in the loss function.
+Thus, the application of \textsc{gold} reweighting, and in particular the $V$ scale should be considered in the context of the dataset.
+Datasets containing more hard negatives per query will benefit may benefit more from \textsc{gold} mining.
+Applications requiring maximum recall will benefit more from \textsc{gold} reweighting.
+\red{linear regression on V ablation?}
+
+We see in Figure~\ref{fig:infonce-condition-counts} that InfoNCE accuracy for both \textsc{gold} mined + reweighted and random baseline accuracy is positively correlated with the number of positive (required) attributes on both modes. 
+However, accuracy appears to be largely uncorrelated with the the number of negative (forbidden) attributes.
+The correlation with required attributes in conjunctive queries is unsurprising given that keyword or synonym overlap between queries and positive documents is tightly correlated with the number of conditional queries.
+The lack of correlation with forbidden attributes suggests that overall, embedding models neither induce false positives out of documents containing those attributes nor contribute to to magnifying positive documents in the way that required attributes do.
+Other loss functions show similar behavior.
 
 
-\red{main results, we beat baselines}
+
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=\linewidth]{figs/text_vs_image_recall.pdf}
-    \caption{Text Recall@5 vs. image Recall@20 on the test split ($n=3$ per point). Arrow direction indicate that one training strategy builds on another. Unfilled shapes indicate baselines.}
+    \begin{subfigure}{\linewidth}
+        \centering
+        \scalebox{1}[0.9]{\includegraphics[width=\linewidth]{figs/text_vs_image_recall.pdf}}
+        \caption{\darkgreen{Text Recall@5 versus image Recall@20.}}
+        \label{fig:text-vs-image-recall}
+    \end{subfigure}
+
+    \medskip
+    \begin{subfigure}{\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/recall_vs_winrate.pdf}
+        \caption{\darkgreen{Recall versus positive/hard-negative win rate for text (left) and images (right).}}
+        \label{fig:recall-vs-winrate}
+    \end{subfigure}
+    \caption{\darkgreen{Retrieval recall and hard-negative win rate on the test split ($n=3$ per point).
+    Arrows indicate that one training strategy builds on another.
+    Unfilled shapes indicate baselines.}}
     \label{fig:text-vs-image}
 \end{figure}
 
-\red{more positives = easier, more negatives = no relation}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figs/infonce_condition_counts.pdf}
+    \caption{\darkgreen{InfoNCE recall by query condition count.
+    Text uses Recall@5 and images use Recall@20, on a shared colour scale.
+    Both axes show counts from 0 to 10; grey cells contain no test queries.}}
+    \label{fig:infonce-condition-counts}
+\end{figure}
 
 
 
 
+% Keep the results figures within Results and Discussion.
+\FloatBarrier
 \section{Notes}
 
 \red{Working notes --- not for submission.}
@@ -584,7 +623,7 @@ If $(b_i,\beta_i)$ recovers $z_i$, then $(-b_i,1-\beta_i)$ recovers $1-z_i$ with
 
 \subsection{Main results}
 
-\begin{theorem}[\darkgreen{Affine recoverability permits low loss}]
+\begin{theorem}[Affine recoverability permits low loss]
 \label{thm:forward}
 Let $U=\operatorname{span}\{f(x):x\in S\}$ be a proper subspace of $\mathbb{R}^d$.
 Suppose every $h_c$, $c\in C$, has an affine probe $(b_c,\beta_c)$ with error $\epsilon>0$ on $S$ and $b_c\in U$, and put $u=\sum_{c\in C}b_c$.
@@ -611,7 +650,7 @@ Each summand has magnitude below $2\epsilon$, so $|M_C-y_C/V|<2k\epsilon/V$; squ
 
 Corollary~\ref{cor:capacity} below constructs document embeddings and probes satisfying these assumptions when $V\ge kk'$, where $k'$ bounds the number of active attributes per document.
 
-\begin{theorem}[\darkgreen{Low loss implies affine recoverability}]
+\begin{theorem}[Low loss implies affine recoverability]
 \label{thm:back}
 Let $\delta>0$, suppose $P_C,N_C$ are nonempty, and assume $\mathcal{L}(q_C,p,n)<\delta^2$ for every $(p,n)\in P_C\times N_C$.
 Choose $x_0\in P_C$ and define
@@ -622,7 +661,7 @@ Choose $x_0\in P_C$ and define
 \end{equation}
 Then $|G_C(x)-H_C(x)|<2V\delta$ for every $x\in S$.
 For $c\in C$, if $D=C\setminus\{c\}$ is also queried and satisfies the same hypotheses on $S$ with the same $V,\delta$, define $G_D$ using $|D|$ in place of $k$ and the same reference $x_0\in P_C\subseteq P_D$.
-\darkgreen{Then $G_C-G_D$ affinely recovers $h_c$, and hence its underlying attribute, with error $4V\delta$; the probe for $h_c$ is}
+Then $G_C-G_D$ affinely recovers $h_c$, and hence its underlying attribute, with error $4V\delta$; the probe for $h_c$ is
 \begin{equation}
 \label{eq:app-probe}
     b=V\big(f(q_C)-f(q_D)\big),
@@ -717,9 +756,7 @@ Substituting $\mu=\epsilon/k'$ into the construction's dimension bound gives $d_
 The two added coordinates change this by an additive constant, so $d=d_0+2=O(k'^2\epsilon^{-2}\log m)$.
 \end{proof}
 
-For fixed document sparsity $k'$ and attribute recovery error $\epsilon$, the sufficient dimension is logarithmic in $m$.
-\darkgreen{The padding preserves attribute recovery with zero bias, a special case of affine recovery, although the complete embedding need not be linear in $z$.}
-The condition $V\ge kk'$ is sufficient and is not claimed to be necessary; the corollary is an existence result under this scale condition, not a guarantee about the embeddings learned by training.
+
 
 \paragraph{Notation.}
 \begin{description}\setlength{\itemsep}{0pt}
@@ -793,6 +830,12 @@ CoSENT \citep{huang2024cosent} consumes pairs $(q_i, x_i)$ with ordinal relevanc
 where the sum runs over all ordered pairs of pairs in the batch with $r_i > r_j$.
 The labels enter only through their ordering, so with binary labels $r_i \in \{0, 1\}$ the loss requires every positive pair to outscore every negative pair by a margin set by $s$.
 
+
+\section{NV-Retriever Implementation Details}
+\label{app:nv-sweep}
+
+We mine the train split only, with \texttt{e5-mistral-7b-instruct} for text and \texttt{clip-ViT-L-14} for images, retrieving $1000$ candidates per query before the positive-aware filter and dropping rows that leave no survivor.
+We grid search the filter's relative margin $m \in \{0.025, 0.05, 0.1, 0.2\}$ against a survivor offset $s \in \{0, 10\}$ taking the $(s+1)$-th survivor rather than the first.
 
 
 \section{List of Prompts}
