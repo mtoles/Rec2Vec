@@ -86,7 +86,7 @@ To leverage the wasted information, we present the Graded Objective for Learning
 Additionally, we contribute \textsc{gold} reweighting, a loss function modification strategy that assigns partial credit to hard negatives that nearly satisfy the query.
 We demonstrate that both \textsc{gold} mining and \textsc{gold} reweighting are compatible with four common existing loss function families.
 Applying both achieves equal or better recall than random and mined negatives across all tested loss functions and both text and image modalities.
-We attribute this improvement to the following property: under suitable query and comparison coverage assumptions, low loss on the \textsc{gold} Margin-MSE objective implies approximate affine recoverability of attributes, a property not satisfiable by the standard objective.
+We attribute this improvement to the following property: under suitable query and comparison coverage assumptions, low loss on the \textsc{gold} Margin-MSE objective implies approximate affine recoverability of attributes, a property not guaranteed to be satisfiable by the standard objective.
 
 
 % Given limited assumptions, theoretical analysis of \green{Ours} applied to Margin-MSE shows that the graded loss objective can be satisfied when the query vector serves as an affine probe for the conjunctive conditions in the query, and that .
@@ -285,25 +285,26 @@ We optimise with AdamW \citep{loshchilov2017decoupled} at learning rate $2 \time
 \section{Methods}
 \label{sec:methods}
 
-Traditional Margin-MSE loss \citep{hofstatter2020improving} \darkgreen{using cosine similarity between normalized representations} is defined as
+Traditional Margin-MSE loss \citep{hofstatter2020improving} is defined as
 
 % \begin{equation}
 %     \mathcal{L}{q, x^+, x^-} = \Big( \inner{f(q)}{f(x^+)} - \inner{f(q)}{f(x^-)} \Big)^2
 % \end{equation}
 \begin{equation}
     \label{eq:trad-mse}
-    \mathcal{L}(q, x^+, x^-) = \Big( \operatorname{cos}(f(q), f(x^+)) - \operatorname{cos}(f(q), f(x^-)) - y \Big)^2 .
+    \mathcal{L}(q, x^+, x^-) = \Big( \inner{f(q)}{f(x^+)} - \inner{f(q)}{f(x^-)} - y \Big)^2 .
 \end{equation}
 
 Where $q$ is a query, $x^+$ is a relevant document, $x^-$ is a less relevant document, and $y$ is a scalar representing the margin between their relevance as determined by a teacher model.
 $f$ is a function mapping queries or documents to their embeddings. 
-\darkgreen{Retrieval scores use cosine similarity, $\operatorname{cos}(a,b)=a^\top b/(\|a\|\|b\|)$, while $\inner{a}{b}=a^\top b$ denotes the Euclidean inner product.}
-\darkgreen{Because $f$ returns unit-norm embeddings, $\operatorname{cos}(f(q),f(x))=\inner{f(q)}{f(x)}$, so a difference of cosine scores equals $\inner{f(q)}{f(x^+)-f(x^-)}$.}
-\darkgreen{The difference vector and the probe vectors below are not normalized.}
+For loss functions we choose cosine similarity as our inner product.
+% \darkgreen{Retrieval scores use cosine similarity, $\operatorname{cos}(a,b)=a^\top b/(\|a\|\|b\|)$, while $\inner{a}{b}=a^\top b$ denotes the Euclidean inner product.}
+% \darkgreen{Because $f$ returns unit-norm embeddings, $\operatorname{cos}(f(q),f(x))=\inner{f(q)}{f(x)}$, so a difference of cosine scores equals $\inner{f(q)}{f(x^+)-f(x^-)}$.}
+% \darkgreen{The difference vector and the probe vectors below are not normalized.}
 
 
 
-Formally, following \citep{lu2025multiconir}, let query $q_k$ be a query composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., \red{K}\}$.
+Formally, following \citep{lu2025multiconir}, let query $q_k$ be a query composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., K\}$.
 We say a document $x$ is a positive document, $x^+$, with respect to $q_k$ if $x^+ \models C$, i.e., $x^+$ satisfies all $k$ conditions.
 Otherwise, we say the document $x^-$ is negative with respect to $q_k$.
 
@@ -336,7 +337,7 @@ We set the margin term to $d/V$:
 
 \begin{equation}
 \label{eq:hamming}
-    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \operatorname{cos}(f(q_k), f(x^+)) - \operatorname{cos}(f(q_k), f(x^-)) - \underbrace{\tfrac{d}{V}}_{\text{ours}} \Big)^2
+    \mathcal{L_\text{MSE}}(q_k, x^+, x^-) = \Big( \inner{f(q_k)}{f(x^+)} - \inner{f(q_k)}{f(x^-)} - \underbrace{\tfrac{d}{V}}_{\text{ours}} \Big)^2
 \end{equation}
 
 Where the violation scale hyperparameter $V$ controls the penalty per violation.
@@ -432,7 +433,7 @@ Note that the value of $z_i$ only depends on the text.
 
 % Under the Linear Representation Hypothesis, we assume that for a set of features $z_1, ..., z_m : L \rightarrow \mathbb{R}$
 
-\darkgreen{We say a feature is $(\epsilon, S)$-affinely recovered by a probe $(b_i,\beta_i)\in\mathbb{R}^d\times\mathbb{R}$ if}
+We say a feature is $(\epsilon, S)$-affinely recovered by a probe $(b_i,\beta_i)\in\mathbb{R}^d\times\mathbb{R}$ if
 % Let $b_i \in \mathbb{R}^d$ be a probe vector for attribute $z_i$ such that
 
 \begin{equation}
@@ -441,10 +442,10 @@ Note that the value of $z_i$ only depends on the text.
 
 for all $\ell \in S$.
 
-\darkgreen{Under the assumptions of Theorem~\ref{thm:forward}, affine recoverability of attributes permits low Margin-MSE Attribute Hamming Loss.}
-\darkgreen{Conversely, uniformly low loss across all positive--negative comparisons for two queries differing by one condition, each with nonempty positive and negative sets, implies approximate affine recovery of that condition's attribute (Theorem~\ref{thm:back}).}
-\darkgreen{Binary-target Margin-MSE provides no such guarantee: zero loss can coexist with an unrecoverable attribute (Proposition~\ref{prop:binary}).}
-\darkgreen{Finally, for documents with at most $k'$ active attributes from a vocabulary of size $m$, queries with at most $k$ conditions, and $V\ge kk'$, we construct unit document and query embeddings in dimension $d=O\!\left(\frac{k'^2}{\epsilon^2}\log m\right)$ that affinely recover every attribute with error below $\epsilon$ and achieve loss below $(2k\epsilon/V)^2$ on every valid comparison (Corollary~\ref{cor:capacity}).}
+Under the assumptions of Theorem~\ref{thm:forward}, affine recoverability of attributes permits low Margin-MSE Attribute Hamming Loss.
+Conversely, uniformly low loss across all positive--negative comparisons for two queries differing by one condition, each with nonempty positive and negative sets, implies approximate affine recovery of that condition's attribute (Theorem~\ref{thm:back}).
+Binary-target Margin-MSE provides no such guarantee: zero loss can coexist with an unrecoverable attribute (Proposition~\ref{prop:binary}).
+Finally, for documents with at most $k'$ active attributes from a vocabulary of size $m$, queries with at most $k$ conditions, and $V\ge kk'$, we construct unit document and query embeddings in dimension $d=O\!\left(\frac{k'^2}{\epsilon^2}\log m\right)$ that affinely recover every attribute with error below $\epsilon$ and achieve loss below $(2k\epsilon/V)^2$ on every valid comparison (Corollary~\ref{cor:capacity}).
 
 \begin{figure}
     \centering
@@ -485,23 +486,7 @@ for all $\ell \in S$.
 \label{tab:datasets}
 \vspace{1em}
 \small
-\begin{tabular}{lrrrr}
-    \toprule
-    & \multicolumn{2}{c}{\red{Text}} & \multicolumn{2}{c}{\red{Image}} \\
-    \cmidrule(lr){2-3} \cmidrule(lr){4-5}
-    & \red{Synthetic} & \red{Human} & \red{Synthetic} & \red{Human} \\
-    \midrule
-    % \red{Domain} & \multicolumn{2}{c}{\red{Amazon product descriptions}} & \multicolumn{2}{c}{\red{Clothing images}} \\
-    Corpus documents               & \red{144{,}859} & \red{131} & \red{27{,}431} & \red{55} \\
-    Training documents             & \red{123{,}416} & \red{---} & \red{23{,}379} & \red{---} \\
-    Validation documents           & \red{10{,}419}  & \red{---} & \red{3{,}776}  & \red{---} \\
-    Test documents                 & \red{11{,}061}  & \red{131} & \red{3{,}765}  & \red{55} \\
-    Words per document             & \red{186.4}     & \red{186.6} & \red{---} & \red{---} \\
-    Words per query                & \red{37.5}      & \red{11.4} & \red{34.0}  & \red{9.4} \\
-    \red{Attributes stated per query}          & \red{9.9} & \red{2.9} & \red{9.8} & \red{3.1} \\
-    \red{Differentiating attributes per query} & \red{5.1} & \red{---} & \red{5.1} & \red{---} \\
-    \bottomrule
-\end{tabular}
+\input{figs/dataset_summary_table.tex}
 \caption{Dataset summary statistics. Document counts for Synthetic include hard negative pairs while Human documents are positive-only.}
 \end{table}
 
@@ -524,7 +509,7 @@ Attribute-aware mining is more effective than NV-Retriever on both modalities us
 After applying attribute Hamming loss, however, our method surpasses all baselines using all loss functions in all modalities.
 One exception is InfoNCE Image, where our method ties the unmined baseline, possibly due to saturation.
 
-We observe that across 7/8 loss function - modality pairs, \textsc{gold} mining increases both recall and win rate compared to random and NV-Retriever baselines.
+We observe that across 7/8 loss function--modality pairs, \textsc{gold} mining increases both recall and win rate compared to random and NV-Retriever baselines.
 However, applying \textsc{gold} reweighting consistently improves recall at the expense of win rate.
 I.e., \textsc{gold} mining improves accuracy more on hard negatives while \textsc{gold} reweighting trades accuracy on hard negatives for accuracy on easy negatives.
 This is the expected result of penalizing errors in hard negatives less than easy negatives in the loss function.
@@ -539,53 +524,85 @@ The correlation with required attributes in conjunctive queries is unsurprising 
 The lack of correlation with forbidden attributes suggests that overall, embedding models neither induce false positives out of documents containing those attributes nor contribute to to magnifying positive documents in the way that required attributes do.
 Other loss functions show similar behavior.
 
-
+To validate the use of synthetic queries, we compare model accuracy on human-generated versus synthetic queries.
+Across all models 96 models, we find a strong linear relationship between recall on human versus synthetic queries ( Pearson $r \geq 0.83$, $R^2 \geq 0.70$).
+At the same time, model ordering model ordering is moderately positive (Spearman $\rho = 0.47$) on text to strongly positive ($\rho = 0.75$) on images.
+Surprisingly, despite being trained on LLM-generated queries, average model recall on human-generated queries exceeds that on synthetic queries.
+This cannot be explained simply by the lower average conditions on human queries because condition count is in fact positively correlated with recall (Figure~\ref{fig:infonce-condition-counts}).
+Rather, it appears that LLMs rephrase queries more aggressively than humans, resulting in less lexical overlap (BLEU-4 0.62 vs. 0.70, respectively)
 
 
 \begin{figure}[t]
     \centering
     \begin{subfigure}{\linewidth}
         \centering
-        \scalebox{1}[0.9]{\includegraphics[width=\linewidth]{figs/text_vs_image_recall.pdf}}
-        \caption{\darkgreen{Text Recall@5 versus image Recall@20.}}
+        \includegraphics[width=\linewidth,trim=0 11bp 0 0,clip]{figs/text_vs_image_recall.pdf}
+        \phantomcaption
         \label{fig:text-vs-image-recall}
-    \end{subfigure}
-
-    \medskip
+    \end{subfigure}\par
+    \vspace{-1em}
+    \nointerlineskip
     \begin{subfigure}{\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/recall_vs_winrate.pdf}
-        \caption{\darkgreen{Recall versus positive/hard-negative win rate for text (left) and images (right).}}
+        \includegraphics[width=\linewidth,trim=0 0 0 3bp,clip]{figs/recall_vs_winrate.pdf}
+        \phantomcaption
         \label{fig:recall-vs-winrate}
     \end{subfigure}
-    \caption{\darkgreen{Retrieval recall and hard-negative win rate on the test split ($n=3$ per point).
+    \caption{(a) Retrieval recall and hard-negative win rate on the test split.
     Arrows indicate that one training strategy builds on another.
-    Unfilled shapes indicate baselines.}}
+    Unfilled shapes indicate baselines.
+    Recall versus positive/hard-negative win rate for text (b) and images (c), $n=3$ per point}
     \label{fig:text-vs-image}
 \end{figure}
 
 
 \begin{figure}[t]
     \centering
+    \begin{minipage}[c]{0.355\linewidth}
+        \includegraphics[width=\linewidth]{figs/human_vs_synthetic_text_recall.pdf}
+    \end{minipage}\hfill
+    \begin{minipage}[c]{0.355\linewidth}
+        \includegraphics[width=\linewidth]{figs/human_vs_synthetic_image_recall.pdf}
+    \end{minipage}\hfill
+    \begin{minipage}[c]{0.27\linewidth}
+        \centering
+        \darkgreen{\input{figs/human_synthetic_correlations.tex}}
+    \end{minipage}
+    \caption{\darkgreen{Synthetic versus attribute-count-matched human recall for text (Recall@5, left) and images (Recall@20, centre), with correlation statistics at right.
+    Each plot includes all 48 model--seed points; colours and markers follow Figure~\ref{fig:text-vs-image-recall}, and dashed lines show linear fits.}}
+    \label{fig:human-synthetic-correlation}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
     \includegraphics[width=\linewidth]{figs/infonce_condition_counts.pdf}
-    \caption{\darkgreen{InfoNCE recall by query condition count.
-    Text uses Recall@5 and images use Recall@20, on a shared colour scale.
-    Both axes show counts from 0 to 10; grey cells contain no test queries.}}
+    \caption{InfoNCE by positive and negative query condition count showing correlation with positive conditions but not negative conditions. Other loss functions show identical trends.}
     \label{fig:infonce-condition-counts}
 \end{figure}
 
+\section{Conclusion}
 
-
+We present \textsc{gold} mining, a multi-modal hard negative mining algorithm that improves recall on conjunctive queries.
+We also present \textsc{gold} reweighting, a loss function modification strategy that, when combined with \textsc{gold} mining, achieves state-of-the-art recall across four loss functions and two modalities.
+Theoretical analysis of \textsc{gold} reweighting applied to Margin-MSE shows that under suitable query and comparison coverage assumptions, low loss implies approximate affine recoverability of attributes, a property not guaranteed to be satisfiable by the standard objective.
 
 % Keep the results figures within Results and Discussion.
 \FloatBarrier
-\section{Notes}
 
-\red{Working notes --- not for submission.}
+
+
+
+\bibliography{related-work}
+\bibliographystyle{iclr2026_conference}
+
+\appendix
+
+\section{Theoretical Analysis}
+
 
 We analyze the hard-negative Margin-MSE objective with measured violation counts, assuming the presence of no easy negatives.
-\darkgreen{Theorem~\ref{thm:forward} constructs cosine queries from affine attribute probes under explicit norm and scale assumptions.}
-\darkgreen{Theorem~\ref{thm:back} shows that, under complete comparison coverage, low count loss on a query pair differing in one condition implies affine recovery of the deleted attribute.}
+Theorem~\ref{thm:forward} constructs cosine queries from affine attribute probes under explicit norm and scale assumptions.
+Theorem~\ref{thm:back} shows that, under complete comparison coverage, low count loss on a query pair differing in one condition implies affine recovery of the deleted attribute.
 Proposition~\ref{prop:binary} compares this result with binary supervision within Margin-MSE, which can fit the same query pair without preserving the deleted attribute.
 These results describe feasible representations and information required by low-loss embeddings.
 Corollary~\ref{cor:capacity} gives a unit-norm construction with logarithmic dependence on the attribute vocabulary size under an explicit sufficient bound on $V$.
@@ -618,7 +635,6 @@ An affine probe $(b,\beta)$ recovers a function $h$ with error $\epsilon>0$ on $
     |\inner{b}{f(x)}+\beta-h(x)|<\epsilon
     \qquad\text{for all }x\in S.
 \end{equation}
-\darkgreen{This extends the linear accessibility definition of \citet[Section~1.1]{garg2026many}, whose probes have no bias.}
 If $(b_i,\beta_i)$ recovers $z_i$, then $(-b_i,1-\beta_i)$ recovers $1-z_i$ with the same error, so recovering a condition indicator and recovering its attribute are equivalent.
 
 \subsection{Main results}
@@ -773,12 +789,6 @@ The two added coordinates change this by an additive constant, so $d=d_0+2=O(k'^
     \item[$A,d_0,\mu$] Matrix of unit attribute columns, dimension before padding, and bound on off-diagonal inner products in the capacity construction.
 \end{description}
 
-
-
-\bibliography{related-work}
-\bibliographystyle{iclr2026_conference}
-
-\appendix
 \section{\red{Full Results}}
 \label{app:full-results}
 

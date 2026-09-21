@@ -49,6 +49,7 @@ from pathlib import Path
 
 import pandas as pd
 from datasets import load_from_disk
+from dataset_io import save_version
 
 import human_data_image
 import human_data_text
@@ -210,9 +211,10 @@ def in_context_examples(out, n_examples):
 
 
 def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative_column,
-          out_suffix, n_examples):
+          out_suffix, n_examples, tabs=None):
     print(f"\n== {name}")
-    tabs = fetch_workbook(sheet_id)
+    if tabs is None:
+        tabs = fetch_workbook(sheet_id)
     check_headers(tabs, headers, sheet_id)
     kept = annotated_rows(tabs)
 
@@ -275,23 +277,24 @@ def build(name, sheet_id, headers, base_path, pool_fn, positive_column, negative
     out = out.add_column("split", ["test"] * len(out))
 
     out_path = REPO_ROOT / "dataset/processed" / f"{base_path.name}{out_suffix}"
-    out.save_to_disk(str(out_path))
+    save_version(out, out_path)
     print(f"  wrote {out_path}: {len(out)} rows, {len(set(out['annotator']))} annotators")
 
-    # The in-context variant: the same set minus the rows used as style examples.
-    examples = in_context_examples(out, n_examples)
-    example_rows = [{"annotator": out[i]["annotator"], "human_query": out[i]["human_query"],
-                     "nl_query": out[i]["nl_query"], positive_column: out[i][positive_column]}
-                    for i in examples]
     examples_path = Path(__file__).resolve().parent / f"in_context_examples_{name}.json"
-    with open(examples_path, "w") as fh:
-        json.dump(example_rows, fh, indent=2)
-    rest = out.select([i for i in range(len(out)) if i not in set(examples)]).flatten_indices()
+    if examples_path.exists():
+        example_rows = json.loads(examples_path.read_text())
+    else:
+        examples = in_context_examples(out, n_examples)
+        example_rows = [{"annotator": out[i]["annotator"], "human_query": out[i]["human_query"],
+                         "nl_query": out[i]["nl_query"], positive_column: out[i][positive_column]}
+                        for i in examples]
+        examples_path.write_text(json.dumps(example_rows, indent=2) + "\n")
+    excluded = {row[positive_column] for row in example_rows}
+    rest = out.select([i for i, row in enumerate(out) if row[positive_column] not in excluded])
     in_context_path = REPO_ROOT / "dataset/processed" / f"{base_path.name}{out_suffix}{IN_CONTEXT_SUFFIX}"
-    rest.save_to_disk(str(in_context_path))
-    print(f"  wrote {examples_path}: {len(example_rows)} style examples "
-          f"({', '.join(r['annotator'] for r in example_rows)})")
-    print(f"  wrote {in_context_path}: {len(rest)} rows (examples held out)")
+    save_version(rest, in_context_path)
+    print(f"  preserved {len(example_rows)} fixed style examples; "
+          f"wrote {in_context_path}: {len(rest)} rows")
     return out
 
 
