@@ -22,6 +22,7 @@ import re
 from multiprocessing import Pool
 
 from utils.query_render import choose_feature_counts, render_query
+from utils.esci_candidates import ESCI_NEGATIVE_LABELS, eligible_query_ids, filter_raw_pairs
 from utils.retry import retry_with_fallback, print_cost_report, is_gemini_model, get_cost_summary, update_cost_from_summary, reset_cost_tracking
 from langdetect import detect, LangDetectException
 
@@ -87,9 +88,10 @@ def load_esci_dataset(
     print(f"substitute examples: {df[df['esci_label'] == 'Substitute']}")
     print(f"exact examples: {df[df['esci_label'] == 'Exact']}")
     logger.info(f"Loaded {len(df)} examples from {split} dataset")
-    subs_df = df[
-        df["esci_label"].progress_apply(lambda x: x in ["Substitute", "Irrelevant"])
-    ]
+    # Apply the source-metadata requirement before language checks or LLM calls.
+    eligible_queries = eligible_query_ids(df)
+    subs_df = df[df["esci_label"].isin(ESCI_NEGATIVE_LABELS)
+                 & df["query_id"].isin(eligible_queries)].copy()
 
     # Create a lookup dictionary for exact matches - O(n) preprocessing
     exact_lookup = {}
@@ -143,7 +145,11 @@ def load_esci_dataset(
             }
         )
 
-    return ds_list
+    # Language filtering can leave a formerly eligible query with only one candidate.
+    eligible_pairs = filter_raw_pairs(ds_list)
+    logger.info("Retained %d/%d pairs with at least two eligible Substitute/Irrelevant products",
+                len(eligible_pairs), len(ds_list))
+    return eligible_pairs
 
 
 def infer_item_and_features(query: str, model_id: str) -> Optional[Dict[str, Any]]:
@@ -655,14 +661,14 @@ def main():
     # CHECK FOR CACHED OUTPUT FILE (EARLY EXIT TO SAVE TIME)
     # ============================================================================
     if args.no_llm:
-        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_no_llm.jsonl"
+        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_candidates2_no_llm.jsonl"
     else:
-        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}.jsonl"
+        output_file = f"dataset/feature-distance-dataset_{model_id}_{args.n_examples}_candidates2.jsonl"
     
     if os.path.exists(output_file):
         logger.info(f"JSONL file already exists: {output_file}. Loading from cache and skipping all processing.")
-        examples = load_dataset_jsonl(output_file)
-        logger.info(f"Loaded {len(examples)} examples from {output_file}")
+        examples = filter_raw_pairs(load_dataset_jsonl(output_file))
+        logger.info(f"Loaded {len(examples)} eligible examples from {output_file}")
     else:
         # ============================================================================
         # DATA LOADING (only if not cached)
@@ -746,6 +752,9 @@ def main():
         # ============================================================================
         # SAVE PROCESSED DATASET TO CACHE
         # ============================================================================
+        # Failed attribute extraction can remove a candidate; keep the invariant in
+        # cached output too, rather than silently accepting singleton groups later.
+        examples = filter_raw_pairs(examples)
         logger.info("Saving dataset...")
         save_dataset_jsonl(examples, output_file)
         logger.info(f"Dataset saved to {output_file}")
@@ -755,7 +764,7 @@ def main():
     # ============================================================================
     logger.info("Generating dataset summary...")
     dataset_size_str = str(args.n_examples) if args.n_examples is not None else str(len(examples))
-    summary_file = f"dataset/feature-distance-dataset_{model_id}_{dataset_size_str}_summary.md"
+    summary_file = f"dataset/feature-distance-dataset_{model_id}_{dataset_size_str}_candidates2_summary.md"
     
     generate_dataset_summary_md(examples, summary_file, n_examples=10)
     logger.info(f"Dataset summary saved to {summary_file}")
@@ -800,7 +809,7 @@ def main():
     processed_dataset = concatenate_datasets([hard_dataset, easy_dataset])
     
     # Save processed dataset
-    dataset_output_dir = f"dataset/processed/feature-distance-dataset_{model_id}_{dataset_size_str}"
+    dataset_output_dir = f"dataset/processed/feature-distance-dataset_{model_id}_{dataset_size_str}_candidates2"
         
     os.makedirs(os.path.dirname(dataset_output_dir), exist_ok=True)
     processed_dataset.save_to_disk(dataset_output_dir)

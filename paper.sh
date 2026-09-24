@@ -80,7 +80,7 @@ IMG_MODEL=sentence-transformers/clip-ViT-B-32
 if [[ $SMOKE == 1 ]]; then
   NOTE=${NOTE:-smoke}
   MODELS_ROOT=${MODELS_ROOT:-models/_smoke}
-  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek}
+  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_candidates2}
   IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000_disjoint}
   IMG_TRAIN_EXTRA="--train-fraction 0.1"
   TOP_K=20
@@ -90,7 +90,7 @@ if [[ $SMOKE == 1 ]]; then
 else
   NOTE=${NOTE:-paper}
   MODELS_ROOT=${MODELS_ROOT:-models}
-  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek}
+  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_candidates2}
   IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000_disjoint}
   IMG_TRAIN_EXTRA=""
   TOP_K=100
@@ -125,7 +125,8 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>,
 #             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset),
 #             negs=mined-graded (its label_mined_negs.py sibling, query_distance measured),
-#             negs=random (the random_hard_negs.py sibling: hard negatives replaced by random products),
+#             negs=baseline (baseline_hard_negs.py: category/ESCI-matched comparison negatives),
+#             negs=random (legacy uniform-random control; retained for historical runs),
 #             negs=mixed (the mix_hard_negs.py sibling: a seeded half of the train-split hard
 #             negatives are the mined ones, the rest ours; mining= names the mined source),
 #             mining=<variant> (a mine_hard_negs.py --variant sibling; mining sweep),
@@ -864,63 +865,110 @@ multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,rephrase=in-conte
 multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
 multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
-# Random-negative control (2026-09-13), in-context only: each family's ungraded style on the
-# random_hard_negs.py sibling, where every train-split hard negative is a uniform random
-# product. Shows what any hard negative (ours or NV-mined) adds over none. 3 seeds.
+# Metadata-matched Baseline (2026-09-24), in-context only: same-category, different-garment
+# images; pooled Substitute/Irrelevant products for the same original query and positive
+# in text. The shared easy-negative rows are unchanged. Three training seeds.
 # -------------------------------------------------------------------------
-text        infonce-mined     rephrased  -   negs=random,rephrase=in-context
-text        infonce-mined     rephrased  -   negs=random,seed=43,rephrase=in-context
-text        infonce-mined     rephrased  -   negs=random,seed=44,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=random,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=random,seed=43,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=random,seed=44,rephrase=in-context
-text        mse-mined         rephrased  40  easy=10,negs=random,rephrase=in-context
-text        mse-mined         rephrased  40  easy=10,negs=random,seed=43,rephrase=in-context
-text        mse-mined         rephrased  40  easy=10,negs=random,seed=44,rephrase=in-context
-multimodal  mse-mined         rephrased  80  easy=10,negs=random,rephrase=in-context
-multimodal  mse-mined         rephrased  80  easy=10,negs=random,seed=43,rephrase=in-context
-multimodal  mse-mined         rephrased  80  easy=10,negs=random,seed=44,rephrase=in-context
-text        cosent            rephrased  -   negs=random,rephrase=in-context
-text        cosent            rephrased  -   negs=random,seed=43,rephrase=in-context
-text        cosent            rephrased  -   negs=random,seed=44,rephrase=in-context
-multimodal  cosent            rephrased  -   negs=random,rephrase=in-context
-multimodal  cosent            rephrased  -   negs=random,seed=43,rephrase=in-context
-multimodal  cosent            rephrased  -   negs=random,seed=44,rephrase=in-context
-text        siglip-mined      rephrased  -   negs=random,rephrase=in-context
-text        siglip-mined      rephrased  -   negs=random,seed=43,rephrase=in-context
-text        siglip-mined      rephrased  -   negs=random,seed=44,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   negs=random,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   negs=random,seed=43,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   negs=random,seed=44,rephrase=in-context
-# Baseline loss selection on random negatives (2026-09-14, analysis.ipynb section 4): Table 1
-# compares the ungraded losses trained on the random_hard_negs.py sibling, not on our labeled
-# hard negative, so that the baseline choice does not depend on our data. Validation split.
-# infonce-mined / cosent / siglip-mined reuse the random-control weights above (inference only);
-# mse (pairwise, the table's MSE row) has no random-control test row, so its rows train here.
-text        infonce-mined     rephrased  -   split=val,negs=random,rephrase=in-context
-text        infonce-mined     rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-text        infonce-mined     rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=random,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-text        cosent            rephrased  -   split=val,negs=random,rephrase=in-context
-text        cosent            rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-text        cosent            rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-multimodal  cosent            rephrased  -   split=val,negs=random,rephrase=in-context
-multimodal  cosent            rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-multimodal  cosent            rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-text        siglip-mined      rephrased  -   split=val,negs=random,rephrase=in-context
-text        siglip-mined      rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-text        siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   split=val,negs=random,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-text        mse               rephrased  -   split=val,negs=random,rephrase=in-context
-text        mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-text        mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,negs=random,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+# retired uniform-random: text        infonce-mined     rephrased  -   negs=random,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=baseline,rephrase=in-context
+# retired uniform-random: text        infonce-mined     rephrased  -   negs=random,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        infonce-mined     rephrased  -   negs=random,seed=44,rephrase=in-context
+text        infonce-mined     rephrased  -   negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  infonce-mined     rephrased  -   negs=random,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  infonce-mined     rephrased  -   negs=random,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  infonce-mined     rephrased  -   negs=random,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: text        mse-mined         rephrased  40  easy=10,negs=random,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=baseline,rephrase=in-context
+# retired uniform-random: text        mse-mined         rephrased  40  easy=10,negs=random,seed=43,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        mse-mined         rephrased  40  easy=10,negs=random,seed=44,rephrase=in-context
+text        mse-mined         rephrased  40  easy=10,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  mse-mined         rephrased  80  easy=10,negs=random,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  mse-mined         rephrased  80  easy=10,negs=random,seed=43,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  mse-mined         rephrased  80  easy=10,negs=random,seed=44,rephrase=in-context
+multimodal  mse-mined         rephrased  80  easy=10,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: text        cosent            rephrased  -   negs=random,rephrase=in-context
+text        cosent            rephrased  -   negs=baseline,rephrase=in-context
+# retired uniform-random: text        cosent            rephrased  -   negs=random,seed=43,rephrase=in-context
+text        cosent            rephrased  -   negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        cosent            rephrased  -   negs=random,seed=44,rephrase=in-context
+text        cosent            rephrased  -   negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  cosent            rephrased  -   negs=random,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  cosent            rephrased  -   negs=random,seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  cosent            rephrased  -   negs=random,seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: text        siglip-mined      rephrased  -   negs=random,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=baseline,rephrase=in-context
+# retired uniform-random: text        siglip-mined      rephrased  -   negs=random,seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        siglip-mined      rephrased  -   negs=random,seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  siglip-mined      rephrased  -   negs=random,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  siglip-mined      rephrased  -   negs=random,seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  siglip-mined      rephrased  -   negs=random,seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   negs=baseline,seed=44,rephrase=in-context
+# Baseline loss selection on metadata-matched negatives (analysis.ipynb section 4).
+# Validation and test rows share the same Baseline weights; all text conditions use the
+# candidates2 base. Historical uniform-random rows remain commented for provenance.
+# mse (pairwise, the table's MSE row) has no Baseline test row, so its rows train here.
+# retired uniform-random: text        infonce-mined     rephrased  -   split=val,negs=random,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: text        infonce-mined     rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        infonce-mined     rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        infonce-mined     rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  infonce-mined     rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  infonce-mined     rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  infonce-mined     rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  infonce-mined     rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: text        cosent            rephrased  -   split=val,negs=random,rephrase=in-context
+text        cosent            rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: text        cosent            rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        cosent            rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        cosent            rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        cosent            rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  cosent            rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  cosent            rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  cosent            rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  cosent            rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: text        siglip-mined      rephrased  -   split=val,negs=random,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: text        siglip-mined      rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        siglip-mined      rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  siglip-mined      rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  siglip-mined      rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: text        mse               rephrased  -   split=val,negs=random,rephrase=in-context
+text        mse               rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: text        mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+text        mse               rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: text        mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+text        mse               rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired uniform-random: multimodal  mse               rephrased  -   split=val,negs=random,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired uniform-random: multimodal  mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired uniform-random: multimodal  mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
+multimodal  mse               rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # siglip-v3 (2026-09-14): ours-siglip with the exponential target (utils/graded_losses.py,
 # exponential=True). Like infonce-ours-v3, easy plays no part (random and cross-row cells
@@ -1095,6 +1143,8 @@ dataset_for() { # modality [query_kind] [negs] [mining] [rephrase] -> dataset di
   # negs=random: the random_hard_negs.py sibling, every train-split hard negative replaced by a
   # uniform random product -- the control for hard-negative mining of any kind.
   [[ ${3:-labeled} == random ]] && base="${base}_random-${2}"
+  # Distinct dataset identity prevents reuse of the old uniform-random checkpoints.
+  [[ ${3:-labeled} == baseline ]] && base="${base}_baseline-${2}"
   echo "$base"
 }
 
@@ -1150,8 +1200,8 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
     *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
   esac
   case $_negs in
-    labeled|mined|mined-graded|mixed|random) ;;
-    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed, random)" >&2; exit 1 ;;
+    labeled|mined|mined-graded|mixed|random|baseline) ;;
+    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed, random, baseline)" >&2; exit 1 ;;
   esac
 }
 

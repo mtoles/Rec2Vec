@@ -1,0 +1,32 @@
+[
+  {
+    "annotator": "Annotator 1",
+    "human_query": "oversized black and white blouse without bold stripe pattern",
+    "nl_query": "I am looking for: \"blouses\" that has: straight hem, plaid pattern, back yoke detail, sleeves rolled with tab, buttoned front, 3/4 length sleeves, black and white color, oversized fit, collared shirt; and does not have: dropped shoulder sleeves, high-low hem, partially unbuttoned front, floral pattern, solid color shirt, crew neck, zipper closure, short sleeves",
+    "positive_product_id": "WOMEN_Blouses_Shirts_id_00001806_01"
+  },
+  {
+    "annotator": "filipp",
+    "human_query": "men's black tee tight fit",
+    "nl_query": "I am looking for: \"tees\" that has: Solid opaque fabric, Ribbed crew neck, Longline silhouette, Black short-sleeve top, Knit fabric construction, Casual tee style; and does not have: Worn by female model, Semi-sheer texture, V-neckline, Layered over white",
+    "positive_product_id": "MEN_Tees_Tanks_id_00006325_01"
+  },
+  {
+    "annotator": "Anushka",
+    "human_query": "lightweight buttoned shirt for women with basic collar",
+    "nl_query": "I am looking for: \"blouses\" that has: Buttoned front closure, Basic collar, Full length top, Front patch pockets, Long sleeves, Women's top, Woven fabric, Blue and white stripes, Striped pattern; and does not have: Exposed back zipper, Crop top length, Plunging V-neckline, Hooded neckline, Solid color garment, Leather material, Floral print",
+    "positive_product_id": "WOMEN_Blouses_Shirts_id_00007866_01"
+  },
+  {
+    "annotator": "Lucy",
+    "human_query": "Tee with a tie-dyed design, without a ribbed crew neck or athletic style.",
+    "nl_query": "I am looking for: \"tees\" that does not have: ribbed crew neck, zipper closure",
+    "positive_product_id": "WOMEN_Tees_Tanks_id_00007632_01"
+  },
+  {
+    "annotator": "billy",
+    "human_query": "pink sweetheart neckline top with sheerback, short sleeves",
+    "nl_query": "I am looking for: \"blouses\" that has: Closed front, Lightweight fabric; and does not have: Floral embroidery, Wide sleeves, Kimono style, Long sleeves, Open front, Hooded design",
+    "positive_product_id": "WOMEN_Blouses_Shirts_id_00004246_02"
+  }
+]

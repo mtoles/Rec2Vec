@@ -30,6 +30,7 @@ from jsonschema import ValidationError, validate
 from tqdm import tqdm
 
 from utils.query_render import choose_feature_counts, render_query
+from utils.image_split import garment_id
 from utils.retry import get_cost_summary, print_cost_report
 
 
@@ -82,7 +83,7 @@ def derive_garment_id(product_id: str) -> str:
     is visually the same design -- neither is an "actually different product", so hard
     negatives must come from a different garment id, not merely a different product id.
     """
-    return re.sub(r"_\d+$", "", str(product_id))
+    return garment_id(product_id)
 
 
 def record_category(record: Dict[str, Any], category_key: str) -> str:
@@ -644,6 +645,11 @@ def generate_summary_md(examples: List[Dict[str, Any]], summary_file: str, n_exa
 
 
 def save_processed_dataset(examples: List[Dict[str, Any]], output_dir: str) -> None:
+    for example in examples:
+        positive = garment_id(example["positive_product_id"])
+        for field in ("hard_negative_product_id", "easy_negative_product_id"):
+            if garment_id(example[field]) == positive:
+                raise ValueError(f"Negative is another view/colorway of the positive: {example[field]}")
     raw_dataset = HFDataset.from_list(examples)
 
     def add_hard_examples(example: Dict[str, Any]) -> Dict[str, Any]:

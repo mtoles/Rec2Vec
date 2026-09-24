@@ -247,8 +247,9 @@ For images, we choose the DeepFashion In-Shop dataset because it contains images
 
 \paragraph{Structured attribute selection}
 To extract document attributes, we prompt Gemini 2.5 Flash with a matched positive and negative document pair, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
-We select candidates for hard negatives in ESCI using the pre-existing Substitute and Irrelevant labels.
-For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees''.
+\darkgreen{We select candidates for hard negatives in ESCI using the pre-existing Substitute and Irrelevant labels, retaining only original-query/positive-product groups with at least two distinct eligible candidates across these labels.}
+\darkgreen{We apply this requirement before attribute generation and recheck it after generation and split filtering.}
+\darkgreen{For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees'', excluding all views and colorways of the positive garment.}
 In the DeepFashion dataset, we include images and descriptions of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
 
 We instruct it to generate up to 5 attributes that apply to only the first example, only the second example, to both examples, or to neither example, a pool of up to 20 attributes.
@@ -263,9 +264,13 @@ Rewriting the query in this way is designed to improve the realism and diversity
 This yields a (query, positive) pairs.
 
 \paragraph{Baseline negative sampling}
-To enable contrastive learning, we randomly sample "easy" negative documents from the full training sets.
-We refer to this strategy below as "Random".
-\green{todo: check for correctness after baseline dataset update.}
+\green{todo: refresh dataset statistics and experimental results for the candidates2 text dataset and metadata-matched Baseline.}
+\darkgreen{Our Baseline samples comparison negatives using the same source metadata as \textsc{gold} mining.}
+\darkgreen{For text, we sample uniformly from distinct eligible Substitute or Irrelevant products associated with the same original ESCI query and positive product in the training split.}
+\darkgreen{For images, we sample uniformly from training images in the positive's category, excluding all views and colorways of its garment.}
+\darkgreen{The comparison document used during query generation remains eligible for sampling.}
+\darkgreen{All strategies retain the same additional easy-negative triples: split-local random products for text and images from a different category for DeepFashion.}
+\darkgreen{Only the training comparison negatives change across strategies; validation and test data are shared.}
 % We also compare to the state-of-the-art hard negative mining algorithm NV-Retriever \citep{moreira2024nv}, described in \red{...}
 \darkgreen{We also compare to an adaptation of NV-Retriever's positive-aware hard negative mining strategy \citep{moreira2024nv}, a key component of NV-Embed-v2 \citep{lee2024nv}, the highest-scoring retrieval model in Table~5 of \citet{wischounig2026negative}.}
 Regardless of the strategy, this produces (query, positive, negative) triples.

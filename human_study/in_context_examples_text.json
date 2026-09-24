@@ -1,0 +1,32 @@
+[
+  {
+    "annotator": "filipp",
+    "human_query": "flushable wipes with aloe, not fragrance-free",
+    "nl_query": "I am looking for: \"prep h wipes\" that has: Black product color, At-home use focus, Dispenser included, 48 count wipes, 25 percent larger, Alcohol and paraben-free, Septic and sewer safe, Plant-based ingredients, Hypoallergenic formula, Flushable wipes; and does not have: Upgrade from baby wipes, Gentle on sensitive skin, 42 count wipes, 35 percent larger, Scented wipes, Harsh chemicals, Bright red color, Travel size, Non-flushable wipes",
+    "positive_id": "B01NAPQ4QP"
+  },
+  {
+    "annotator": "Anushka",
+    "human_query": "multipack multicolored disney long sleeve bodysuit for 18mo boys",
+    "nl_query": "I am looking for: \"long sleeve\" that has: Officially licensed, Multicolored design, Lap shoulders, Winnie the Pooh characters; and does not have: Solid green color, Sweatshirt and pants set, Organic cotton material, Adult clothing, Footwear, One size fits all, Short sleeve, Teenager clothing",
+    "positive_id": "B08CLML5K1"
+  },
+  {
+    "annotator": "Nikolaus",
+    "human_query": "Frio backpack with integrated cooler and bluetooth speaker built in. No laptop compartment",
+    "nl_query": "I am looking for: \"backpack\" that has: Side mesh pockets, Multiple storage pockets; and does not have: Laptop compartment, ScanSmart airport friendly, Tablet pocket, Trolley strap",
+    "positive_id": "B07SPGD9SD"
+  },
+  {
+    "annotator": "Zach",
+    "human_query": "bark collar with shock mode off option, no flashing lights",
+    "nl_query": "I am looking for: \"collar\" that has: 12 months warranty, Rechargeable battery, Waterproof design; and does not have: IP7 waterproof rating, Fixed sensitivity level, Indoor use only",
+    "positive_id": "B087M3QG4Z"
+  },
+  {
+    "annotator": "Amith",
+    "human_query": "kids tablet, no data plan, no private browsing, no social media apps",
+    "nl_query": "I am looking for: \"tablet\" that has: Kids tablet device, Parental control features, Spanish language content, Kid-proof case; and does not have: Vankyo brand, Kidoz pre-installed, 32GB internal storage, Pink color, Built-in stand, Desktop computer, 128 GB internal storage, Physical keyboard included, Adult productivity software, Green color device",
+    "positive_id": "B07H8WS1FT"
+  }
+]
