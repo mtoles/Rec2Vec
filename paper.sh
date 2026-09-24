@@ -81,7 +81,7 @@ if [[ $SMOKE == 1 ]]; then
   NOTE=${NOTE:-smoke}
   MODELS_ROOT=${MODELS_ROOT:-models/_smoke}
   TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek}
-  IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000}
+  IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000_disjoint}
   IMG_TRAIN_EXTRA="--train-fraction 0.1"
   TOP_K=20
   export WANDB_MODE=offline
@@ -91,7 +91,7 @@ else
   NOTE=${NOTE:-paper}
   MODELS_ROOT=${MODELS_ROOT:-models}
   TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek}
-  IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000}
+  IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000_disjoint}
   IMG_TRAIN_EXTRA=""
   TOP_K=100
   REPORT_TO=""
@@ -622,10 +622,10 @@ multimodal  mse               rephrased  -   rephrase=in-context
 # archived/retired: multimodal  ours-infonce      rephrased  40  rephrase=in-context
 # archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,rephrase=in-context
 # archived/retired: multimodal  ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
-multimodal  ours-mse-batched  rephrased  20  easy=10,rephrase=in-context
+multimodal ours-mse-batched rephrased 20 easy=10,rephrase=in-context
 multimodal  mse-mined         rephrased  80  easy=10,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  rephrase=in-context
-multimodal  infonce-ours-v3   rephrased  10  rephrase=in-context
+multimodal infonce-ours-v3 rephrased 40 rephrase=in-context
 # Repeated trials of the in-context headline pair, so its -ic bars carry n=3 like the plain ones.
 # Baseline loss selection (analysis.ipynb section 4, 2026-09-12): the ungraded losses scored on
 # the in-context VALIDATION split, so the choice of baseline is not made on the test set. Same
@@ -665,8 +665,8 @@ multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_
 # seeds 43/44 of the in-context re-selected variant (2026-09-12)
 text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
 text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+multimodal infonce-mined rephrased - split=val,negs=mined,mining=m0.2_s10,seed=43,rephrase=in-context
+multimodal infonce-mined rephrased - split=val,negs=mined,mining=m0.2_s10,seed=44,rephrase=in-context
 # In-context re-run of the NV-Retriever mining sweep (logs/mine/run_nv_sweep_ic_all.sh,
 # 2026-09-12): every grid cell carries an explicit tag, the (0.025, s10) cell is the seed-42
 # val row above. Selection lives in analysis.ipynb NV_SELECTED[..., "in-context"].
@@ -686,8 +686,8 @@ multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.2_s0
 multimodal  infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.2_s10,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  seed=43,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  seed=44,rephrase=in-context
-multimodal  infonce-ours-v3   rephrased  10  seed=43,rephrase=in-context
-multimodal  infonce-ours-v3   rephrased  10  seed=44,rephrase=in-context
+multimodal infonce-ours-v3 rephrased 40 seed=43,rephrase=in-context
+multimodal infonce-ours-v3 rephrased 40 seed=44,rephrase=in-context
 text        infonce-mined     rephrased  -   seed=43,rephrase=in-context
 text        infonce-mined     rephrased  -   seed=44,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   seed=43,rephrase=in-context
@@ -718,9 +718,9 @@ multimodal  mse               rephrased  -   seed=44,rephrase=in-context
 text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,rephrase=in-context
 text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
 text        infonce-mined     rephrased  -   negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
-multimodal  infonce-mined     rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+multimodal infonce-mined rephrased - negs=mined,mining=m0.2_s10,rephrase=in-context
+multimodal infonce-mined rephrased - negs=mined,mining=m0.2_s10,seed=43,rephrase=in-context
+multimodal infonce-mined rephrased - negs=mined,mining=m0.2_s10,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # 50/50 mixed negatives (2026-09-11), in-context only: the mix_hard_negs.py sibling
 # (_mixed-rephrased_m0.025_s10) keeps our labeled negative on a seeded half of the train-split
@@ -753,15 +753,15 @@ multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephra
 text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
 text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
 text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
+multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
+multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
+multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
 # -------------------------------------------------------------------------
 # Full in-context result set for the mse / cosent / siglip families (2026-09-13), matching
 # infonce's: 3 seeds on the graded and ungraded styles; the ungraded loss on the NV-mined
@@ -772,8 +772,8 @@ multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,seed=4
 # seeds 43/44 on the existing in-context rows
 text        ours-mse-batched  rephrased  40  easy=10,seed=43,rephrase=in-context
 text        ours-mse-batched  rephrased  40  easy=10,seed=44,rephrase=in-context
-multimodal  ours-mse-batched  rephrased  20  easy=10,seed=43,rephrase=in-context
-multimodal  ours-mse-batched  rephrased  20  easy=10,seed=44,rephrase=in-context
+multimodal ours-mse-batched rephrased 20 easy=10,seed=43,rephrase=in-context
+multimodal ours-mse-batched rephrased 20 easy=10,seed=44,rephrase=in-context
 # archived/retired: text        ours-siglip       rephrased  20  easy=10,seed=43,rephrase=in-context
 # archived/retired: text        ours-siglip       rephrased  20  easy=10,seed=44,rephrase=in-context
 # archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,seed=43,rephrase=in-context
@@ -798,21 +798,21 @@ multimodal  siglip-mined      rephrased  -   seed=44,rephrase=in-context
 text        mse-mined         rephrased  40  easy=10,negs=mined,mining=m0.1_s10,rephrase=in-context
 text        mse-mined         rephrased  40  easy=10,negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
 text        mse-mined         rephrased  40  easy=10,negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
-multimodal  mse-mined         rephrased  80  easy=10,negs=mined,mining=m0.05_s0,rephrase=in-context
-multimodal  mse-mined         rephrased  80  easy=10,negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
-multimodal  mse-mined         rephrased  80  easy=10,negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+multimodal mse-mined rephrased 80 easy=10,negs=mined,mining=m0.2_s10,rephrase=in-context
+multimodal mse-mined rephrased 80 easy=10,negs=mined,mining=m0.2_s10,seed=43,rephrase=in-context
+multimodal mse-mined rephrased 80 easy=10,negs=mined,mining=m0.2_s10,seed=44,rephrase=in-context
 text        cosent            rephrased  -   negs=mined,mining=m0.1_s10,rephrase=in-context
 text        cosent            rephrased  -   negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
 text        cosent            rephrased  -   negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
-multimodal  cosent            rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
-multimodal  cosent            rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
-multimodal  cosent            rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+multimodal cosent rephrased - negs=mined,mining=m0.2_s10,rephrase=in-context
+multimodal cosent rephrased - negs=mined,mining=m0.2_s10,seed=43,rephrase=in-context
+multimodal cosent rephrased - negs=mined,mining=m0.2_s10,seed=44,rephrase=in-context
 text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,rephrase=in-context
 text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,seed=43,rephrase=in-context
 text        siglip-mined      rephrased  -   negs=mined,mining=m0.1_s10,seed=44,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,seed=43,rephrase=in-context
-multimodal  siglip-mined      rephrased  -   negs=mined,mining=m0.05_s0,seed=44,rephrase=in-context
+multimodal siglip-mined rephrased - negs=mined,mining=m0.2_s10,rephrase=in-context
+multimodal siglip-mined rephrased - negs=mined,mining=m0.2_s10,seed=43,rephrase=in-context
+multimodal siglip-mined rephrased - negs=mined,mining=m0.2_s10,seed=44,rephrase=in-context
 # mixed group: V sweep on the mixed in-context validation split (ours-cosent has no V).
 # The graded style per family is the newest one: ours-mse-batched, siglip-v3, ours-cosent.
 text        ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
@@ -854,15 +854,15 @@ multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=4
 text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
 text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
 text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
 text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
 text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,rephrase=in-context
+multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # Random-negative control (2026-09-13), in-context only: each family's ungraded style on the
 # random_hard_negs.py sibling, where every train-split hard negative is a uniform random
@@ -940,9 +940,9 @@ multimodal  siglip-v3         rephrased  80  split=val,rephrase=in-context
 text        siglip-v3         rephrased  80  rephrase=in-context
 text        siglip-v3         rephrased  80  seed=43,rephrase=in-context
 text        siglip-v3         rephrased  80  seed=44,rephrase=in-context
-multimodal  siglip-v3         rephrased  80  rephrase=in-context
-multimodal  siglip-v3         rephrased  80  seed=43,rephrase=in-context
-multimodal  siglip-v3         rephrased  80  seed=44,rephrase=in-context
+multimodal siglip-v3 rephrased 80 rephrase=in-context
+multimodal siglip-v3 rephrased 80 seed=43,rephrase=in-context
+multimodal siglip-v3 rephrased 80 seed=44,rephrase=in-context
 
 # In-context labelled validation sweeps (seed 42); selection precedes main trials.
 text        infonce-ours-v3 rephrased 10 split=val,rephrase=in-context

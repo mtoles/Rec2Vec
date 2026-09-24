@@ -5,8 +5,8 @@ condition needs is shared -- dataset preparation, label construction, loss selec
 trainer setup, final evaluation -- and the two genuinely modality-specific concerns are
 isolated below: how documents are encoded (strings vs image paths loaded as PIL images)
 and which base model is the default. Splitting is data-driven rather than per modality:
-a dataset with a precomputed `split` column (the leakage-free text split) uses it, and
-one without (the image dataset) gets the seeded query-level split.
+image datasets require a precomputed document-disjoint `split` column;
+legacy text datasets without one use a seeded query-level split.
 
 Supersedes train_text.py and train_multimodal.py.
 """
@@ -636,12 +636,21 @@ class SeededTrainer(SentenceTransformerTrainer):
     The eval loader calls get_batch_sampler too, so the phases are applied by row count.
     """
 
-    def __init__(self, *args, train_phases=None, **kwargs):
+    def __init__(self, *args, train_phases=None, image_hashes=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.train_phases = train_phases
+        self.image_hashes = image_hashes
 
     def get_batch_sampler(self, dataset, batch_size, drop_last, valid_label_columns=None,
                           generator=None, seed=0):
+        if self.image_hashes is not None:
+            values = dataset.with_format(None).to_dict()
+            for column in values:
+                values[column] = [
+                    "image:" + self.image_hashes[v] if isinstance(v, str) and v in self.image_hashes else v
+                    for v in values[column]
+                ]
+            dataset = Dataset.from_dict(values)
         if self.train_phases is not None and len(dataset) == len(self.train_phases):
             return PhasedNoDuplicatesBatchSampler(
                 dataset, batch_size=batch_size, drop_last=drop_last,
@@ -752,6 +761,9 @@ def main():
 
     print(f"Loading dataset from {config['dataset']}")
     dataset = load_from_disk(config["dataset"])
+    if modality == "multimodal":
+        from utils.image_split import verify_image_splits
+        print(f"Verified image splits: {verify_image_splits(dataset)}")
     query_key = QUERY_COLUMNS[query_kind]
     if query_key not in dataset.column_names:
         raise ValueError(f"Requested query field '{query_key}' not found in columns: {dataset.column_names}")
@@ -898,6 +910,9 @@ def main():
     else:
         batch_sampler = BatchSamplers.NO_DUPLICATES
 
+    image_workers = int(os.environ["IMAGE_DATALOADER_WORKERS"]) if "IMAGE_DATALOADER_WORKERS" in os.environ else 4
+    if modality != "multimodal":
+        image_workers = 0
     training_args = SentenceTransformerTrainingArguments(
         output_dir=train_config["output_dir"],
         num_train_epochs=train_config["num_train_epochs"],
@@ -916,6 +931,8 @@ def main():
         report_to=train_config["report_to"],
         seed=config["seed"],
         data_seed=config["seed"],
+        dataloader_num_workers=image_workers,
+        dataloader_persistent_workers=image_workers > 0,
     )
 
     swap_pos_neg = training_style == TrainingStyle.OURS_MSE_REVERSED.value
@@ -944,6 +961,12 @@ def main():
     print(f"Trainer eval dataset columns: {eval_dataset_for_trainer.column_names}")
     print(f"Final evaluator dataset columns (val): {raw_eval_dataset.column_names}")
 
+    image_hashes = None
+    hash_path = os.path.join(config["dataset"], "image_hashes.json")
+    if modality == "multimodal" and os.path.isfile(hash_path):
+        with open(hash_path) as handle:
+            image_hashes = json.load(handle)
+
     trainer = SeededTrainer(
         model=model,
         args=training_args,
@@ -951,6 +974,7 @@ def main():
         eval_dataset=eval_dataset_for_trainer,
         loss=loss,
         train_phases=train_phases,
+        image_hashes=image_hashes,
     )
     trainer.train()
 

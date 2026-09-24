@@ -648,6 +648,7 @@ def save_processed_dataset(examples: List[Dict[str, Any]], output_dir: str) -> N
 
     def add_hard_examples(example: Dict[str, Any]) -> Dict[str, Any]:
         return {
+            **({"split": example["split"]} if "split" in example else {}),
             "original_query": example.get("original_query", ""),
             "nl_query": example["nl_query"],
             "rephrased_query": example.get("rephrased_query", ""),
@@ -673,6 +674,7 @@ def save_processed_dataset(examples: List[Dict[str, Any]], output_dir: str) -> N
 
     def add_easy_examples(example: Dict[str, Any]) -> Dict[str, Any]:
         return {
+            **({"split": example["split"]} if "split" in example else {}),
             "original_query": example.get("original_query", ""),
             "nl_query": example["nl_query"],
             "rephrased_query": example.get("rephrased_query", ""),

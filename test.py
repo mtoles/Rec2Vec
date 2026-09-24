@@ -59,6 +59,9 @@ CORPUS_FIELDS = {"text": "text", "multimodal": "image_path"}
 def load_eval_split(dataset_path, query_key, split_seed, split="test"):
     """Mirror of train.py's dataset preparation: rename, filter, split, take one split."""
     dataset = load_from_disk(dataset_path)
+    if "positive_product_id" in dataset.column_names:
+        from utils.image_split import verify_image_splits
+        verify_image_splits(dataset)
     if query_key not in dataset.column_names:
         raise ValueError(f"Requested query field '{query_key}' not found in columns: {dataset.column_names}")
 

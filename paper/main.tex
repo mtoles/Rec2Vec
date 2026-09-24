@@ -85,8 +85,8 @@ One limitation in existing training paradigms is the binary training objective; 
 To leverage the wasted information, we present the Graded Objective for Learning Distinctions, or \textsc{gold} mining, a hard negative mining strategy that generates hard negatives with known violations of query conditions.
 Additionally, we contribute \textsc{gold} reweighting, a loss function modification strategy that assigns partial credit to hard negatives that nearly satisfy the query.
 We demonstrate that both \textsc{gold} mining and \textsc{gold} reweighting are compatible with four common existing loss function families.
-Applying both achieves recall equal to or better than that of random and mined negatives across all tested loss functions and both text and image modalities.
-We attribute this improvement to the following property: under suitable query and comparison coverage assumptions, low loss on the \textsc{gold} Margin-MSE objective implies approximate affine recoverability of attributes, a property not guaranteed to be satisfiable by the standard objective.
+Applying both outperform state-of-the-art hard negatives mining in seven evaluation settings across four loss functions and two modalities.
+Our theoretical analysis establishes that under suitable query and comparison coverage assumptions, uniformly low loss on the \textsc{gold} Margin-MSE objective implies approximate affine recoverability of attributes, a property not guaranteed satisfiable by the standard objective.
 
 
 % Given limited assumptions, theoretical analysis of \green{Ours} applied to Margin-MSE shows that the graded loss objective can be satisfied when the query vector serves as an affine probe for the conjunctive conditions in the query, and that .
@@ -101,25 +101,22 @@ We attribute this improvement to the following property: under suitable query an
 \section{Introduction}
 
 Embedding-based retrieval aims to recall a match set of semantically relevant documents satisfying the user's query.
-Such embeddings are often used in retrieval tasks, such as RAG, product search, and image search, where fine-grained matching of details between the query and the document determines relevance.
+Such embeddings are often used in retrieval tasks, such as retrieval augmented generation (RAG), product search, and image search, where fine-grained matching of details between the query and the document determines relevance.
+As users' refine their queries, they tend to increase in specificity over time by filtering out more candidate results.
+Such user behavior is demonstrated in employee recruitment  \citep{kaya2023understanding}, web search \citep{jansen2007patterns}, and product search \citep{papenmeier2020modern}.
+These refined queries are often conjunctive: a result must satisfy every condition, including negated conditions \citep{merra2023improving}
 
 
-There is evidence to believe that queries are underspecified because users doubt the capabilities of recommender systems \citep{kato2014cognitive}.
-\citet{papenmeier2020modern} find that users' free-form text descriptions of their desired product include, on average, 29 words and 3.83 attributes.
-However, when using Amazon product search, they entered only 2.2 words, indicating that users do not feel including additional attributes would be helpful.
 
-Users' pessimism is not unfounded, as bi-encoders have known limitations in their expressivity.
-% \citet{zhang2025excluir} and \citet{weller2024nevir} show that embedding models struggle to model negation.
-These include negation \citep{zhang2025excluir, weller2024nevir}, set operations \citep{malaviya-etal-2023-quest}, constraint dilution \citep{lu2025multiconir, killingback2025benchmarking}, and attribute binding \citep{yuksekgonul2022and}.
-It then follows that user query behavior may suffer from a chicken-and-egg problem; users do not use complex queries because they expect models to fail, while practitioners do not optimize for complex queries because they do not appear in user data.
+However, bi-encoders are known to struggle with exactly the operations that such queries require.
+These include negation \citep{zhang2025excluir, weller2024nevir}, set operations \citep{malaviya-etal-2023-quest}, simultaneous constraint satisfaction \citep{lu2025multiconir, killingback2025benchmarking}, and attribute binding \citep{yuksekgonul2022and}.
+We hypothesize that user query behavior may suffer from a chicken-and-egg problem; users do not use complex queries because they expect models to fail, while practitioners underprioritize complex queries because they do not appear in user data.
 
-% mechanics - why our system works
 
-% Unfortunately, available retrieval datasets, such as MS-Marco \citep{bajaj2018msmarcohumangenerated}, Beir  \citep{thakur2021beir}, and  mainly contain simple queries, with little to no conjunction or negation.
-Unfortunately, publicly available product retrieval datasets such as Amazon ESCI \cite{reddy2022shopping} lack conjunctive queries.
+Although Amazon ESCI \cite{reddy2022shopping} includes simple multi-attribute queries, it offers limited coverage of complex conjunctions, motivating our dataset’s systematic construction of queries combining multiple required and forbidden attributes.
 This neglects an important dynamic in the user experience of search systems wherein queries tend to gain attributes over time as users refine them. 
 \citet{hirsch2020query} find that over 50\% of queries on eBay occur during a reformulation session, with queries growing in length over time.
-Longer queries were associated with increased purchase rates, indicating that support for highly specific queries should be a priority.
+Longer, rewritten queries were associated with increased purchase rates, indicating that support for highly specific queries should be a priority.
 
 Thus, we identify dense retrieval for conjunctive queries as understudied across three axes: data, methods, and evaluations.
 Specifically, we concentrate on improving conjunctive queries --- those seeking documents that \textbf{have} attributes a, b, c ... and \textbf{do not have} attributes x, y, z, ... . 
@@ -133,9 +130,9 @@ Similar use cases exist in other retrieval tasks, including for images, videos, 
 
 
 
-To address this gap, we introduce \textbf{G}raded \textbf{O}bjective for \textbf{L}earning \textbf{D}istinctions, or \textsc{gold} mining, a strategy for generating hard negatives differing by a strict subset of conjunctive conditions in the query.
+To address this gap, we introduce \textbf{G}raded \textbf{O}bjective for \textbf{L}earning \textbf{D}istinctions, or \textsc{gold} mining, a strategy for constructing conjunctive queries for existing document pairs, automatically labeling how many query conditions each hard negative violates.
 We combine it with \textsc{gold} reweighting, a broadly applicable loss function modification that assigns partial credit to hard negatives that partially satisfy those conditions.
-\textsc{gold} mining uses a generative LLM to extract attributes of each document in structured form, creating a large, synthetic dataset.
+\textsc{gold} mining uses a generative LLM to extract attributes of each document in structured form, creating a large, semi-synthetic Main dataset.
 Then, we construct triplets consisting of a natural language query, positive document, and hard negative document based on the structured attributes.
 Leveraging the structured attribute lists allows us to calculate the number of query conditions violated by the hard negative, which we use in the \textsc{gold} reweighting training objective.
 % We then use a Hamming distance-based loss function to train the embedding model.
@@ -148,11 +145,16 @@ This contrasts with baseline loss functions that treat all negatives as equally 
 We demonstrate the effectiveness of these strategies on both the text and image modalities.
 We choose textual product search due to its economic importance, with annual e-commerce sales exceeding \$28 trillion USD in 2024 \citep{unctadstat2026digital}. 
 We choose apparel image search because it requires objective reasoning over fine-grained visual details, a foundational skill in numerous multimodal tasks.
-Our results show that \textsc{gold} mining improves recall across all four loss functions, especially in the text domain.
-In most cases, this improvement exceeds that of the state-of-the-art NV-Retriever mining algorithm.
-When \textsc{gold} reweighting is applied on top of \textsc{gold} mining, we achieve top recall across all loss functions and both modalities.
+Although we demonstrate the effectiveness of \textsc{gold} mining and reweighting on these two domains, we stress that, in principle, the strategies are highly general.
+\textsc{gold} mining can be applied in settings where documents can be reasonably well specified by binary QA (i.e., a list of attributes).
+\textsc{gold} reweighting need not rely on weights derived from \textsc{gold} mining specifically, and could instead use, for example, pre-existing structured data.
+Our results demonstrate consistent improvements over baselines using \textsc{gold} mining, with further improvement after adding \textsc{gold} reweighting.
+% Our results show that \textsc{gold} mining improves recall across 7/8 conditions, especially in the text domain.
+% In most cases, this improvement exceeds that of the state-of-the-art NV-Retriever mining algorithm.
+% When \textsc{gold} reweighting is applied on top of \textsc{gold} mining, recall consistently improves further.
 
-We attribute this improvement to the following property: under suitable query and comparison coverage assumptions, low loss on the \textsc{gold} Margin-MSE objective ignoring easy negatives implies approximate affine recoverability of attributes, a property not guaranteed by the standard objective.
+
+Our theoretical analysis shows that, under suitable query and comparison coverage assumptions, uniformly low loss on the \textsc{gold} Margin-MSE objective excluding easy negatives implies approximate affine recoverability of attributes, a property not guaranteed even by zero binary-target Margin-MSE loss.
 The converse is also true: affine recoverability of attributes permits low loss on the \textsc{gold} Margin-MSE objective under a reasonable scale assumption.
 Finally, we show that an embedding of fixed length $d$ can represent exponentially many attributes with low loss.
 
@@ -215,76 +217,119 @@ In product retrieval, Agapaki and Gill combine structured product information wi
 
 
 
-\section{Evaluation and Dataset Construction}
+\section{Dataset Construction}
 We seek to evaluate models on a test dataset containing query-document pairs where the document satisfies all constraints in the query.
-At the same time, we want the training dataset to contain hard negative examples for those queries that do not satisfy all their constraints.
-Due to the lack of structured attributes in existing datasets, we construct a synthetic data pipeline based on the observation that current generative LLMs can extract the necessary attributes.
+% At the same time, we want the training dataset to contain hard negative examples for those queries that do not satisfy all their constraints.
+To obtain fine-grained attributes tailored to each document pair, we construct a query synthesis pipeline based on the observation that current generative LLMs can extract the necessary attributes.
 In effect, this pipeline seeks to distill fine-grained attribute extraction from large, generative models into small embedding models.
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figs/dataset-creation.pdf}
+    \caption{Beginning with documents 1) from the ESCI Amazon products on In-Shop apparel images datasets, we choose a positive product and a similar hard negative product based on dataset metadata. We choose an easy negative at random. 2) We extract attributes that apply to one, both, or neither product. 3) We randomly select attributes, using them to construct a query that fully applies to the positive example by negating attributes that do not apply to it. We also calculate the number of said attributes $d$ that do not apply to the hard negative. We use an LLM to rephrase the query to reduce key phrase overlap between the product and the query, producing 4) the final dataset.}
+    \label{fig:dataset-creation}
+\end{figure}
+
+
 
 We target two domains, e-commerce products and images, to demonstrate the multimodal capabilities of our system.
 For e-commerce, we choose the ESCI corpus of Amazon products \citep{reddy2022shopping} due to its large size.
 For images, we choose the DeepFashion In-Shop dataset because it contains images with subtle but objectively differing attributes.
 
+\begin{table}[t]
+\centering
+\vspace{1em}
+\small
+\input{figs/dataset_summary_table.tex}
+\caption{Dataset summary statistics. Document counts for the Main dataset include hard negative pairs while Human documents are positive-only.}
+\label{tab:datasets}
+\end{table}
+
+
+\paragraph{Structured attribute selection}
 To extract document attributes, we prompt Gemini 2.5 Flash with a matched positive and negative document pair, using the prompt of Appendix~\ref{prompt:text-features} for products and Appendix~\ref{prompt:image-features} for images.
 We select candidates for hard negatives in ESCI using the pre-existing Substitute and Irrelevant labels.
 For DeepFashion, we select a random example from the same category, such as ``blouses'' or ``graphic tees''.
-In the DeepFashion dataset, we include images of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
+In the DeepFashion dataset, we include images and descriptions of both products in the prompt, instructing the model not to generate attributes that are not visible in the images.
 
 We instruct it to generate up to 5 attributes that apply to only the first example, only the second example, to both examples, or to neither example, a pool of up to 20 attributes.
 We then select a random subset of these attributes to compose the query, negating attributes that do not apply to the positive example, ensuring that at least one attribute is not satisfied by the hard negative example.
 Oversampling here is useful to ensure that selected attributes are not merely the most salient.
-Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $1 \leq k' \leq \min(k, 10)$.
+By conditioning attribute generation on the negative document, similar to \citet{mayfield2023syntheticcrosslanguageinformationretrieval, zeng2026dualviewtraininginstructionfollowinginformation, vedantam2017contextawarecaptionscontextagnosticsupervision} we ensure that forbidden attributes could plausibly apply to a document similar to the positive.
+% Thus, we obtain a set of $k$ attributes, all of which are satisfied by the positive example and $k'$ of which are \emph{not} satisfied by the hard negative example, where $1 \leq k' \leq \min(k, 10)$. % important! add back in below somewhere
 
-We construct a proto-query with the template ``I am looking for: \{item\} that has: \{positive\} + \{common\} attributes; and does not have: \{negative\} + \{neither\} attributes''.
-We then prompt Gemini 2.5 Flash to rewrite the proto-query based on five human-written in-context examples, replacing attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}); the prompt includes the positive document so synonyms stay consistent with it, requires at least half of the attributes to be reworded, and forbids changing numeric values.
-% rephrasing and non-exact match, prompting the model to preserve intent and numeric values while replacing most attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}).
+We construct a raw query with the template ``I am looking for: \{item\} that has: \{positive\} + \{common\} attributes; and does not have: \{negative\} + \{neither\} attributes''.
+We then prompt Gemini 2.5 Flash to rewrite the raw query based on five human-written in-context examples, replacing attribute phrases with synonyms (Appendix~\ref{prompt:rephrase}); the prompt includes the positive document so synonyms stay consistent with it, requires at least half of the attributes to be reworded, and forbids changing numeric values.
 Rewriting the query in this way is designed to improve the realism and diversity of queries and reduce surface form overlap between queries and positive documents.
-This yields a (query, positive, hard negative) triple.
-We also sample an easy negative at random from the same split.
-The easy negative is drawn from a different category than the positive for DeepFashion.
-This yields a matching (query, positive, easy negative) triple.
-We divide this dataset into train, validation, and test splits, ensuring that no query or document appears in multiple splits.
-Note that the hard negative mining procedure can be applied to virtually any dataset or modality on which an LLM can perform binary QA.
-Thus, we consider it the first contribution of this paper.
+This yields a (query, positive) pairs.
+
+\paragraph{Baseline negative sampling}
+To enable contrastive learning, we randomly sample "easy" negative documents from the full training sets.
+We refer to this strategy below as "Random".
+\green{todo: check for correctness after baseline dataset update.}
+% We also compare to the state-of-the-art hard negative mining algorithm NV-Retriever \citep{moreira2024nv}, described in \red{...}
+\darkgreen{We also compare to an adaptation of NV-Retriever's positive-aware hard negative mining strategy \citep{moreira2024nv}, a key component of NV-Embed-v2 \citep{lee2024nv}, the highest-scoring retrieval model in Table~5 of \citet{wischounig2026negative}.}
+Regardless of the strategy, this produces (query, positive, negative) triples.
+
+\paragraph{\textsc{gold} mining}
+We note that conditioning query generation on random documents as described above makes these documents, by construction, hard negatives with respect to the query.
+\green{todo: check for correctness after baseline dataset update.}
+Specifically, each document will satisfy exactly distance $d$ conditions in the query, where $1 \leq d \leq \min(k, 10)$.
+We term this strategy \textsc{gold} mining.
+Thus, \textsc{gold} mining produces (query, positive, negative, distance) tuples, where $d$ is consumed by the \textsc{gold} mining objective described in Section \red{tbd}.
+Although \textsc{gold} mining here occurs in parallel with query generation, in principle this strategy is dataset-agnostic.
+The strategy could be performed in reverse by pairing existing conjunctive queries with negative documents and calculating $d$. 
+
+
+% We also sample an easy negative at random from the same split.
+% The easy negative is drawn from a different category than the positive for DeepFashion.
+% This yields a matching (query, positive, easy negative) triple. 
+% We divide this dataset into train, validation, and test splits, ensuring that no query or document appears in multiple splits.
+% Note that the hard negative mining procedure can be applied to virtually any dataset or modality on which an LLM can perform binary QA.
+% Thus, we consider it the first contribution of this paper.
+
+\paragraph{Human labeled queries}
 
 Annotators manually annotated 133 and 83 text and image queries, respectively, based on positive documents.
-We use these query-document pairs to validate that models trained on synthetic data generalize to human-generated queries.
-
-
-\section{Baselines}
-
-Numerous training objectives have been proposed for dense retrieval.
-We choose Margin-MSE \citep{hofstatter2020improving}, CoSENT \citep{huang2024cosent}, SigLIP \citep{tschannen2025siglip}, and InfoNCE \citep{oord2019representationlearningcontrastivepredictive} as our baseline loss functions based on their applicability to triple-supervised training and coverage of high-level loss strategy families.
-Margin-MSE regresses query-document pairs onto a binary target; CoSENT ranks pairs ordinally; SigLIP classifies in-batch pairs independently; InfoNCE scores each in-batch candidate against the others using a softmax function.
-We include their definitions in Appendix \ref{app:loss-functions} for reference.
-Because batch size affects CoSENT, SigLIP, and InfoNCE training dynamics through pairwise in-batch comparisons, we hold batch size constant across all runs.
-To do so, we expand the batch to include $B$ positives and $B$ negatives, comparing all positives to all positives and all negatives, for a total of $2B^2$ comparisons, as opposed to $B^2$, conventionally.
-This permits evaluating the baseline NV-Retriever and \textsc{gold} mining without confounding the number of comparisons per batch.
-We design our experiments such that each model sees each training triple once per epoch.
-We train every model for one epoch with 32 rows per forward pass and 4 forward passes per optimizer step.
-The pair-based losses (Margin-MSE, CoSENT) emit two pairs per training triple, so their batches contain about half as many positives as the triple-based losses.
-We train baseline models using hyperparameters listed in Section \ref{sec:model-details}, concluding that InfoNCE is the strongest (Table \ref{tab:baseline-loss}).
-% \red{To further strengthen our baseline, we adopt the positive-aware hard negative mining of NV-Retriever \citep{moreira2024nv}, which the survey of \citet{wischounig2026negative} classifies under false-negative filtering and which underlies the top retrieval model on the MTEB leaderboard in their Table 5 \textcolor{orange}{(cite NV-Embed-v2)}, and apply it to InfoNCE.}
-To further strengthen our baseline, we apply the positive-aware hard negative mining algorithm NV-Retriever, a key component of NV-Embed-v2 \citep{lee2024nv}, the strongest model based on hard negative mining listed in \citet{wischounig2026negative}.
-% We choose the best of $n=8$ hyperparameter combinations based on a grid search \red{(Appendix \ref{??})}.
-
-
-\begin{table}[t]
-\centering
-\input{figs/baseline_loss_table.tex}
-\caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever.}
-\label{tab:baseline-loss}
-\end{table}
-
-\subsection{Model Details}
-\label{sec:model-details}
-
-We fine-tune \texttt{all-mpnet-base-v2} on text and \texttt{clip-ViT-B-32} on images, both as distributed by Sentence-Transformers \citep{reimers-gurevych-2019-sentence}; the text tower encodes queries in both modalities, and we normalize every representation to unit length.
-We optimize with AdamW \citep{loshchilov2017decoupled} using a learning rate $2 \times 10^{-5}$, a cosine schedule warming up over the first 10\% of steps, and bf16, training each condition three times and reporting the mean over those trials.
+We use these query-document pairs to validate that models trained on Main data generalize to human-generated queries.
 
 
 \section{Methods}
 \label{sec:methods}
+
+Numerous training objectives have been proposed for dense retrieval.
+We choose Margin-MSE \citep{hofstatter2020improving}, CoSENT \citep{huang2024cosent}, SigLIP \citep{tschannen2025siglip}, and InfoNCE \citep{oord2019representationlearningcontrastivepredictive} as our baseline loss functions based on their applicability to triple-supervised training and coverage of high-level loss strategy families.
+Margin-MSE regresses query-document pairs onto a fixed score different; CoSENT ranks pairs ordinally; SigLIP classifies in-batch pairs independently; InfoNCE scores each in-batch candidate against the others using a softmax function.
+We include their definitions in Appendix \ref{app:loss-functions} for reference.
+Because batch size affects CoSENT, SigLIP, and InfoNCE training dynamics through pairwise in-batch comparisons, we hold batch size constant across all runs.
+
+\subsection{Baseline Details}
+
+For InfoNCE, SigLIP, and batched Margin-MSE, each of the $B$ queries is scored against all $2B$ documents in the batch, yielding $2B^2$ query--document scores.
+Documents from other triples are treated as easy negatives; each query's own paired negative may be hard or easy, chosen uniformly at random.
+InfoNCE uses one softmax over all candidates.
+Margin-MSE and SigLIP weight the mean own-row and cross-row losses equally: the own-row group contains the paired negative for Margin-MSE, and both the positive and paired negative for SigLIP.
+CoSENT compares scores of supplied query--document pairs, while pairwise MSE regresses each pair's score independently.
+Within each loss family, candidate construction is shared across negative-selection strategies.
+We design our experiments such that each model sees each training triple once per epoch.
+We train every model for one epoch with 32 rows per forward pass and 4 forward passes per optimizer step.
+Pairwise MSE emits two pairs per triple.
+% We train baseline models using hyperparameters listed in Section \ref{sec:model-details}, concluding that InfoNCE is the strongest.
+To study the NV-Retriever baseline, we perform a seach across NV-Retriever mining paramters independently for each loss function, described in Section \red{??}.
+
+% \red{To further strengthen our baseline, we adopt the positive-aware hard negative mining of NV-Retriever \citep{moreira2024nv}, which the survey of \citet{wischounig2026negative} classifies under false-negative filtering and which underlies the top retrieval model on the MTEB leaderboard in their Table 5 \textcolor{orange}{(cite NV-Embed-v2)}, and apply it to InfoNCE.}
+% We choose the best of $n=8$ hyperparameter combinations based on a grid search \red{(Appendix \ref{??})}.
+
+
+% \begin{table}[t]
+% \centering
+% \input{figs/baseline_loss_table.tex}
+% \caption{Validation split recall of baseline loss functions trained on binary labels with randomly selected negatives, $n=3$. +NV indicates the model was trained using negatives mined with NV-Retriever.}
+% \label{tab:baseline-loss}
+% \end{table}
+
+
+\subsection{\textsc{gold} Reweighting}
+
 
 Traditional Margin-MSE loss \citep{hofstatter2020improving} is defined as
 
@@ -299,6 +344,7 @@ Traditional Margin-MSE loss \citep{hofstatter2020improving} is defined as
 Here, $q$ is a query, $x^+$ is a relevant document, $x^-$ is a less relevant document, and $y$ is a scalar representing the margin between their relevance as determined by a teacher model.
 $f$ is a function mapping queries or documents to their embeddings. 
 For loss functions we choose cosine similarity as our inner product.
+
 % Retrieval scores use cosine similarity, $\operatorname{cos}(a,b)=a^\top b/(\|a\|\|b\|)$, while $\inner{a}{b}=a^\top b$ denotes the Euclidean inner product.
 % Because $f$ returns unit-norm embeddings, $\operatorname{cos}(f(q),f(x))=\inner{f(q)}{f(x)}$, so a difference of cosine scores equals $\inner{f(q)}{f(x^+)-f(x^-)}$.
 % The difference vector and the probe vectors below are not normalized.
@@ -308,17 +354,15 @@ For loss functions we choose cosine similarity as our inner product.
 Formally, following \citet{lu2025multiconir}, let query $q_k$ be a query composed of $k$ conditions $C=\{c_1, c_2, ..., c_k\}$ with $k \in \{1, ..., K\}$.
 We say a document $x$ is a positive document, $x^+$, with respect to $q_k$ if $x^+ \models C$, i.e., $x^+$ satisfies all $k$ conditions.
 Otherwise, we say the document $x^-$ is negative with respect to $q_k$.
+$x^-_h$ and $x^-_e$ denote hard and easy negatives, respectively.
 
-
-
-
-\subsection{\textsc{gold} Reweighting}
 
 
 
 % We introduce Attribute Hamming Loss, which is a form of Margin-MSE loss designed to distil knowledge from generative models rather than teacher embedding models.
 We introduce \textsc{gold} reweighting, a strategy for assigning partial credit to hard negative examples.
-The idea behind \textsc{gold} reweighting is to modify a loss function such that the margin between a query and a document is proportional to the number of constraints violated by a document.
+The idea behind \textsc{gold} reweighting is to modify a loss function such that loss of a query and a document is proportional to the number of constraints violated by a document.
+Because CoSENT relies on ordering for loss, \textsc{gold} reweighting on CoSENT instead treats all hard negatives as rank 1/2.
 Formally, we define attribute Hamming distance $d$ as
 % Attribute Hamming Loss replaces the target $y$ with an integer representing the number of constraints in the query violated by $x^-$, rescaled by a constant $V$.
 % Training operates on triples $(q_k, x^+, x^-)$ in which the positive satisfies every condition of the query, and the predicted margin between the positive and negative similarities is regressed onto the number of query constraints the negative violates:
@@ -334,7 +378,7 @@ Formally, we define attribute Hamming distance $d$ as
 We then modify each loss function, with the modification marked by an underbrace:
 
 \paragraph{Margin-MSE:}
-We set the margin term to $d/V$:
+We set the margin term to $d/V$ and apply the loss across all query--document pairs in the batch:
 
 \begin{equation}
 \label{eq:hamming}
@@ -343,18 +387,19 @@ We set the margin term to $d/V$:
 
 The violation scale hyperparameter $V$ controls the penalty per violation.
 Let $K^*$ be the maximum number of constraints violated by any example.
-In Margin-MSE only, we set $d(x,q)=\eta \geq K^*$ in the case when $x$ is an easy negative.
+In Margin-MSE only, we set $d(x,q)=\eta \geq K^*$ when $x$ is an easy negative.
 Choosing $V \geq \text{max}(\eta, K^*)$ ensures the $d/V$ term is in $[0, 1]$.
 
 \paragraph{InfoNCE:}
-Every document in a batch of $B$ triples is a candidate for every query: the $B$ positives and the $B$ hard negatives, the set $X$ of $2B$ candidates. InfoNCE trains the softmax over $X$ toward a one-hot target on the query's own positive. We keep the logits and change the target: the own positive keeps mass $1$, the own hard negative receives mass $e^{-s\,d/V}$ for its measured $d$, and every candidate drawn from another row, positive or negative, is a random product with respect to $q_i$ and receives no mass. Rows are normalized to sum to one:
+Every document in a batch of $B$ triples is a candidate for every query: the $B$ positives and the $B$ hard negatives, the set $X$ of $2B$ candidates.
+InfoNCE trains the softmax over $X$ toward a one-hot target on the query's own positive. We keep the logits and change the target: the own positive keeps mass $1$, the own hard negative receives mass $e^{-s\,d/V}$ for its measured $d$, and every candidate drawn from another row, positive or negative, is a random product with respect to $q_i$ and receives no mass. Rows are normalized to sum to one:
 
 \begin{align}
     \label{eq:ours-infonce-target}
     T_i(x) &=
     \begin{cases}
         1 & x = x_i^+ \\
-        e^{-s\, d(x_i^-, q_i) / V} & x = x_i^- \\
+        e^{-s\, d(x_i^-, q_i) / V} & x = x_{h,i}^-\\\
         0 & \text{otherwise,}
     \end{cases} \\[0.5em]
     \label{eq:ours-infonce}
@@ -362,11 +407,6 @@ Every document in a batch of $B$ triples is a candidate for every query: the $B$
 \end{align}
 
 As $V \rightarrow 0$, this becomes equivalent to the original InfoNCE loss.
-
-% Earlier variant (ours-infonce-margin), superseded by the target-mass form above on 2026-09-03:
-% margins d/V added to each candidate's cosine inside the softmax, target one-hot.
-%   L(q_i) = - log exp(s cos(q_i, x_i^+)) / sum_j [ exp(s (cos(q_i, x_j^+) + d(x_j^+, q_i)/V)) + exp(s (cos(q_i, x_j^-) + d(x_j^-, q_i)/V)) ]
-% with d = 0 on the own positive, the measured d on the own hard negative, and eta on every cross-row candidate.
 
 \paragraph{SigLIP:}
 In place of the original binary target, we weight each pair with $T_i(x)$:
@@ -376,65 +416,51 @@ In place of the original binary target, we weight each pair with $T_i(x)$:
     \mathcal{L}_\text{SigLIP} = - \frac{1}{B} \sum_{i=1}^{B} \sum_{x \in X} \left[ \underbrace{T_i(x)}_{\text{ours}} \log \frac{1}{1 + e^{-\left( s \inner{f(q_i)}{f(x)} + b \right)}} + \underbrace{\big( 1 - T_i(x) \big)}_{\text{ours}} \log \frac{1}{1 + e^{s \inner{f(q_i)}{f(x)} + b}} \right] ,
 \end{equation}
 
-The unifying factor among these modifications is to regress towards the condition 
-
-\begin{equation}
-    \inner{f(q)}{f(x_1)} - \inner{f(q)}{f(x_2)} = (d(q, x_2) - d(q, x_1))/V
-\end{equation}
-
-% Earlier variant (ours-siglip), superseded by the target form above on 2026-09-14: the linear
-% target T_i(x) = 1 - d(x, q_i)/V, i.e. 1 for the own positive, 1 - d/V for the own hard negative,
-% and 1 - eta/V for every cross-row candidate.
-% Implementation detail, cut 2026-09-15 to keep the paragraph to the ours/traditional difference:
-% the two labeled cells of each row and the 2B - 2 cross-row cells are averaged separately and
-% mixed with equal weight, for both the graded loss and its binary control, so that the per-row
-% signal is not outvoted by the cross-row cells.
 
 \paragraph{CoSENT:}
 We assign rank 1 to positives, 1/2 to hard negatives, and 0 to easy negatives. 
 The algorithm otherwise remains unchanged.
 % \red{CoSENT reads its labels only through their ordering, so we assign each pair $(q_i, x_i)$ one of three ranks:}
 
-% \begin{equation}
-%     \label{eq:ours-cosent-rank}
-%     \red{\boldsymbol{r_i}} =
-%     \begin{cases}
-%         \red{\boldsymbol{1}} & \text{if } x_i \text{ is the positive} \\
-%         \red{\boldsymbol{\tfrac{1}{2}}} & \text{if } x_i \text{ is a hard negative} \\
-%         \red{\boldsymbol{0}} & \text{if } x_i \text{ is an easy negative,}
-%     \end{cases}
-% \end{equation}
-
-% and the loss is unchanged:
-
-% \begin{equation}
-%     \label{eq:ours-cosent}
-%     \mathcal{L}_\text{CoSENT} = \log \Big( 1 + \sum_{r_i > r_j} \exp\big( s \big( \inner{f(q_j)}{f(x_j)} - \inner{f(q_i)}{f(x_i)} \big) \big) \Big) ,
-% \end{equation}
-
-% \red{The distance $d$ does not enter: a hard negative violating one constraint and one violating ten are ranked equally, above every easy negative and below the positive.}
+% The unifying factor among these modifications is to regress towards the condition 
 
 
-% In Section \ref{???} we describe a data synthesis pipeline to construct training triples with known target values of $\sum_{i=1}^{k} \ind{x^- \not\models c_i}$.
-% The target margin is zero when the document satisfies every constraint (positive) and grows by $1/V$ per violated constraint (hard negative).
-% This contrasts with binary classification training regimes, such as traditional triplet loss, where examples are either strictly correct or incorrect.
+The unifying factor among these modifications is to assign partial credit to hard negatives, compared to easy negatives.
+For InfoNCE and Margin-MSE, this regresses towards the condition
 
-% One can imagine this loss function attempting to approximate bit-wise filtering on a table of $n$ documents and arbitrarily many columns of attributes. 
-% Because for any given query $q_k$, only the $k$ attributes present in the query are relevant, the space requirement of this dataset can be bounded by $\mathcal{O}(nk)$.
+\begin{equation}
+    \inner{f(q)}{f(x_1)} - \inner{f(q)}{f(x_2)} = (d(q, x_2) - d(q, x_1))/V
+\end{equation}
+
+
+
 
 
 \subsection{{Relation to Affine Probing}}
 
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\linewidth]{figs/embedding_fig.pdf}
+    \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate.
+    Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see.
+    With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$.
+    Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
+    \label{fig:embedding}
+\end{figure}
+
+
+
+
 % For a given $c_i$, 
-Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ consisting of queries or documents composed of sequences of tokens.
+Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ consisting of queries or documents composed of text or images.
 Let $f : L \rightarrow \mathbb{R}^d$ give the embeddings of dimension $d$.
 We let $z_i : L \rightarrow \{0,1\}$ be an attribute of a query or corresponding product, for example, whether a query requires a red product, or whether the product in question is red. 
-Note that the value of $z_i$ only depends on the text.
+Note that the value of $z_i$ depends on the underlying input, not its embedding.
 
 
 % Under the Linear Representation Hypothesis, we assume that for a set of features $z_1, ..., z_m : L \rightarrow \mathbb{R}$
 
-We say a feature is $(\epsilon, S)$-affinely recovered by a probe $(b_i,\beta_i)\in\mathbb{R}^d\times\mathbb{R}$ if
+For a document set $S \subseteq D$ and tolerance $\epsilon>0$, we say a feature is $(\epsilon, S)$-affinely recovered by a probe $(b_i,\beta_i)\in\mathbb{R}^d\times\mathbb{R}$ if
 % Let $b_i \in \mathbb{R}^d$ be a probe vector for attribute $z_i$ such that
 
 \begin{equation}
@@ -448,90 +474,23 @@ Conversely, uniformly low loss across all positive--negative comparisons for two
 Binary-target Margin-MSE provides no such guarantee: zero loss can coexist with an unrecoverable attribute (Proposition~\ref{prop:binary}).
 Finally, for documents with at most $k'$ active attributes from a vocabulary of size $m$, queries with at most $k$ conditions, and $V\ge kk'$, we construct unit document and query embeddings in dimension $d=O\!\left(\frac{k'^2}{\epsilon^2}\log m\right)$ that affinely recover every attribute with error below $\epsilon$ and achieve loss below $(2k\epsilon/V)^2$ on every valid comparison (Corollary~\ref{cor:capacity}).
 
-\begin{figure}
-    \centering
-    \includegraphics[width=0.8\linewidth]{figs/embedding_fig.pdf}
-    % \caption{An idealized embedding space in $\mathcal{R}^4$, projected into $\mathcal{R}^3$. Three documents, each with exactly one of the attributes red, cotton, and zipper, embed embed.; because each has a single attribute, each direction is also an exact linear probe for its attribute. The query requiring red and zipper embeds as the normalized superposition of its two probes, so its cosine similarity with a document is proportional to the number of queried attributes the document satisfies: $1/\sqrt{2}$ for $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, $0$ for $x_{\mathrm{cotton}}$. The proportionality constant is $1/\sqrt{2}$ here only because the documents span the whole space; Theorem~\ref{thm:forward} fixes it at $1/V$ for every query by padding the query with a component orthogonal to the document span, which a three-dimensional picture has no room to show.}
-    \caption{An idealized embedding space in $\mathbb{R}^4$, drawn by dropping the fourth coordinate.
-    Three documents, each with exactly one attribute, have mutually orthogonal visible parts and put the rest of their unit length into a fourth component the query cannot see.
-    With $V = 3/\sqrt{2}$ as the violation scale, the probe sum has norm $\|b_{\mathrm{red}} + b_{\mathrm{zipper}}\| = V$, and $V \inner{f(q)}{f(x)}$ counts the conditions $x$ satisfies: $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$ score $1/V = \sqrt{2}/3$, $x_{\mathrm{cotton}}$ scores $0$, and the positive $x_{\mathrm{red,zipper}}$, which the probes force to be the visible sum of $x_{\mathrm{red}}$ and $x_{\mathrm{zipper}}$, scores $2/V$.
-    Any larger $V$ is absorbed by the document embeddings moving more of their length into the fourth component the query cannot see.}
-    \label{fig:embedding}
-\end{figure}
 
+\subsection{Implementation and Evaluation Details}
 
-% \section{Experiments}
+We fine-tune \texttt{all-mpnet-base-v2} on text and \texttt{clip-ViT-B-32} on images, both as distributed by Sentence-Transformers \citep{reimers-gurevych-2019-sentence}, normalizing every representation to unit length.
+We optimize with AdamW \citep{loshchilov2017decoupled} using a learning rate $2 \times 10^{-5}$, a cosine schedule warming up over the first 10\% of steps, and bf16, training each condition three times and reporting the mean over those trials.
+Training details are identical for baseline and \textsc{gold} models.
 
-
-
-% Both datasets are built by the same two-stage procedure: pair a positive document with a hard negative, then use a language model to name the attributes that separate them.
-% The text dataset is derived from the ESCI shopping-queries corpus, restricted to the US locale and to products whose descriptions are detected as English.
-% For each query we take an \texttt{Exact} product as the positive $x^+$ and a \texttt{Substitute} or \texttt{Irrelevant} product for the same query as the hard negative $x^-$, discarding queries with no \texttt{Exact} match; an easy negative is drawn uniformly from the corpus.
-% The image dataset is built from DeepFashion In-Shop (\texttt{Marqo/deepfashion-inshop}), grouping views of the same SKU by product identifier.
-% The positive and hard negative are distinct products sharing a category (\texttt{category2} by default, optionally also matched on colour), and the easy negative is drawn from a different category.
-% Both pipelines are seeded at $42$ and prompt \texttt{gemini-2.5-flash}, the image pipeline passing both photographs to the model alongside product metadata.
-% The model returns four disjoint attribute buckets of at most $N=5$ entries each: features common to both products, features unique to $x^+$, features unique to $x^-$, and features applying to neither.
-% Attributes are constrained to be objective, at most five words, and stated positively, so that negation enters only through the query template rather than through the attribute strings.
-
-% Queries are then assembled from these buckets.
-% We draw a target distance $k \sim \mathrm{Unif}\{1, \dots, 10\}$ and sample $n_{\text{pos}} \sim \mathrm{Unif}\{0, \dots, k\}$ unique-positive attributes, $n_{\text{neg}} = k - n_{\text{pos}}$ unique-negative attributes, and independently $\mathrm{Unif}\{0, \dots, k\}$ attributes from each of the common and neither buckets, every count capped by the size of its bucket.
-% At least one attribute is forced from the positive-or-common side and one from the negative-or-neither side, so every query carries both a requirement and a prohibition and $|C| \ge 2$.
-% The natural-language query is rendered as \emph{I am looking for: ``\{item\}'' that has: \{positive and common attributes\}; and does not have: \{negative and neither attributes\}}, placing unique-positive and common attributes under the positive polarity $s_i = +1$ and unique-negative and neither attributes under $s_i = -1$.
-% The regression label is $n_{\text{pos}} + n_{\text{neg}}$, counting only the attributes that distinguish $x^+$ from $x^-$; common and neither attributes are satisfied identically by both documents and contribute nothing.
-% Each pair yields two training triples, one against the hard negative and one against the easy negative, the latter carrying a sentinel label remapped at training time to $15$.
-% Labels are divided by $V = 25$ and used without further shaping, the linear setting of the transform.
-% The image split contains $20{,}000$ triplets.
-
-\begin{table}[t]
-\centering
-\vspace{1em}
-\small
-\input{figs/dataset_summary_table.tex}
-\caption{Dataset summary statistics. Document counts for Synthetic include hard negative pairs while Human documents are positive-only.}
-\label{tab:datasets}
-\end{table}
-
-
-
-\subsection{Implementation Details}
-
-For each modified loss function, we perform a hyperparameter sweep on the validation set across $V \in \{10, 20, 40, 80\}$, and also $\eta \in \{10, 20, 40\}$ for Margin-MSE. 
+For \textsc{gold} models, we sweep $V \in \{10,20,40,80\}$ for InfoNCE and SigLIP, and $V \in \{20,40,80\}$ with $\eta \in \{10,20,40\}$ for Margin-MSE, selecting settings on the validation set.
+The CoSENT modification introduces no additional hyperparameters.
 We perform ablations that only use our dataset creation process without modifying baseline loss functions.
 
-...
+% \subsection{Evaluation Details}
+
+We choose recall@20 and recall@5 as our primary metrics for text and image retrieval, respectively.
+For text retrieval, we report Recall@5 because this more stringent cutoff provides greater discrimination among high-performing strategies.
 
 \section{Results and Discussion}
-
-We present results in Figure \ref{fig:text-vs-image}.
-On the larger synthetic test set, we see significant improvement compared to baselines when applying both \textsc{gold} mining and \textsc{gold} reweighting.
-Overall accuracy is stratified by loss function, with InfoNCE ranking highest on both modalities, both for our proposed methods and baselines.
-Both the NV-Retriever baseline and \textsc{gold} mining significantly increase recall on text, but improvement on images is mixed and modality dependent.
-\textsc{gold} mining is more effective than NV-Retriever on both modalities using the two strongest loss functions, InfoNCE and SigLIP.
-After applying \textsc{gold} reweighting, however, our method surpasses all baselines using all loss functions in all modalities.
-One exception is InfoNCE on images, where our method ties the unmined baseline, possibly due to saturation.
-
-We observe that across 7/8 loss function--modality pairs, \textsc{gold} mining increases both recall and win rate compared to random and NV-Retriever baselines.
-However, applying \textsc{gold} reweighting consistently improves recall at the expense of win rate.
-That is, \textsc{gold} mining improves accuracy more on hard negatives while \textsc{gold} reweighting trades accuracy on hard negatives for accuracy on easy negatives.
-This is the expected result of penalizing errors in hard negatives less than those in easy negatives in the loss function.
-Thus, the application of \textsc{gold} reweighting, and in particular the $V$ scale, should be considered in the context of the dataset.
-Datasets containing more hard negatives per query may benefit more from \textsc{gold} mining.
-Applications requiring maximum recall will benefit more from \textsc{gold} reweighting.
-\red{linear regression on V ablation?}
-
-We see in Figure~\ref{fig:infonce-condition-counts} that InfoNCE accuracy for both \textsc{gold} mined + reweighted and the random baseline is positively correlated with the number of positive (required) attributes in both modalities.
-However, accuracy appears to be largely uncorrelated with the number of negative (forbidden) attributes.
-The correlation with required attributes in conjunctive queries is unsurprising given that keyword or synonym overlap between queries and positive documents is tightly correlated with the number of conditional queries.
-The lack of correlation with forbidden attributes suggests that overall, embedding models neither induce false positives out of documents containing those attributes nor contribute to magnifying positive documents in the way that required attributes do.
-Other loss functions show similar behavior.
-
-To validate the use of synthetic queries, we compare model accuracy on human-generated versus synthetic queries.
-Across all 96 models, we find a strong linear relationship between recall on human versus synthetic queries (Pearson $r \geq 0.83$, $R^2 \geq 0.70$).
-At the same time, the correlation in model ordering ranges from moderately positive (Spearman $\rho = 0.47$) for text to strongly positive ($\rho = 0.75$) for images.
-Surprisingly, despite being trained on LLM-generated queries, average model recall on human-generated queries exceeds that on synthetic queries.
-This cannot be explained simply by the lower average number of conditions in human queries because condition count is in fact positively correlated with recall (Figure~\ref{fig:infonce-condition-counts}).
-Rather, it appears that LLMs rephrase queries more aggressively than humans, resulting in less lexical overlap (BLEU-4 0.62 vs. 0.70, respectively).
-
 
 \begin{figure}[t]
     \centering
@@ -557,6 +516,39 @@ Rather, it appears that LLMs rephrase queries more aggressively than humans, res
 \end{figure}
 
 
+We present results in Figure \ref{fig:text-vs-image}.
+On the larger Main test set, we see significant improvement compared to baselines when applying both \textsc{gold} mining and \textsc{gold} reweighting.
+Overall accuracy is stratified by loss function, with InfoNCE ranking highest on both modalities, both for our proposed methods and baselines.
+Both the NV-Retriever baseline and \textsc{gold} mining significantly increase recall on text, but improvement on images is mixed and modality dependent.
+\textsc{gold} mining is more effective than NV-Retriever on both modalities using the two strongest loss functions, InfoNCE and SigLIP.
+After applying \textsc{gold} reweighting, our method surpasses both random and NV-mined baselines in seven of eight loss function--modality pairs on Main dataset queries.
+For InfoNCE on images, \textsc{gold} mining slightly outperforms both baselines, whereas mining plus reweighting falls short of the strongest baseline by approximately 0.001 recall.
+% \darkgreen{The exception is InfoNCE on images, where our method falls short of the strongest baseline, random negatives, by approximately 0.001 recall.}
+
+We observe that across 7/8 loss function--modality pairs, \textsc{gold} mining increases both recall and win rate compared to the random baseline.
+Applying \textsc{gold} reweighting improves synthetic recall in six of eight loss function--modality pairs while consistently reducing hard-negative win rate.
+That is, \textsc{gold} mining improves accuracy more on hard negatives while \textsc{gold} reweighting trades accuracy on hard negatives for accuracy on easy negatives.
+This is the expected result of penalizing errors in hard negatives less than those in easy negatives in the loss function.
+Thus, the application of \textsc{gold} reweighting, and in particular the $V$ scale, should be considered in the context of the dataset.
+Datasets containing more hard negatives per query may benefit more from \textsc{gold} mining.
+Applications requiring maximum recall will benefit more from 
+
+We see in Figure~\ref{fig:infonce-condition-counts} that InfoNCE accuracy for both \textsc{gold} mined + reweighted and the random baseline is positively correlated with the number of positive (required) attributes in both modalities.
+However, accuracy appears to be largely uncorrelated with the number of negative (forbidden) attributes.
+The correlation with required attributes in conjunctive queries is unsurprising given that keyword or synonym overlap between queries and positive documents is tightly correlated with the number of conditional queries.
+The lack of correlation with forbidden attributes suggests that overall, embedding models neither induce false positives out of documents containing those attributes nor contribute to magnifying positive documents in the way that required attributes do.
+Other loss functions show similar behavior.
+
+To validate the use of synthetic queries in the Main dataset, we compare model accuracy on human-generated versus synthetic queries.
+Across all 96 models, we find a strong linear relationship between recall on human versus synthetic queries (Pearson $r \geq 0.83$, $R^2 \geq 0.70$).
+At the same time, the correlation in model ordering ranges from moderately positive (Spearman $\rho = 0.47$) for text to strongly positive (\darkgreen{$\rho = 0.80$}) for images.
+Surprisingly, despite being trained on LLM-generated queries, average model recall on human-generated queries exceeds that on synthetic queries.
+This cannot be explained simply by the lower average number of conditions in human queries because condition count is in fact positively correlated with recall (Figure~\ref{fig:infonce-condition-counts}).
+Human queries also reuse more wording from their positive text documents than paired synthetic queries (unigram precision 58.6\% vs.\ 40.4\%; bigram precision 22.4\% vs.\ 10.6\%, respectively).
+Furthermore, human queries are shorter on average than synthetic queries (Table~\ref{tab:datasets}).
+
+
+
 \begin{figure}[t]
     \centering
     \begin{minipage}[c]{0.355\linewidth}
@@ -569,8 +561,8 @@ Rather, it appears that LLMs rephrase queries more aggressively than humans, res
         \centering
         \input{figs/human_synthetic_correlations.tex}
     \end{minipage}
-    \caption{Synthetic versus attribute-count-matched human recall for text (Recall@5, left) and images (Recall@20, center), with correlation statistics at right.
-    Each plot includes all 48 model--seed points; colors and markers follow Figure~\ref{fig:text-vs-image-recall}, and dashed lines show linear fits.}
+    \caption{Main (synthetic) versus human recall for text (Recall@5, left) and images (Recall@20, center), with correlation statistics.
+    Each plot includes all 48 model sseds; colors and markers follow Figure~\ref{fig:text-vs-image-recall}, and dashed lines show linear fits.}
     \label{fig:human-synthetic-correlation}
 \end{figure}
 
@@ -584,8 +576,8 @@ Rather, it appears that LLMs rephrase queries more aggressively than humans, res
 \section{Conclusion}
 
 We present \textsc{gold} mining, a multimodal hard negative mining algorithm that improves recall on conjunctive queries.
-We also present \textsc{gold} reweighting, a loss function modification strategy that, when combined with \textsc{gold} mining, achieves state-of-the-art recall across four loss functions and two modalities.
-Theoretical analysis of \textsc{gold} reweighting applied to Margin-MSE shows that under suitable query and comparison coverage assumptions, low loss implies approximate affine recoverability of attributes, a property not guaranteed to be satisfiable by the standard objective.
+We also present \textsc{gold} reweighting, a loss function modification strategy that, when combined with \textsc{gold} mining, outperforms random and NV-mined baselines in seven of eight Main evaluation settings across four loss functions and two modalities, with a deficit of approximately 0.001 recall in the remaining setting.
+Theoretical analysis of \textsc{gold} reweighting applied to Margin-MSE shows that under suitable query and comparison coverage assumptions, low loss implies approximate affine recoverability of attributes, a property not guaranteed to be satisfiable by the standard objective. \red{add a note about generalizability}.
 
 % Keep the results figures within Results and Discussion.
 \FloatBarrier
@@ -847,8 +839,9 @@ The labels enter only through their ordering, so with binary labels $r_i \in \{0
 \section{NV-Retriever Implementation Details}
 \label{app:nv-sweep}
 
-We mine the train split only, with \texttt{e5-mistral-7b-instruct} for text and \texttt{clip-ViT-L-14} for images, retrieving $1000$ candidates per query before the positive-aware filter and dropping rows that leave no survivor.
+\darkgreen{We mine the train split only, with \texttt{e5-mistral-7b-instruct} for text and \texttt{clip-ViT-L-14} for images, retrieving $1000$ candidates per text query and $100$ per image query before the positive-aware filter; if no candidate survives, we retain the lowest-scoring retrieved non-positive candidate.}
 We grid-search the filter's relative margin $m \in \{0.025, 0.05, 0.1, 0.2\}$ against a survivor offset $s \in \{0, 10\}$, taking the $(s+1)$-th survivor rather than the first.
+\darkgreen{If fewer than $s+1$ candidates survive, we take the last survivor.}
 
 
 \section{List of Prompts}
@@ -902,16 +895,27 @@ Return ONLY JSON: {"common_features": ["feature1", "feature2"], "unique_features
 \subsection{Query Rephrasing}
 \label{prompt:rephrase}
 
-Applied to the templated query to produce the rewritten variant used in the robustness evaluation.
+\darkgreen{Applied to the templated query with the positive product's text and five modality-specific human-written example queries to produce the rewritten queries used in the Main dataset.}
 
-\begin{lstlisting}[style=promptstyle]
+\begin{lstlisting}[style=promptstyle,basicstyle=\ttfamily\scriptsize\color{darkgreen}]
 Original query: '{query}'
 
-Task: Rephrase the query so it keeps the exact same meaning but sounds more natural and slightly varied.
+Context: The user will be happy with the following product:
+
+{product_description}
+
+Task: Rephrase the query so it keeps the same meaning but sounds more natural and uses synonyms.
+Rephrase it similar to the style of these example queries, but avoid being exactly like them:
+
+1. {example_query_1}
+2. {example_query_2}
+3. {example_query_3}
+4. {example_query_4}
+5. {example_query_5}
 
 Rules:
 - Preserve intent exactly (positive stays positive, negative stays negative).
-- You MUST change at least 50-80% of the features/phrases, and only when a natural synonym exists.
+- You MUST rephrase at least half of the comma-separated attributes.
 - Do NOT force rewording if it sounds unnatural.
 - Do NOT change the product/item name unless a very natural alternative exists.
 - Do NOT change measurement units or numeric values.

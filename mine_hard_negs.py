@@ -15,8 +15,8 @@ Mining rule, per (query, positive) training pair:
   4. the best surviving candidate is the mined negative. No survivor: the row is dropped.
 
 The pool is the split's own products (positives and negatives of its rows), never another
-split's, so the leakage-free split of the text dataset is preserved. The image dataset has
-no split column; its train split is the same seeded query split train.py draws.
+split's, so the leakage-free split of the text dataset is preserved. Image datasets
+require a precomputed document-disjoint split.
 
 `query_distance` is null on mined rows (source "mined"): the distance was never measured.
 Graded losses refuse those rows until a labeling pass fills them (utils/distance_labels).
@@ -71,6 +71,9 @@ def row_splits(dataset, anchor_column, seed):
 
     Rows train.py would filter out get None and are left alone.
     """
+    if "positive_product_id" in dataset.column_names:
+        from utils.image_split import verify_image_splits
+        verify_image_splits(dataset)
     cols = columns(dataset, [anchor_column, "positive_example", "negative_example", "split"])
     anchors = cols[anchor_column]
     usable = [is_usable_row({"anchor": a, "positive": p, "negative": n})
