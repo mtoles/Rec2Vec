@@ -10,8 +10,9 @@ evaluated on exactly the corpus and queries of the input.
 Mining rule, per (query, positive) training pair:
   1. score every product in the query's own split pool with the teacher (cosine);
   2. take the top `--top-k` candidates, excluding every labeled positive of that query;
-  3. discard candidates scoring above (1 - relative_margin) x the positive's score, the
-     TopK-PercPos filter at its published optimum, 95% of the positive;
+  3. with --filter percpos, discard candidates scoring above (1 - relative_margin) x the
+     positive's score, the TopK-PercPos filter at its published optimum, 95% of the positive;
+     --filter none keeps every candidate (NV-Retriever's naive top-k baseline);
   4. the best surviving candidate is the mined negative. No survivor: the row is dropped.
 
 The pool is the split's own products (positives and negatives of its rows), never another
@@ -117,18 +118,19 @@ class _ImagePaths(torch.utils.data.Dataset):
         return load_rgb_image(self.paths[i])
 
 
-def encode_pool(model, pool, modality, batch_size, workers):
+def encode_pool(model, pool, modality, batch_size, workers, encode_devices=None):
     """Text goes straight to the encoder. Images are decoded by worker processes, since
     decoding on the main thread is the bottleneck on a loaded machine."""
     if modality == "text":
-        return model.encode(pool, batch_size=batch_size, convert_to_tensor=True, show_progress_bar=True)
+        return model.encode(pool, batch_size=batch_size, convert_to_tensor=True, show_progress_bar=True,
+                            **({"device": encode_devices} if encode_devices else {}))
     loader = DataLoader(_ImagePaths(pool), batch_size=batch_size, num_workers=workers, collate_fn=list)
     chunks = [model.encode(images, batch_size=batch_size, convert_to_tensor=True, show_progress_bar=False)
               for images in tqdm(loader, desc="Encoding images")]
     return torch.cat(chunks, dim=0)
 
 
-def pool_embeddings(model, pool, modality, teacher, batch_size, workers, device):
+def pool_embeddings(model, pool, modality, teacher, batch_size, workers, device, encode_devices=None):
     """Teacher embeddings of the pool, cached on disk by (teacher, exact pool)."""
     key = hashlib.sha1((teacher + "\n" + "\n".join(pool)).encode()).hexdigest()
     path = os.path.join(CACHE_DIR, f"{key}.pt")
@@ -136,12 +138,31 @@ def pool_embeddings(model, pool, modality, teacher, batch_size, workers, device)
         print(f"pool embeddings: cache hit {path}")
         return torch.load(path).to(device)
     start = time.time()
-    emb = encode_pool(model, pool, modality, batch_size, workers)
+    emb = encode_pool(model, pool, modality, batch_size, workers, encode_devices)
     emb = torch.nn.functional.normalize(emb.float(), dim=1).half()
     os.makedirs(CACHE_DIR, exist_ok=True)
     torch.save(emb.cpu(), path)
     print(f"pool embeddings: {len(pool):,} items in {time.time() - start:.0f}s -> {path}")
     return emb.to(device)
+
+
+def query_embeddings(model, queries, teacher, prompt, batch_size, device, encode_devices=None):
+    key_data = {'teacher': teacher, 'max_seq_length': model.max_seq_length,
+                'prompt': prompt, 'queries': queries, 'batch_size': batch_size}
+    key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode()).hexdigest()
+    path = os.path.join(CACHE_DIR, f'queries-{key}.pt')
+    if os.path.exists(path):
+        print(f'query embeddings: cache hit {path}', flush=True)
+        return torch.load(path, map_location=device, weights_only=True)
+    embeddings = model.encode([prompt + query for query in queries], batch_size=batch_size,
+                              convert_to_tensor=True, normalize_embeddings=True,
+                              show_progress_bar=True,
+                              **({"device": encode_devices} if encode_devices else {})).half()
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    temporary = path + f'.{os.getpid()}.tmp'
+    torch.save(embeddings.cpu(), temporary)
+    os.replace(temporary, path)
+    return embeddings.to(device)
 
 
 def mine(dataset, modality, kind, teacher, model, args):
@@ -183,19 +204,17 @@ def mine(dataset, modality, kind, teacher, model, args):
     print(f"[{kind}] train rows {len(train_rows):,} | hard rows to mine {len(hard_rows):,} "
           f"| pool {len(pool):,} | unique queries {len(positives_of):,}")
 
-    pool_emb = pool_embeddings(model, pool, modality, teacher, args.batch_size, args.workers, args.device)
+    pool_emb = pool_embeddings(model, pool, modality, teacher, args.batch_size, args.workers, args.device, args.encode_devices)
     unique_anchors = list(dict.fromkeys(anchors[i] for i in hard_rows))
     prompt = args.query_prompt if modality == "text" else ""
     start = time.time()
-    anchor_emb = model.encode([prompt + a for a in unique_anchors], batch_size=args.query_batch_size,
-                              convert_to_tensor=True, normalize_embeddings=True,
-                              show_progress_bar=True).half().to(args.device)
+    anchor_emb = query_embeddings(model, unique_anchors, teacher, prompt, args.query_batch_size, args.device, args.encode_devices)
     print(f"[{kind}] {len(unique_anchors):,} queries encoded in {time.time() - start:.0f}s")
     anchor_index = {a: j for j, a in enumerate(unique_anchors)}
 
-    keep_below = 1.0 - args.relative_margin
+    keep_below = 1.0 - args.relative_margin if args.filter == "percpos" else None
     records = {}
-    for start in range(0, len(hard_rows), args.chunk_size):
+    for start in tqdm(range(0, len(hard_rows), args.chunk_size), desc="Mining hard negatives"):
         chunk = hard_rows[start:start + args.chunk_size]
         q = anchor_emb[[anchor_index[anchors[i]] for i in chunk]]
         scores = (q @ pool_emb.T).float()
@@ -203,7 +222,7 @@ def mine(dataset, modality, kind, teacher, model, args):
         top_scores, top_idx = top_scores.cpu().tolist(), top_idx.cpu().tolist()
         for r, i in enumerate(chunk):
             pos_score = scores[r, pool_index[positives[i]]].item()
-            threshold = keep_below * pos_score
+            threshold = keep_below * pos_score if keep_below is not None else float("inf")
             excluded = positives_of[anchors[i]]
             rank = 0
             filtered = 0
@@ -293,7 +312,8 @@ def report(records, kind, args):
         "query_kind": kind,
         "teacher": args.teacher,
         "top_k": args.top_k,
-        "relative_margin": args.relative_margin,
+        "filter": args.filter,
+        "relative_margin": args.relative_margin if args.filter == "percpos" else None,
         "n_hard_train_rows": len(recs),
         "fallback": args.fallback,
         "skip_survivors": args.skip_survivors,
@@ -326,8 +346,10 @@ def main():
     ap.add_argument("--teacher", default=None, help="frozen embedder that ranks the pool")
     ap.add_argument("--query-prompt", default=E5_QUERY_PROMPT, help="prefix for text queries")
     ap.add_argument("--top-k", type=int, default=100, help="candidates retrieved before filtering")
+    ap.add_argument("--filter", choices=["percpos", "none"], default="percpos",
+                    help="percpos: TopK-PercPos score filter; none: naive top-k, no filter")
     ap.add_argument("--relative-margin", type=float, default=0.05,
-                    help="discard candidates scoring above (1 - margin) x positive score")
+                    help="percpos: discard candidates scoring above (1 - margin) x positive score")
     ap.add_argument("--skip-survivors", type=int, default=0,
                     help="take the (N+1)-th survivor instead of the first (top-k shifted)")
     ap.add_argument("--variant", default=None,
@@ -343,20 +365,25 @@ def main():
     ap.add_argument("--query-batch-size", type=int, default=128)
     ap.add_argument("--chunk-size", type=int, default=512, help="queries scored per matmul")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--encode-devices", nargs="+", help="Devices for shared multi-process text encoding")
     ap.add_argument("--limit", type=int, default=None, help="dry run: mine only the first N hard rows")
     ap.add_argument("--out-root", default=None, help="write outputs here instead of beside the input")
+    ap.add_argument("--output-dir", help="Explicit destination for a single query kind")
     args = ap.parse_args()
+    if args.output_dir and (args.out_root or len(args.query_kinds) != 1):
+        ap.error('--output-dir requires one query kind and cannot be combined with --out-root')
     args.teacher = args.teacher or DEFAULT_TEACHERS[args.modality]
 
     dataset = load_from_disk(args.dataset)
     print(f"{args.dataset}: {len(dataset):,} rows, columns {dataset.column_names}")
-    model = load_teacher(args.teacher, args.modality, args.max_seq_length, args.device)
+    model = load_teacher(args.teacher, args.modality, args.max_seq_length,
+                         "cpu" if args.encode_devices else args.device)
 
     base = os.path.basename(args.dataset.rstrip("/"))
     root = args.out_root or os.path.dirname(args.dataset.rstrip("/"))
     for kind in args.query_kinds:
         records, item_id, item_category = mine(dataset, args.modality, kind, args.teacher, model, args)
-        out_dir = os.path.join(root, f"{base}_mined-{kind}" + (f"_{args.variant}" if args.variant else ""))
+        out_dir = args.output_dir or os.path.join(root, f"{base}_mined-{kind}" + (f"_{args.variant}" if args.variant else ""))
         out = apply(dataset, records, args.modality, item_id, item_category)
         out.save_to_disk(out_dir)
         summary = report(records, kind, args)

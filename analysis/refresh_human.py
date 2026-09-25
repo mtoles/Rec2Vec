@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
 from string import Template
 
 import pandas as pd
@@ -28,7 +29,9 @@ from combine_human_labels import STUDIES, combine
 from sample_human_labels import sample_all
 from attr_quota import written_counts
 from utils.human_freshness import evaluation_signature, prediction_problem
-from utils.paper_analysis import discover_runs
+from utils.paper_analysis import discover_profile_runs, human_conditions, active_dataset_bases
+from utils.text_holdout import HUMAN_SOURCE, verify_text_holdout
+from utils.training_profile import training_profile
 from utils.image_split import active_image_base, garment_id, query_key
 
 
@@ -39,9 +42,17 @@ def pull_studies(directory):
         for study, sheet in [('first', config['first_sheet']), ('backfill', config['sheet'])]:
             url = original.EXPORT_URL.format(sheet_id=sheet)
             target = directory / f'{sheet}.xlsx'
-            subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error',
-                            '--retry', '3', '--retry-all-errors', '--max-time', '180',
-                            '--output', str(target), url], check=True)
+            for attempt in range(3):
+                request_url = url if attempt == 0 else f'{url}&refresh={directory.name}-{attempt}'
+                subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error',
+                                '--retry', '3', '--retry-all-errors', '--max-time', '180',
+                                '--output', str(target), request_url], check=True)
+                if zipfile.is_zipfile(target):
+                    break
+                target.rename(directory / f'{sheet}.incomplete-{attempt}.xlsx')
+                print(f'Retrying incomplete workbook: {name}/{study}', flush=True)
+            else:
+                raise ValueError(f'Export returned an incomplete workbook: {name}/{study}')
             payload = target.read_bytes()
             downloads.append({'modality': name, 'study': study, 'sheet': sheet,
                               'bytes': len(payload), 'sha256': hashlib.sha256(payload).hexdigest()})
@@ -72,11 +83,10 @@ def verify_human_image_holdout():
 
 
 def human_runs():
-    runs = discover_runs(ROOT / 'models')
+    runs = discover_profile_runs()
     runs = runs[(runs.query_kind == 'rephrased') & (runs.rephrase == 'in-context')].copy()
     runs['easy'] = runs.easy.fillna(20).astype(int)
-    conditions = pd.read_csv(ROOT / 'analysis/migrations/in_context_20260920/human_conditions.csv',
-                             keep_default_na=False)
+    conditions = human_conditions()
     conditions['V'] = pd.to_numeric(conditions['V'], errors='coerce')
     conditions['easy'] = [next((int(t[5:]) for t in extra.split(',') if t.startswith('easy=')), 20)
                           for extra in conditions['extra']]
@@ -202,7 +212,7 @@ def write_table(stamp):
             value = summary[name][field]
             replacements[name + '_' + field] = '---' if value is None else f'{value:.1f}'
     synthetic = load_from_disk(str(active_image_base()) + '_rephrased-in-context')
-    rows = list(synthetic.select_columns(['split', 'nl_query', 'positive_example', 'negative_example',
+    rows = list(synthetic.select_columns(['split', 'nl_query', 'rephrased_query', 'positive_example', 'negative_example',
                                          'negative_example_source', 'query_distance',
                                          'selected_pos_features', 'selected_neg_features',
                                          'selected_common_features', 'selected_neither_features']))
@@ -211,7 +221,7 @@ def write_table(stamp):
     for side, label in [('train', 'training'), ('validation', 'validation'), ('test', 'test')]:
         docs = {r[c] for r in rows if r['split'] == side for c in ['positive_example', 'negative_example']}
         replacements['image_' + label + '_documents'] = format(len(docs), ',').replace(',', '{,}')
-    queries = {r['nl_query'] for r in rows}
+    queries = {r['rephrased_query'] for r in rows}
     replacements['image_synthetic_words'] = f"{sum(len(q.split()) for q in queries)/len(queries):.1f}"
     hard = [r for r in rows if r['negative_example_source'] != 'random']
     attributes = ['selected_pos_features', 'selected_neg_features', 'selected_common_features', 'selected_neither_features']
@@ -237,6 +247,9 @@ def main():
     downloads = pull_studies(directory)
     sampling = sample_all()
     verify_human_image_holdout()
+    verify_text_holdout(
+        load_from_disk(str(ROOT / "dataset/processed" / (active_dataset_bases()["text"] + "_rephrased-in-context"))),
+        load_from_disk(str(ROOT / HUMAN_SOURCE)))
     summary = write_table(stamp)
     status = {'updated_utc': datetime.now(timezone.utc).isoformat(), 'downloads': downloads,
               'sampling': sampling, 'summary': summary, 'log_directory': str(directory)}

@@ -39,13 +39,15 @@ import yaml
 
 from utils.distance_transform import DistanceTransform, transform_normalized_distance
 from utils.graded_losses import (
-    BatchGradedMarginMSELoss, GradedExponentialInfoNCELoss, GradedInfoNCELoss, GradedSigLIPLoss,
-    MarginInfoNCELoss,
+    BatchGradedMarginMSELoss, GradedExponentialInfoNCELoss, GradedSigLIPLoss,
+    # Retired: GradedInfoNCELoss, MarginInfoNCELoss. Use exponential InfoNCE v3.
 )
 from utils.distance_labels import (
     DEFAULT_MAX_DISTANCE, MINED_NEGATIVE_SOURCE, default_easy_negative_distance, to_training_labels,
 )
 from utils.run_naming import build_output_dir, build_run_name
+from utils.training_plan import RETIRED_INFONCE_STYLES
+from utils.infonce_variants import ExperimentalInfoNCELoss, VARIANT_STYLES, PACKED_STYLES, pack_distance_labels
 
 # Which dataset column each query kind trains on.
 QUERY_COLUMNS = {
@@ -70,10 +72,20 @@ class TrainingStyle(Enum):
     OURS_MSE = "ours-mse"
     OURS_MSE_BATCHED = "ours-mse-batched"
     MSE_MINED = "mse-mined"
-    OURS_INFONCE = "ours-infonce"
+    # OURS_INFONCE = "ours-infonce"  # Retired; use INFONCE_OURS_V3.
     OURS_SIGLIP = "ours-siglip"
-    OURS_INFONCE_MARGIN = "ours-infonce-margin"
+    # OURS_INFONCE_MARGIN = "ours-infonce-margin"  # Retired; use INFONCE_OURS_V3.
     INFONCE_OURS_V3 = "infonce-ours-v3"
+    INFONCE_OURS_V4 = "infonce-ours-v4"
+    INFONCE_OURS_V5 = "infonce-ours-v5"
+    INFONCE_OURS_V6 = "infonce-ours-v6"
+    INFONCE_OURS_V7 = "infonce-ours-v7"
+    INFONCE_OURS_V8 = "infonce-ours-v8"
+    INFONCE_OURS_V9 = "infonce-ours-v9"
+    INFONCE_OURS_V10 = "infonce-ours-v10"
+    INFONCE_DCL = "infonce-dcl"
+    INFONCE_FP32 = "infonce-fp32"
+    INFONCE_V3_FP32 = "infonce-v3-fp32"
     SIGLIP_V3 = "siglip-v3"
     OURS_MSE_REVERSED = "ours-mse-reversed"
     CLASSIC_MSE = "classic-mse"
@@ -82,6 +94,8 @@ class TrainingStyle(Enum):
 
 TRIPLET_STYLES = (
     TrainingStyle.BASELINE_TRIPLET.value,
+    TrainingStyle.INFONCE_DCL.value,
+    TrainingStyle.INFONCE_FP32.value,
     TrainingStyle.INFONCE.value,
     TrainingStyle.INFONCE_MINED.value,
     TrainingStyle.SIGLIP_MINED.value,
@@ -90,12 +104,13 @@ TRIPLET_STYLES = (
     TrainingStyle.MSE.value,
 )
 LABELED_STYLES = (
+    *PACKED_STYLES,
     TrainingStyle.OURS_MSE.value,
     TrainingStyle.OURS_MSE_BATCHED.value,
     TrainingStyle.MSE_MINED.value,
-    TrainingStyle.OURS_INFONCE.value,
+    # TrainingStyle.OURS_INFONCE.value,  # Retired.
     TrainingStyle.OURS_SIGLIP.value,
-    TrainingStyle.OURS_INFONCE_MARGIN.value,
+    # TrainingStyle.OURS_INFONCE_MARGIN.value,  # Retired.
     TrainingStyle.INFONCE_OURS_V3.value,
     TrainingStyle.SIGLIP_V3.value,
     TrainingStyle.OURS_MSE_REVERSED.value,
@@ -309,29 +324,11 @@ def evaluate_model(
 # ---------------------------------------------------------------------------
 
 def prepare_dataset_for_trainer(dataset: Dataset, swap_pos_neg: bool = False) -> Dataset:
-    columns_to_remove = [
-        "query_distance",
-        "negative_example_source",
-        "distance_source",
-        "positive_product_id",
-        "negative_product_id",
-        "item",
-        "positive_id",
-        "negative_id",
-        "positive_category",
-        "negative_category",
-        "selected_pos_features",
-        "selected_neg_features",
-        "selected_common_features",
-        "selected_neither_features",
-        "full_common_features",
-        "full_unique_pos_features",
-        "full_unique_neg_features",
-        "full_neither_features",
-    ]
-    removable = [column for column in columns_to_remove if column in dataset.column_names]
-    if removable:
-        dataset = dataset.remove_columns(removable)
+    columns = (["anchor", "positive", "negative"] if "anchor" in dataset.column_names
+               else ["sentence_A", "sentence_B"])
+    if "label" in dataset.column_names:
+        columns.append("label")
+    dataset = dataset.select_columns(columns)
     if swap_pos_neg:
         # MarginMSELoss reads columns positionally (query, positive, negative) and fits
         # sim(q, col2) - sim(q, col3) to the label, so swapping the column order flips the
@@ -459,6 +456,14 @@ def build_pair_dataset(dataset: Dataset, is_cosent: bool, tiered: bool = False,
 
 def build_loss(model: SentenceTransformer, training_style: str, easy_label: float | None = None,
                batch_size: int | None = None):
+    if training_style in VARIANT_STYLES:
+        return ExperimentalInfoNCELoss(model, int(training_style.rsplit('v', 1)[1]))
+    if training_style == TrainingStyle.INFONCE_DCL.value:
+        return ExperimentalInfoNCELoss(model, 'dcl')
+    if training_style == TrainingStyle.INFONCE_FP32.value:
+        return ExperimentalInfoNCELoss(model, 'binary')
+    if training_style == TrainingStyle.INFONCE_V3_FP32.value:
+        return ExperimentalInfoNCELoss(model, 'v3')
     if training_style == TrainingStyle.BASELINE_TRIPLET.value:
         return losses.TripletLoss(
             model=model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.2
@@ -489,24 +494,23 @@ def build_loss(model: SentenceTransformer, training_style: str, easy_label: floa
         # ours-mse-batched's binary control: identical layout, weighting and batches; the
         # mined negative is just another non-positive. Differs in one target cell only.
         return BatchGradedMarginMSELoss(model=model, easy_label=easy_label, binary=True)
-    if training_style == TrainingStyle.OURS_INFONCE.value:
-        # infonce-mined with soft targets: the own hard negative holds target mass
-        # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
-        return GradedInfoNCELoss(model=model, easy_label=easy_label)
+    # if training_style == TrainingStyle.OURS_INFONCE.value:
+    #     # infonce-mined with soft targets: the own hard negative holds target mass
+    #     # 1 - label instead of 0, row-normalized. See utils/graded_losses.py.
+    #     return GradedInfoNCELoss(model=model, easy_label=easy_label)
     if training_style == TrainingStyle.INFONCE_OURS_V3.value:
-        # ours-infonce with the hard negative's target mass exp(-s * label) instead of
-        # 1 - label, so the gap at the optimum is the label itself rather than
-        # log(1 / (1 - label)) / s. See utils/graded_losses.py; tmp/infonce_bounds.tex, Point 4.
+        # Original graded InfoNCE: exp(-s * label) target mass gives the
+        # intended cosine gap label = d/V. See utils/graded_losses.py.
         return GradedExponentialInfoNCELoss(model=model, easy_label=easy_label)
     if training_style == TrainingStyle.OURS_SIGLIP.value:
         # Per-pair sigmoid BCE: every in-batch cell fit to its own graded similarity
         # target, no softmax competition. See utils/graded_losses.py.
         return GradedSigLIPLoss(model=model, easy_label=easy_label)
-    if training_style == TrainingStyle.OURS_INFONCE_MARGIN.value:
-        # infonce-mined plus distance-scheduled additive margins on the logits; the
-        # target stays one-hot, so the ranking pressure is unchanged and the grading
-        # only sets where each negative's push-down stops. See utils/graded_losses.py.
-        return MarginInfoNCELoss(model=model, easy_label=easy_label)
+    # if training_style == TrainingStyle.OURS_INFONCE_MARGIN.value:
+    #     # infonce-mined plus distance-scheduled additive margins on the logits; the
+    #     # target stays one-hot, so the ranking pressure is unchanged and the grading
+    #     # only sets where each negative's push-down stops. See utils/graded_losses.py.
+    #     return MarginInfoNCELoss(model=model, easy_label=easy_label)
     if training_style == TrainingStyle.SIGLIP_V3.value:
         # ours-siglip with the hard negative's target exp(-s * label) instead of 1 - label and
         # every other non-positive cell at 0: siglip-mined plus a graded own-negative cell,
@@ -541,6 +545,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-synthetic-data", nargs="?", const=True, type=parse_bool, default=False,
                         help="Deprecated shorthand for --query-kind synthetic")
     parser.add_argument("--training-style", type=str, default=None,
+                        choices=[style.value for style in TrainingStyle],
                         help=", ".join(style.value for style in TrainingStyle))
     parser.add_argument("--config", type=str, default="config.yaml")
     parser.add_argument("--easy-negative-value", type=int, default=None)
@@ -602,6 +607,9 @@ def load_config(args: argparse.Namespace, query_kind: str) -> Dict[str, Any]:
         value = getattr(args, key)
         if value is not None:
             config[key] = value
+
+    if config["training_style"] in RETIRED_INFONCE_STYLES:
+        raise ValueError(f"Retired InfoNCE style {config['training_style']}; use infonce-ours-v3")
 
     training_arg_keys = [
         "output_dir", "num_train_epochs", "global_batch_size", "per_device_max_batch_size",
@@ -808,13 +816,13 @@ def main():
             unmeasured_as_easy=training_style == TrainingStyle.MSE_MINED.value
             or ("unmeasured_negatives" in config and config["unmeasured_negatives"] == "easy"),
         )
-        # ours-infonce and infonce-ours-v3 (both GradedInfoNCELoss) recover "this row's
-        # negative is random" by comparing the label to easy_label. With easy at the top of
+        # InfoNCE v3 and SigLIP v3 recover "this row's negative is random" by
+        # comparing the label to easy_label. With easy at the top of
         # the measured scale the two are equal, so the most distant hard negatives would
         # be silently retargeted to easy_weight. Every other graded loss only fills
         # cross-row cells with easy_label and is unaffected.
         if label_stats["easy_collides"] and training_style in (
-                TrainingStyle.OURS_INFONCE.value, TrainingStyle.INFONCE_OURS_V3.value,
+                TrainingStyle.INFONCE_OURS_V3.value,
                 TrainingStyle.SIGLIP_V3.value):
             raise ValueError(
                 f"training-style {training_style} cannot use easy_negative_value="
@@ -934,6 +942,10 @@ def main():
         dataloader_num_workers=image_workers,
         dataloader_persistent_workers=image_workers > 0,
     )
+
+    if training_style in PACKED_STYLES:
+        train_dataset = pack_distance_labels(train_dataset)
+        eval_dataset = pack_distance_labels(eval_dataset)
 
     swap_pos_neg = training_style == TrainingStyle.OURS_MSE_REVERSED.value
     train_dataset_for_trainer = prepare_dataset_for_trainer(train_dataset, swap_pos_neg=swap_pos_neg)

@@ -45,7 +45,11 @@ def verify_image_splits(dataset):
 
 def active_image_base():
     from pathlib import Path
+    from utils.training_profile import training_profile
     root = Path(__file__).resolve().parents[1]
+    profile = training_profile()
+    if profile:
+        return Path(profile['bases']['multimodal'])
     match = re.search(r'IMG_DATASET=\$\{IMG_DATASET:-([^}]+)\}', (root / 'paper.sh').read_text())
     if match is None:
         raise ValueError('paper.sh does not declare an image dataset')

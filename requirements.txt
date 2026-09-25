@@ -14,3 +14,6 @@ google.generativeai
 sacrebleu==2.6.0
 rouge-score==0.1.2
 langdetect
+
+# Offline Gemini token accounting for dataset generation estimates.
+sentencepiece>=0.2,<0.3

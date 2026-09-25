@@ -6,8 +6,8 @@ no quota or projected answer contributes to it. A sampled curve caps each total-
 attribute bin at the largest bin among counts 6+, separately by modality (seed 42).
 The original study and the full combined distribution are shown too.
 
-Synthetic counts use stored selected_* lists for images and the existing canonical
-query parser for text (commas within a feature can overcount). Human counts use
+Synthetic counts use stored selected_* lists for images and recorded BM25 generation
+features for text. Human counts use
 Q1/Q2 attribute lists, not attribute extraction from the free-form Q3 query.
 
 Usage: python paper/draw_attr_hist.py [--out tmp/attr_hist]
@@ -36,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'human_study'))
 import attr_quota
 from sample_human_labels import sample_all
-from utils.query_render import parse_query
+from utils.condition_counts import original_condition_counts
 from utils.paper_analysis import active_dataset_bases
 
 PANELS = [
@@ -76,19 +76,8 @@ def synthetic_histogram(path):
         queries = list(dict.fromkeys(table['rephrased_query'].to_pylist()))
         _, _, test_queries = seeded_query_split(queries, seed=42)
         table = table.filter(pc.is_in(table['rephrased_query'], value_set=pa.array(sorted(test_queries))))
-    has_lists = all(key in table.column_names for key in FEATURE_KEYS)
-    keys = ['nl_query', 'rephrased_query'] + (FEATURE_KEYS if has_lists else [])
-    columns = table.select(keys).to_pydict()
-    unique = {}
-    for i, query in enumerate(columns['rephrased_query']):
-        if has_lists:
-            counts = stated_counts({key: columns[key][i] for key in FEATURE_KEYS})
-        else:
-            counts = tuple(map(len, parse_query(columns['nl_query'][i])))
-        if query in unique and unique[query] != counts:
-            raise ValueError('Repeated query has inconsistent attribute counts')
-        unique[query] = counts
-    return Counter(unique.values())
+    wanted = set(table['rephrased_query'].to_pylist())
+    return Counter(original_condition_counts(path, wanted).values())
 
 
 def statistics(hist):
@@ -138,7 +127,7 @@ def analyze(title, stem, id_column):
                     'human_combined': str(combined), 'human_combined_in_context': str(evaluation),
                     'human_sampled': str(sampled), 'human_sampled_in_context': str(sampled_evaluation)},
         'count_method': {'synthetic': 'stored feature lists' if title == 'Image' else
-                         'canonical query parser; embedded commas can overcount',
+                         'recorded BM25 generation feature lists',
                          'human': 'Q1/Q2 lists via attr_quota.written_counts'},
         'statistics': {name: statistics(hist) for name, hist in histograms.items()},
         'joint_total_variation_from_synthetic': {

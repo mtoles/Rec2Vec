@@ -76,8 +76,9 @@ class CandidateTests(unittest.TestCase):
         prefix = "text__mpnet__cosent__catalog_candidates2_rephrased-in-context_"
         suffix = "-rephrased__rephrased__note-paper"
         self.assertEqual(parse_run_name(prefix + "baseline" + suffix)["negs"], "baseline")
+        self.assertEqual(parse_run_name(prefix + "baseline-v3" + suffix)["negs"], "baseline-v3")
         self.assertEqual(parse_run_name(prefix + "random" + suffix)["negs"], "random")
-        self.assertTrue(active_dataset_bases()["text"].endswith("_candidates2"))
+        self.assertTrue(active_dataset_bases()["text"].endswith("_candidates2_humanholdout"))
 
     def test_language_or_generation_failure_removes_entire_singleton_group(self):
         a, b = raw(text_row("q", "a")), raw(text_row("q", "b", "Irrelevant"))
@@ -128,6 +129,28 @@ class CandidateTests(unittest.TestCase):
         # Both labels and the original candidate must remain reachable.
         selections = {draw(data, "text", "rephrased", seed)[0][0]["mined_id"] for seed in range(12)}
         self.assertEqual(selections, {"a", "b"})
+
+    def test_v3_excludes_construction_product_and_identical_document_aliases(self):
+        a = text_row("q", "a")
+        alias = dict(text_row("q", "alias", "Irrelevant"), negative_example=a["negative_example"])
+        b = text_row("q", "b", "Irrelevant")
+        evaluation = text_row("eval", "eval-n", side="test", positive="eval-p")
+        data = Dataset.from_list([a, easy_twin(a), alias, easy_twin(alias), b, easy_twin(b), evaluation])
+        out, report, records = build(data, "text", "rephrased", version="v3")
+        self.assertEqual(out[0]["negative_id"], "b")
+        self.assertEqual(out[2]["negative_id"], "b")
+        self.assertEqual(out[4]["negative_example"], a["negative_example"])
+        self.assertEqual(report["n_selected_original"], 0)
+        self.assertFalse(report["original_negative_eligible"])
+        self.assertEqual(report["version"], "v3")
+        self.assertEqual(report["min_candidate_count"], 1)
+        for index in (1, 3, 5, 6):
+            self.assertEqual(out[index], data[index])
+        for index in records:
+            self.assertNotEqual(out[index]["negative_id"], data[index]["negative_id"])
+            self.assertNotEqual(out[index]["negative_example"], data[index]["negative_example"])
+            self.assertIsNone(out[index]["query_distance"])
+        self.assertEqual(records, draw(data, "text", "rephrased", version="v3")[0])
 
     def test_baseline_rejects_singleton_instead_of_global_fallback(self):
         data = Dataset.from_list([text_row("q", "a"), text_row("another", "b")])

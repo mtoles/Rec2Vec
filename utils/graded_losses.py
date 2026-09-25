@@ -100,85 +100,76 @@ class BatchGradedMarginMSELoss(nn.Module):
         return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term
 
 
-class GradedInfoNCELoss(nn.Module):
-    """Softmax cross-entropy over in-batch candidates with distance-graded soft targets.
-
-    infonce-mined with the one-hot target replaced by a per-row distribution built from
-    the measured distances. Unnormalized target weight per candidate:
-        own positive:        1              (distance 0)
-        own MEASURED negative: 1 - label    (label = transformed d/V, so a near-miss
-                                             keeps most of its weight, d = V keeps none)
-        own random negative: easy_weight    (an unmeasured random product is no more a
-                                             match than the cross-row candidates, so it
-                                             gets the same weight they do; grading only
-                                             ever applies to measured distances)
-        cross-row:           easy_weight    (default 0: still in the softmax denominator,
-                                             so they are pushed down exactly as in
-                                             infonce-mined, but hold no target mass)
-    A row's negative is random iff its label equals easy_label -- to_training_labels
-    places the easy distance strictly above every measured one. Each row is normalized
-    to sum to 1, and the loss is -sum(T * log_softmax(S)). On random-negative rows this
-    is exactly infonce-mined; labels are produced by to_training_labels and are always
-    in [0, 1].
-    """
-
-    def __init__(self, model: SentenceTransformer, easy_label: float,
-                 scale: float = 20.0, easy_weight: float = 0.0):
-        super().__init__()
-        self.model = model
-        self.easy_label = easy_label
-        self.scale = scale
-        self.easy_weight = easy_weight
-
-    def forward(self, sentence_features, labels):
-        anchors, positives, negatives = [
-            self.model(features)["sentence_embedding"] for features in sentence_features
-        ]
-        B = anchors.shape[0]
-
-        # Same candidate layout as MNRL and BatchGradedMarginMSELoss:
-        # column j < B is row j's positive, column B + j is row j's hard negative.
-        candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
-        S = util.cos_sim(anchors, candidates) * self.scale             # [B, 2B]
-
-        targets = labels.to(S.dtype)
-        is_random = targets >= self.easy_label - 1e-6
-
-        idx = torch.arange(B, device=S.device)
-        W = torch.full_like(S, self.easy_weight)
-        W[idx, idx] = 1.0
-        W[idx, B + idx] = torch.where(is_random, torch.full_like(targets, self.easy_weight),
-                                      1.0 - targets)
-        T = W / W.sum(dim=1, keepdim=True)
-
-        # Shares the twin-positive hazard of BatchGradedMarginMSELoss: a batch holding both
-        # rows of one query would give the twin's positive target weight easy_weight when it
-        # deserves 1. train.py always trains this loss under NO_DUPLICATES.
-        return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
+# Retired: use GradedExponentialInfoNCELoss (infonce-ours-v3).
+# class GradedInfoNCELoss(nn.Module):
+#     """Softmax cross-entropy over in-batch candidates with distance-graded soft targets.
+#
+#     infonce-mined with the one-hot target replaced by a per-row distribution built from
+#     the measured distances. Unnormalized target weight per candidate:
+#         own positive:        1              (distance 0)
+#         own MEASURED negative: 1 - label    (label = transformed d/V, so a near-miss
+#                                              keeps most of its weight, d = V keeps none)
+#         own random negative: easy_weight    (an unmeasured random product is no more a
+#                                              match than the cross-row candidates, so it
+#                                              gets the same weight they do; grading only
+#                                              ever applies to measured distances)
+#         cross-row:           easy_weight    (default 0: still in the softmax denominator,
+#                                              so they are pushed down exactly as in
+#                                              infonce-mined, but hold no target mass)
+#     A row's negative is random iff its label equals easy_label -- to_training_labels
+#     places the easy distance strictly above every measured one. Each row is normalized
+#     to sum to 1, and the loss is -sum(T * log_softmax(S)). On random-negative rows this
+#     is exactly infonce-mined; labels are produced by to_training_labels and are always
+#     in [0, 1].
+#     """
+#
+#     def __init__(self, model: SentenceTransformer, easy_label: float,
+#                  scale: float = 20.0, easy_weight: float = 0.0):
+#         super().__init__()
+#         self.model = model
+#         self.easy_label = easy_label
+#         self.scale = scale
+#         self.easy_weight = easy_weight
+#
+#     def forward(self, sentence_features, labels):
+#         anchors, positives, negatives = [
+#             self.model(features)["sentence_embedding"] for features in sentence_features
+#         ]
+#         B = anchors.shape[0]
+#
+#         # Same candidate layout as MNRL and BatchGradedMarginMSELoss:
+#         # column j < B is row j's positive, column B + j is row j's hard negative.
+#         candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
+#         S = util.cos_sim(anchors, candidates) * self.scale             # [B, 2B]
+#
+#         targets = labels.to(S.dtype)
+#         is_random = targets >= self.easy_label - 1e-6
+#
+#         idx = torch.arange(B, device=S.device)
+#         W = torch.full_like(S, self.easy_weight)
+#         W[idx, idx] = 1.0
+#         W[idx, B + idx] = torch.where(is_random, torch.full_like(targets, self.easy_weight),
+#                                       1.0 - targets)
+#         T = W / W.sum(dim=1, keepdim=True)
+#
+#         # Shares the twin-positive hazard of BatchGradedMarginMSELoss: a batch holding both
+#         # rows of one query would give the twin's positive target weight easy_weight when it
+#         # deserves 1. train.py always trains this loss under NO_DUPLICATES.
+#         return -(T * torch.log_softmax(S, dim=1)).sum(dim=1).mean()
 
 
 class GradedExponentialInfoNCELoss(nn.Module):
-    """GradedInfoNCELoss with the hard negative's target mass put through the exponential.
+    """The active GOLD InfoNCE loss (infonce-ours-v3).
 
-    Same candidate layout, same normalization, same treatment of random and cross-row
-    candidates as GradedInfoNCELoss; the one difference is the own measured negative's
-    unnormalized target weight:
-        GradedInfoNCELoss (ours-infonce):             1 - label
-        this loss         (infonce-ours-v3):          exp(-scale * label)
+    Cosine logits use scale s. Unnormalized target masses are 1 for the own
+    positive, exp(-s * label) for the own measured negative, and easy_weight
+    (default zero) for random/cross-row candidates. Labels are transformed d/V;
+    target masses are normalized per query before softmax cross-entropy.
 
-    Why it matters: cross-entropy is minimised when the softmax equals the target, so at the
-    optimum exp(scale * (cos(q,p) - cos(q,n))) equals the positive/negative mass ratio and
-    the gap is log(1 / weight) / scale. With 1 - label that is log(1 / (1 - label)) / scale,
-    about label / scale: the negative is held nearly level with the positive (ours-infonce
-    measured below untrained on text). With exp(-scale * label) it is exactly label: the
-    mass goes through the same exponential the softmax takes the log of, so the label comes
-    back out as the gap. Derivation in tmp/infonce_bounds.tex, Point 4. Both are two-sided:
-    a negative pushed below its gap holds less probability than its target and is pushed
-    back up. label -> 1 gives weight exp(-scale), numerically one-hot infonce-mined.
-
-    Random rows are identified by label == easy_label exactly as in GradedInfoNCELoss, and
-    train.py applies the same easy-collision refusal to both. Twin-positive hazard as in
-    the other batch-wide losses: train.py always trains this loss under NO_DUPLICATES.
+    The target positive/negative ratio exp(s * label) gives the intended cosine
+    gap label = d/V. Random rows are identified by label >= easy_label; train.py
+    checks raw-distance collisions and uses NO_DUPLICATES for the batch sampler.
+    The older linear-target and logit-margin classes below/above are retired.
     """
 
     def __init__(self, model: SentenceTransformer, easy_label: float,
@@ -319,71 +310,72 @@ class GradedSigLIPLoss(nn.Module):
         return self.hard_weight * hard_term + (1.0 - self.hard_weight) * easy_term
 
 
-class MarginInfoNCELoss(nn.Module):
-    """infonce-mined with distance-scheduled additive margins on the logits.
-
-    Plain mined InfoNCE over candidates c_1..c_2B (all positives then all negatives):
-
-        L_i = -log [ exp(s * cos(q_i, p_i)) / sum_j exp(s * cos(q_i, c_j)) ]
-
-    This loss adds a per-cell margin inside the exponent and changes nothing else:
-
-        Z_ij = s * (cos(q_i, c_j) + alpha * M_ij)
-        L_i  = -log softmax_j(Z_i)[i]                     (one-hot target, own positive)
-
-    M_ij is the minimum cosine gap candidate j must eventually sit below q_i's positive:
-
-        M_ii     = 0            the own positive is the reference point
-        M_i,B+i  = label_i      the own negative's transformed distance d_i/V; random
-                                negatives carry label == easy_label, so they fall through
-                                to the same margin as every other random product
-        elsewhere = easy_label  a cross-row candidate is a random product w.r.t. q_i
-
-    Because M_ii = 0, the numerator equals the j = i denominator term, so the bracket is a
-    genuine softmax over the boosted logits (rows sum to 1) and the loss is plain
-    cross-entropy on Z. The margins never enter the target and receive no gradient: a
-    negative is only ever pushed DOWN, and the push dies out once its real gap exceeds
-    alpha * M_ij (a candidate boosted by its margin no longer out-scores the positive).
-    Equilibrium geometry: gap proportional to labeled distance -- near-misses rest just
-    below the positive, random products at the easy gap -- while the ranking pressure is
-    exactly infonce-mined's, since the target stays one-hot.
-
-    alpha = 0 is bit-for-bit infonce-mined; alpha scales every margin together, and it
-    interacts with the temperature through s * alpha * M (equivalently the margins are
-    denominator importance weights e^{s * alpha * M_ij}).
-
-    Twin-positive hazard as in the other batch-wide losses (a batch holding both rows of
-    one query would give the twin's positive margin easy_label when it deserves 0):
-    train.py always trains this loss under NO_DUPLICATES.
-    """
-
-    def __init__(self, model: SentenceTransformer, easy_label: float,
-                 scale: float = 20.0, alpha: float = 1.0):
-        super().__init__()
-        self.model = model
-        self.easy_label = easy_label
-        self.scale = scale
-        self.alpha = alpha
-
-    def forward(self, sentence_features, labels):
-        anchors, positives, negatives = [
-            self.model(features)["sentence_embedding"] for features in sentence_features
-        ]
-        B = anchors.shape[0]
-
-        # Same candidate layout as every batch-wide loss here and as MNRL itself:
-        # column j < B is row j's positive, column B + j is row j's hard negative.
-        candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
-        S = util.cos_sim(anchors, candidates)                          # [B, 2B]
-
-        # M is constant per batch: built from the label column, detached by construction
-        # (labels carry no graph), so gradients flow only through S.
-        targets = labels.to(S.dtype)
-        idx = torch.arange(B, device=S.device)
-        M = torch.full_like(S, self.easy_label)
-        M[idx, idx] = 0.0
-        M[idx, B + idx] = targets
-
-        Z = self.scale * (S + self.alpha * M)
-        # One-hot cross-entropy: row i's correct class is column i, its own positive.
-        return nn.functional.cross_entropy(Z, idx)
+# Retired: use GradedExponentialInfoNCELoss (infonce-ours-v3).
+# class MarginInfoNCELoss(nn.Module):
+#     """infonce-mined with distance-scheduled additive margins on the logits.
+#
+#     Plain mined InfoNCE over candidates c_1..c_2B (all positives then all negatives):
+#
+#         L_i = -log [ exp(s * cos(q_i, p_i)) / sum_j exp(s * cos(q_i, c_j)) ]
+#
+#     This loss adds a per-cell margin inside the exponent and changes nothing else:
+#
+#         Z_ij = s * (cos(q_i, c_j) + alpha * M_ij)
+#         L_i  = -log softmax_j(Z_i)[i]                     (one-hot target, own positive)
+#
+#     M_ij is the minimum cosine gap candidate j must eventually sit below q_i's positive:
+#
+#         M_ii     = 0            the own positive is the reference point
+#         M_i,B+i  = label_i      the own negative's transformed distance d_i/V; random
+#                                 negatives carry label == easy_label, so they fall through
+#                                 to the same margin as every other random product
+#         elsewhere = easy_label  a cross-row candidate is a random product w.r.t. q_i
+#
+#     Because M_ii = 0, the numerator equals the j = i denominator term, so the bracket is a
+#     genuine softmax over the boosted logits (rows sum to 1) and the loss is plain
+#     cross-entropy on Z. The margins never enter the target and receive no gradient: a
+#     negative is only ever pushed DOWN, and the push dies out once its real gap exceeds
+#     alpha * M_ij (a candidate boosted by its margin no longer out-scores the positive).
+#     Equilibrium geometry: gap proportional to labeled distance -- near-misses rest just
+#     below the positive, random products at the easy gap -- while the ranking pressure is
+#     exactly infonce-mined's, since the target stays one-hot.
+#
+#     alpha = 0 is bit-for-bit infonce-mined; alpha scales every margin together, and it
+#     interacts with the temperature through s * alpha * M (equivalently the margins are
+#     denominator importance weights e^{s * alpha * M_ij}).
+#
+#     Twin-positive hazard as in the other batch-wide losses (a batch holding both rows of
+#     one query would give the twin's positive margin easy_label when it deserves 0):
+#     train.py always trains this loss under NO_DUPLICATES.
+#     """
+#
+#     def __init__(self, model: SentenceTransformer, easy_label: float,
+#                  scale: float = 20.0, alpha: float = 1.0):
+#         super().__init__()
+#         self.model = model
+#         self.easy_label = easy_label
+#         self.scale = scale
+#         self.alpha = alpha
+#
+#     def forward(self, sentence_features, labels):
+#         anchors, positives, negatives = [
+#             self.model(features)["sentence_embedding"] for features in sentence_features
+#         ]
+#         B = anchors.shape[0]
+#
+#         # Same candidate layout as every batch-wide loss here and as MNRL itself:
+#         # column j < B is row j's positive, column B + j is row j's hard negative.
+#         candidates = torch.cat([positives, negatives], dim=0)          # [2B, dim]
+#         S = util.cos_sim(anchors, candidates)                          # [B, 2B]
+#
+#         # M is constant per batch: built from the label column, detached by construction
+#         # (labels carry no graph), so gradients flow only through S.
+#         targets = labels.to(S.dtype)
+#         idx = torch.arange(B, device=S.device)
+#         M = torch.full_like(S, self.easy_label)
+#         M[idx, idx] = 0.0
+#         M[idx, B + idx] = targets
+#
+#         Z = self.scale * (S + self.alpha * M)
+#         # One-hot cross-entropy: row i's correct class is column i, its own positive.
+#         return nn.functional.cross_entropy(Z, idx)

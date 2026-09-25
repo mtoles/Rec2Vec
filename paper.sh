@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# paper.sh — in-context rephrased training/evaluation for every active paper experiment.
+# paper.sh — prepare datasets, select validation winners, and run the paper experiments.
 # EVAL_HUMAN=1 opts into the separate human study; off by default.
 # Legacy condition rows are retained as comments; their checkpoints live in models/old/.
 #
-# Phase 1 trains every missing model, in parallel across GPUs (one GPU per job;
-# DDP/NCCL is broken on this node). Phase 2 runs test-set inference for every
-# condition via test.py, writing preds jsonl files into each model's run dir so all
-# analysis can happen offline. Every test-split condition is also scored on the
-# human-written queries (<dataset>_human, built by human_study/download_human_labels.py)
-# into <run_dir>/preds_human/, ranked against the same test-split corpus as the row's own
-# preds/ plus the human pairs' products; the human set is evaluation-only, so it rides
-# along with every eval rather than being a condition of its own. This script does NOT
-# preprocess data.
+# Default entry point: validation-first orchestration in utils/retrain_paper.py.
+# PAPER_CONDITIONS_FILE selects the internal GPU scheduler for one resolved phase.
+# Human inference is refreshed by analysis.ipynb after synthetic evaluation completes.
+# Existing GOLD base datasets and their in-context rephrasings are prerequisites.
 #
 # Reuse rules:
 #   - A model is reused whenever <run_dir>/final/modules.json exists.
@@ -23,8 +18,17 @@
 #     or a script invalidates runs, move those run dirs to $MODELS_ROOT/old/ (analysis
 #     ignores that dir) or rerun with FORCE_TRAIN=1 / FORCE_TEST=1 and ONLY=<regex>.
 #
+# Full run: bash paper.sh; inspect only: DRY_RUN=1 bash paper.sh
 # Knobs (env):
+#   DATASETS_ONLY=1  build/verify all datasets without training
+#   RUN_ID=baseline-v2  run identity; repeat it to resume
+#   BM25_TEXT=1 run all four text strategies on paired BM25 data, including baseline-derived NV mining
+#   BM25_NV=1   retrain text NV-Retriever on BM25, with fresh mining and validation sweeps
+#   IMAGE_PAIRED=1 run images with distinct same-category baseline negatives and baseline-derived NV mining
+#   BASELINE_V3_FROM=baseline-v2  run only text v3 and compare to this completed run
+#   PAPER_CONDITIONS_FILE=<path>  internal scheduler: run a resolved phase table
 #   GPUS="0 1 2"   GPUs to schedule on (default: 0-7)
+#   JOBS_PER_GPU=2 concurrent model jobs per GPU (training and inference)
 #   NOTE=paper     experiment tag; part of every run dir name
 #   SMOKE=1        tiny data, models/_smoke root, NOTE=smoke, wandb offline
 #   DRY_RUN=1      print the plan and exit
@@ -41,7 +45,7 @@ set -euo pipefail
 # The snapshot lives in /tmp, so the repo root must be passed through explicitly —
 # dirname "$0" inside the child would resolve to /tmp.
 if [[ -z ${PAPER_SNAPSHOT:-} ]]; then
-  cd "$(dirname "$0")"
+  cd "${PAPER_ROOT:-$(dirname "$0")}"
   export PAPER_ROOT=$PWD
   snapshot=$(mktemp "${TMPDIR:-/tmp}/paper.sh.XXXXXX")
   cat "$0" >"$snapshot"
@@ -54,6 +58,24 @@ cd "${PAPER_ROOT:?PAPER_ROOT unset — re-exec did not pass the repo root}"
 
 PY=${PY:-./.venv/bin/python}
 GPUS=${GPUS:-"0 1 2 3 4 5 6 7"}
+export JOBS_PER_GPU=${JOBS_PER_GPU:-2}
+if [[ ! $JOBS_PER_GPU =~ ^[1-9][0-9]*$ ]]; then
+  echo 'JOBS_PER_GPU must be a positive integer.' >&2
+  exit 1
+fi
+read -ra GPU_IDS <<<"$GPUS"
+declare -A GPU_SEEN=()
+for gpu in "${GPU_IDS[@]}"; do
+  if [[ -n ${GPU_SEEN[$gpu]:-} ]]; then
+    echo "Duplicate GPU in GPUS: $gpu" >&2
+    exit 1
+  fi
+  GPU_SEEN[$gpu]=1
+done
+if ((${#GPU_IDS[@]} == 0)); then
+  echo 'GPUS must contain at least one GPU.' >&2
+  exit 1
+fi
 SMOKE=${SMOKE:-0}
 DRY_RUN=${DRY_RUN:-0}
 FORCE_TRAIN=${FORCE_TRAIN:-0}
@@ -66,13 +88,65 @@ ONLY=${ONLY:-}
 # 2h10m. Capped at 12 the same epoch takes 22m and text steps run ~2x faster (2026-09-11).
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-12} MKL_NUM_THREADS=${MKL_NUM_THREADS:-12}
 
+# Only resolved phase tables may reach the flat scheduler.
+if [[ -z ${PAPER_CONDITIONS_FILE:-} ]]; then
+  if [[ -n $ONLY || $SMOKE != 0 || $FORCE_TRAIN != 0 || $FORCE_TEST != 0 || $EVAL_HUMAN != 0 ]]; then
+    echo 'ONLY, SMOKE, FORCE_TRAIN, FORCE_TEST and EVAL_HUMAN require a resolved PAPER_CONDITIONS_FILE.' >&2
+    exit 1
+  fi
+  for name in MODELS_ROOT TEXT_DATASET IMG_DATASET NOTE; do
+    if [[ -n ${!name:-} ]]; then
+      echo "$name is set by the full runner; use RUN_ID or an explicit PAPER_CONDITIONS_FILE." >&2
+      exit 1
+    fi
+  done
+  runner_module=utils.retrain_paper
+  default_run_id=baseline-v2
+  reference_args=()
+  if [[ -n ${BASELINE_V3_FROM:-} ]]; then
+    runner_module=utils.retrain_baseline_v3
+    default_run_id=baseline-v3
+    reference_args=(--reference-run "$BASELINE_V3_FROM")
+  fi
+  if [[ ${BM25_TEXT:-0} == 1 || ${BM25_NV:-0} == 1 ]]; then
+    if [[ -n ${BASELINE_V3_FROM:-} ]]; then
+      echo 'BM25_TEXT/BM25_NV and BASELINE_V3_FROM select different experiments.' >&2
+      exit 1
+    fi
+    runner_module=utils.retrain_bm25
+    default_run_id=bm25-top5-paired
+    if [[ ${BM25_NV:-0} == 1 ]]; then
+      default_run_id=bm25-top5-paired-nv
+      reference_args+=(--nv-only)
+    fi
+  fi
+  if [[ ${IMAGE_PAIRED:-0} == 1 ]]; then
+    if [[ ${BM25_TEXT:-0} == 1 || ${BM25_NV:-0} == 1 || -n ${BASELINE_V3_FROM:-} ]]; then
+      echo 'IMAGE_PAIRED cannot be combined with a text experiment selector.' >&2
+      exit 1
+    fi
+    runner_module=utils.retrain_paired_images
+    default_run_id=image-paired
+  fi
+  runner_args=(--run-id "${RUN_ID:-$default_run_id}" --python "$PY" --gpus "$GPUS" --jobs-per-gpu "$JOBS_PER_GPU" "${reference_args[@]}")
+  if [[ $DRY_RUN != 1 ]]; then
+    if [[ ${DATASETS_ONLY:-0} == 1 ]]; then
+      runner_args+=(--datasets-only)
+    else
+      runner_args+=(--run)
+    fi
+  fi
+  exec "$PY" -B -m "$runner_module" "${runner_args[@]}" "$@"
+fi
+
 # Styles named here are scheduled ahead of everything else, in this order. The condition table
 # below is grouped by experiment, not by urgency, so this reorders the queue without moving any
 # rows out of the section they belong to. Order follows the protocol: each family's graded
 # member then its ungraded (mined) control, families in paper priority -- infonce, mse, siglip.
 # ours-cosent is cosent with a third rank (positive > hard > random); CoSENT reads label order
 # only, so it has no V/easy and no search -- main-grid rows only.
-PRIORITY_STYLES=(infonce-ours-v3 ours-infonce-margin infonce-mined ours-mse-batched mse-mined ours-cosent cosent siglip-v3 ours-siglip siglip-mined)
+# Retired InfoNCE variants stay commented out in the historical condition table.
+PRIORITY_STYLES=(infonce-ours-v3 infonce-mined ours-mse-batched mse-mined ours-cosent cosent siglip-v3 ours-siglip siglip-mined)
 
 TEXT_MODEL=sentence-transformers/all-mpnet-base-v2
 IMG_MODEL=sentence-transformers/clip-ViT-B-32
@@ -80,7 +154,7 @@ IMG_MODEL=sentence-transformers/clip-ViT-B-32
 if [[ $SMOKE == 1 ]]; then
   NOTE=${NOTE:-smoke}
   MODELS_ROOT=${MODELS_ROOT:-models/_smoke}
-  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_candidates2}
+  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_candidates2_humanholdout}
   IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000_disjoint}
   IMG_TRAIN_EXTRA="--train-fraction 0.1"
   TOP_K=20
@@ -90,7 +164,7 @@ if [[ $SMOKE == 1 ]]; then
 else
   NOTE=${NOTE:-paper}
   MODELS_ROOT=${MODELS_ROOT:-models}
-  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_candidates2}
+  TEXT_DATASET=${TEXT_DATASET:-dataset/processed/feature-distance-dataset_gemini-2.5-flash_1000000_nolek_candidates2_humanholdout}
   IMG_DATASET=${IMG_DATASET:-dataset/processed/deepfashion-inshop-image-triplets_hf_20000_disjoint}
   IMG_TRAIN_EXTRA=""
   TOP_K=100
@@ -102,17 +176,19 @@ fi
 # Disk is tight: keep only final weights, no optimizer checkpoints.
 TRAIN_COMMON="--save-strategy no --save-total-limit 1"
 
-LOG_DIR=logs/paper
+LOG_DIR=${LOG_DIR:-logs/paper}
 mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 
 # ---------------------------------------------------------------------------
-# Condition table — the living list of everything the paper needs.
+# Condition table — required paper groups and their historical settings.
+# The full runner replaces optimized settings with fresh validation winners.
+# These rows cannot be scheduled directly; phases use PAPER_CONDITIONS_FILE.
 # Columns: modality  style  query_kind  V  extra
 #   modality: text | multimodal
 #   style:    untrained | baseline-triplet | infonce | infonce-mined | siglip-mined | mse-mined | cosent | ours-cosent
 #             | mse (pairwise MSE of cos(q, x) onto 1/0; the ungraded control of classic-mse)
-#             | classic-mse | ours-mse | ours-mse-batched | ours-infonce | ours-siglip
-#             | ours-infonce-margin (one-hot infonce-mined + distance-scheduled logit margins)
+#             | classic-mse | ours-mse | ours-mse-batched | ours-siglip
+#             Retired: ours-infonce and ours-infonce-margin; use infonce-ours-v3.
 #             | infonce-ours-v3 (infonce-mined with soft target mass e^{-s d/V} on the hard negative)
 #             | siglip-v3 (siglip-mined with the own hard negative's target e^{-s d/V}; ours-siglip's 1 - d/V
 #               target replaced the way infonce-ours-v3 replaces ours-infonce's)
@@ -125,7 +201,8 @@ mkdir -p "$LOG_DIR" "$MODELS_ROOT"
 #   extra:    '-' or comma-separated key=value; supported: easy=<int>, transform=<name>,
 #             split=val, negs=mined (train on the mine_hard_negs.py sibling dataset),
 #             negs=mined-graded (its label_mined_negs.py sibling, query_distance measured),
-#             negs=baseline (baseline_hard_negs.py: category/ESCI-matched comparison negatives),
+#             negs=baseline (v2: category/ESCI-matched comparison negatives),
+#             negs=baseline-v3 (text: exclude the construction negative and identical text),
 #             negs=random (legacy uniform-random control; retained for historical runs),
 #             negs=mixed (the mix_hard_negs.py sibling: a seeded half of the train-split hard
 #             negatives are the mined ones, the rest ours; mining= names the mined source),
@@ -601,24 +678,24 @@ CONDITIONS="
 # human-written style examples, and scored on its test split and on _human-in-context.
 # Hparams are each style's per-query-kind selection on the plain rephrasing; not re-swept.
 # -------------------------------------------------------------------------
-text        infonce           rephrased  -   rephrase=in-context
+# retired: outside current paper outputs: text        infonce           rephrased  -   rephrase=in-context
 text        infonce-mined     rephrased  -   rephrase=in-context
 text        siglip-mined      rephrased  -   rephrase=in-context
 text        cosent            rephrased  -   rephrase=in-context
 text        ours-cosent       rephrased  -   rephrase=in-context
-text        mse               rephrased  -   rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   rephrase=in-context
 # archived/retired: text        ours-mse          rephrased  40  easy=10,rephrase=in-context
 # archived/retired: text        ours-infonce      rephrased  40  rephrase=in-context
 # archived/retired: text        ours-siglip       rephrased  20  easy=10,rephrase=in-context
 # archived/retired: text        ours-infonce-margin rephrased  80  easy=10,rephrase=in-context
 text        ours-mse-batched  rephrased  40  easy=10,rephrase=in-context
 text        mse-mined         rephrased  40  easy=10,rephrase=in-context
-multimodal  infonce           rephrased  -   rephrase=in-context
+# retired: outside current paper outputs: multimodal  infonce           rephrased  -   rephrase=in-context
 multimodal  infonce-mined     rephrased  -   rephrase=in-context
 multimodal  siglip-mined      rephrased  -   rephrase=in-context
 multimodal  cosent            rephrased  -   rephrase=in-context
 multimodal  ours-cosent       rephrased  -   rephrase=in-context
-multimodal  mse               rephrased  -   rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   rephrase=in-context
 # archived/retired: multimodal  ours-mse          rephrased  80  easy=10,rephrase=in-context
 # archived/retired: multimodal  ours-infonce      rephrased  40  rephrase=in-context
 # archived/retired: multimodal  ours-siglip       rephrased  40  easy=10,rephrase=in-context
@@ -641,9 +718,9 @@ text        siglip-mined      rephrased  -   split=val,seed=44,rephrase=in-conte
 text        cosent            rephrased  -   split=val,rephrase=in-context
 text        cosent            rephrased  -   split=val,seed=43,rephrase=in-context
 text        cosent            rephrased  -   split=val,seed=44,rephrase=in-context
-text        mse               rephrased  -   split=val,rephrase=in-context
-text        mse               rephrased  -   split=val,seed=43,rephrase=in-context
-text        mse               rephrased  -   split=val,seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   split=val,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   split=val,seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   split=val,seed=44,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   split=val,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   split=val,seed=43,rephrase=in-context
 multimodal  infonce-mined     rephrased  -   split=val,seed=44,rephrase=in-context
@@ -653,9 +730,9 @@ multimodal  siglip-mined      rephrased  -   split=val,seed=44,rephrase=in-conte
 multimodal  cosent            rephrased  -   split=val,rephrase=in-context
 multimodal  cosent            rephrased  -   split=val,seed=43,rephrase=in-context
 multimodal  cosent            rephrased  -   split=val,seed=44,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,seed=43,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   split=val,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   split=val,seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   split=val,seed=44,rephrase=in-context
 # InfoNCE + NV: infonce-mined on the nv-mined in-context datasets, same 3 seeds, validation split
 text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,rephrase=in-context
 # text        infonce-mined     rephrased  -   split=val,negs=mined,mining=m0.025_s10,seed=43,rephrase=in-context
@@ -698,14 +775,14 @@ text        siglip-mined      rephrased  -   seed=43,rephrase=in-context
 text        siglip-mined      rephrased  -   seed=44,rephrase=in-context
 text        cosent            rephrased  -   seed=43,rephrase=in-context
 text        cosent            rephrased  -   seed=44,rephrase=in-context
-text        mse               rephrased  -   seed=43,rephrase=in-context
-text        mse               rephrased  -   seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   seed=44,rephrase=in-context
 multimodal  siglip-mined      rephrased  -   seed=43,rephrase=in-context
 multimodal  siglip-mined      rephrased  -   seed=44,rephrase=in-context
 multimodal  cosent            rephrased  -   seed=43,rephrase=in-context
 multimodal  cosent            rephrased  -   seed=44,rephrase=in-context
-multimodal  mse               rephrased  -   seed=43,rephrase=in-context
-multimodal  mse               rephrased  -   seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   seed=44,rephrase=in-context
 # nv-mined on in-context: the _rephrased-in-context datasets mined with the selected variant
 # (logs/mine/run_incontext_m0.025_s10.sh), infonce-mined x 3 seeds, like the plain nv-mined rows.
 # text        infonce-mined     rephrased  -   negs=mined,mining=m0.025_s10,rephrase=in-context
@@ -734,35 +811,35 @@ multimodal infonce-mined rephrased - negs=mined,mining=m0.2_s10,seed=44,rephrase
 # Two groups: ours-nv-mixed (one shuffle over the mix) and ours-nv-ordered (order=mined-first:
 # each epoch trains every batch of the nv-mined queries before any batch of ours).
 # -------------------------------------------------------------------------
-text        infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-text        infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-text        infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-multimodal  infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-multimodal  infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-multimodal  infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
-multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
+# retired: outside current paper outputs: multimodal  infonce-ours-v3   rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first,split=val
 # Selected V (2026-09-12, val argmax: text 20, image 80, both groups): the seed-42 row shares its model with the sweep cell and is inference only.
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
-text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
-multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
-multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
-multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
+# retired: outside current paper outputs: text        infonce-ours-v3   rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
+# retired: outside current paper outputs: multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,rephrase=in-context,order=mined-first
+# retired: outside current paper outputs: multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context,order=mined-first
+# retired: outside current paper outputs: multimodal infonce-ours-v3 rephrased 80 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context,order=mined-first
 # -------------------------------------------------------------------------
 # Full in-context result set for the mse / cosent / siglip families (2026-09-13), matching
 # infonce's: 3 seeds on the graded and ungraded styles; the ungraded loss on the NV-mined
@@ -816,14 +893,14 @@ multimodal siglip-mined rephrased - negs=mined,mining=m0.2_s10,seed=43,rephrase=
 multimodal siglip-mined rephrased - negs=mined,mining=m0.2_s10,seed=44,rephrase=in-context
 # mixed group: V sweep on the mixed in-context validation split (ours-cosent has no V).
 # The graded style per family is the newest one: ours-mse-batched, siglip-v3, ours-cosent.
-text        ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  ours-mse-batched  rephrased  10  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  ours-mse-batched  rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 # 2026-09-15: the siglip family's mixed group moved to siglip-v3, so its mixed bar uses the
 # family's newest graded style the way infonce's uses infonce-ours-v3. The ours-siglip sweep
 # below ran 2026-09-13 and is superseded; its models stay in models/ unused.
@@ -836,34 +913,34 @@ multimodal  ours-mse-batched  rephrased  80  easy=10,negs=mixed,mining=m0.025_s1
 # multimodal  ours-siglip       rephrased  40  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 # multimodal  ours-siglip       rephrased  80  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 # siglip-v3 has no easy axis (random and cross-row cells target 0), so its mixed sweep is V alone.
-text        siglip-v3         rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        siglip-v3         rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-text        siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  siglip-v3         rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  siglip-v3         rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
-multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        siglip-v3         rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        siglip-v3         rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: text        siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  siglip-v3         rephrased  10  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  siglip-v3         rephrased  40  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
+# retired: outside current paper outputs: multimodal  siglip-v3         rephrased  80  negs=mixed,mining=m0.025_s10,rephrase=in-context,split=val
 # mixed group: 3 seeds, V selected 2026-09-15 on the mixed val sweep above (ours-cosent has no V):
 # ours-mse-batched text 20 / image 80, siglip-v3 text 20 / image 80.
-text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
-text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
-text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
-multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,rephrase=in-context
-multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
-multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal  ours-cosent       rephrased  -   negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        ours-mse-batched  rephrased  20  easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal ours-mse-batched rephrased 80 easy=10,negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        siglip-v3         rephrased  20  negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,rephrase=in-context
+# retired: outside current paper outputs: multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal siglip-v3 rephrased 40 negs=mixed,mining=m0.025_s10,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # Metadata-matched Baseline (2026-09-24), in-context only: same-category, different-garment
 # images; pooled Substitute/Irrelevant products for the same original query and positive
@@ -958,17 +1035,17 @@ multimodal  siglip-mined      rephrased  -   split=val,negs=baseline,seed=43,rep
 # retired uniform-random: multimodal  siglip-mined      rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
 multimodal  siglip-mined      rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
 # retired uniform-random: text        mse               rephrased  -   split=val,negs=random,rephrase=in-context
-text        mse               rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   split=val,negs=baseline,rephrase=in-context
 # retired uniform-random: text        mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-text        mse               rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
 # retired uniform-random: text        mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-text        mse               rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired: outside current paper outputs: text        mse               rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
 # retired uniform-random: multimodal  mse               rephrased  -   split=val,negs=random,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,negs=baseline,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   split=val,negs=baseline,rephrase=in-context
 # retired uniform-random: multimodal  mse               rephrased  -   split=val,negs=random,seed=43,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   split=val,negs=baseline,seed=43,rephrase=in-context
 # retired uniform-random: multimodal  mse               rephrased  -   split=val,negs=random,seed=44,rephrase=in-context
-multimodal  mse               rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
+# retired: outside current paper outputs: multimodal  mse               rephrased  -   split=val,negs=baseline,seed=44,rephrase=in-context
 # -------------------------------------------------------------------------
 # siglip-v3 (2026-09-14): ours-siglip with the exponential target (utils/graded_losses.py,
 # exponential=True). Like infonce-ours-v3, easy plays no part (random and cross-row cells
@@ -1031,10 +1108,37 @@ multimodal  mse-mined          rephrased 80 split=val,rephrase=in-context,easy=1
 multimodal  ours-cosent        rephrased - split=val,rephrase=in-context
 multimodal  ours-cosent        rephrased - split=val,rephrase=in-context,seed=43
 multimodal  ours-cosent        rephrased - split=val,rephrase=in-context,seed=44
+# Baseline v3: text only, excluding the construction negative. Keep v2 rows above.
+# Margin-MSE receives its own validation sweep; main rows use the selected setting.
+text infonce-mined rephrased - negs=baseline-v3,rephrase=in-context,split=val
+text infonce-mined rephrased - negs=baseline-v3,rephrase=in-context
+text infonce-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=43,split=val
+text infonce-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=43
+text infonce-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=44,split=val
+text infonce-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=44
+text siglip-mined rephrased - negs=baseline-v3,rephrase=in-context,split=val
+text siglip-mined rephrased - negs=baseline-v3,rephrase=in-context
+text siglip-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=43,split=val
+text siglip-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=43
+text siglip-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=44,split=val
+text siglip-mined rephrased - negs=baseline-v3,rephrase=in-context,seed=44
+text mse-mined rephrased 20 negs=baseline-v3,rephrase=in-context,easy=10,split=val
+text mse-mined rephrased 20 negs=baseline-v3,rephrase=in-context,easy=10
+text mse-mined rephrased 20 negs=baseline-v3,rephrase=in-context,easy=10,seed=43,split=val
+text mse-mined rephrased 20 negs=baseline-v3,rephrase=in-context,easy=10,seed=43
+text mse-mined rephrased 20 negs=baseline-v3,rephrase=in-context,easy=10,seed=44,split=val
+text mse-mined rephrased 20 negs=baseline-v3,rephrase=in-context,easy=10,seed=44
+text cosent rephrased - negs=baseline-v3,rephrase=in-context,split=val
+text cosent rephrased - negs=baseline-v3,rephrase=in-context
+text cosent rephrased - negs=baseline-v3,rephrase=in-context,seed=43,split=val
+text cosent rephrased - negs=baseline-v3,rephrase=in-context,seed=43
+text cosent rephrased - negs=baseline-v3,rephrase=in-context,seed=44,split=val
+text cosent rephrased - negs=baseline-v3,rephrase=in-context,seed=44
+
 "
 
 # ---------------------------------------------------------------------------
-# GPU pool scheduler: one background job per GPU slot.
+# GPU pool scheduler: JOBS_PER_GPU independent slots on each GPU.
 # ---------------------------------------------------------------------------
 # Initialise rather than only declare: under `set -u` a declared-but-never-assigned
 # array is still unbound, so ${#PID_GPU[@]} in drain() aborts the run whenever a
@@ -1060,7 +1164,10 @@ interrupt() {
   exit 130
 }
 trap interrupt INT TERM
-FREE_GPUS=($GPUS)
+FREE_GPUS=()
+for ((slot = 0; slot < JOBS_PER_GPU; slot++)); do
+  FREE_GPUS+=("${GPU_IDS[@]}")
+done
 
 reap_one() {
   local pid="" st=0
@@ -1131,7 +1238,9 @@ dataset_for() { # modality [query_kind] [negs] [mining] [rephrase] -> dataset di
   # split; only the train split's hard negatives differ (retrieval-mined, unmeasured distance).
   [[ ${3:-labeled} == mined ]] && base="${base}_mined-${2}"
   # mining=<variant>: a mine_hard_negs.py --variant sibling (mining sweep); no suffix is the
-  # default config (relative margin 0.05, first survivor, fallback weakest).
+  # variant names encode NV-Retriever's ablation axes (utils.training_plan.mining_settings):
+  # k<window>_p<percent> is TopK-PercPos at that share of the positive's score, k<window>_none
+  # is naive top-k; first survivor, fallback weakest inside the window.
   [[ ${3:-labeled} == mined && -n ${4:-} ]] && base="${base}_${4}"
   # negs=mined-graded: the mined sibling after label_mined_negs.py measured every mined
   # negative's query_distance, so the graded losses can train on it.
@@ -1145,6 +1254,8 @@ dataset_for() { # modality [query_kind] [negs] [mining] [rephrase] -> dataset di
   [[ ${3:-labeled} == random ]] && base="${base}_random-${2}"
   # Distinct dataset identity prevents reuse of the old uniform-random checkpoints.
   [[ ${3:-labeled} == baseline ]] && base="${base}_baseline-${2}"
+  [[ ${3:-labeled} == baseline-v3 ]] && base="${base}_baseline-v3-${2}"
+  [[ ${3:-labeled} == baseline-bm25 ]] && base="${base}_baseline-bm25-${2}"
   echo "$base"
 }
 
@@ -1200,8 +1311,8 @@ parse_extra() { # extra_string easy_var transform_var split_var negs_var [mining
     *) echo "Unsupported split '$_split' (supported: test, val)" >&2; exit 1 ;;
   esac
   case $_negs in
-    labeled|mined|mined-graded|mixed|random|baseline) ;;
-    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed, random, baseline)" >&2; exit 1 ;;
+    labeled|mined|mined-graded|mixed|random|baseline|baseline-v3|baseline-bm25) ;;
+    *) echo "Unsupported negs '$_negs' (supported: labeled, mined, mined-graded, mixed, random, baseline, baseline-v3, baseline-bm25)" >&2; exit 1 ;;
   esac
 }
 
@@ -1225,11 +1336,20 @@ train_cmd_for() { # modality style query_kind V extra run_dir -> echoes full com
 # ---------------------------------------------------------------------------
 # Build the plan
 # ---------------------------------------------------------------------------
+if [[ -n ${PAPER_CONDITIONS_FILE:-} ]]; then
+  CONDITIONS=$(cat "$PAPER_CONDITIONS_FILE")
+fi
 KEYS=()
 declare -A K_MODALITY=() K_STYLE=() K_QK=() K_V=() K_EXTRA=() K_TRAIN_ACTION=() K_SPLIT=() K_NEGS=() K_MINING=() K_REPHRASE=() SEEN_RUN_DIR=()
 
 while read -r modality style qk v extra; do
   [[ -z $modality || $modality == \#* ]] && continue
+  case "$style" in
+    ours-infonce|ours-infonce-margin)
+      echo "ERROR: retired InfoNCE style $style; use infonce-ours-v3" >&2
+      exit 1
+      ;;
+  esac
   run_name=$(run_name_for "$modality" "$style" "$qk" "$v" "$extra")
   [[ -n $ONLY && ! $run_name =~ $ONLY ]] && continue
   # The split is an evaluation choice, not a training one: a val row and its test twin are
@@ -1298,7 +1418,7 @@ mapfile -t KEYS < <(
 )
 
 echo
-echo "== Plan (NOTE=$NOTE, root=$MODELS_ROOT, GPUS=$GPUS) =="
+echo "== Plan (NOTE=$NOTE, root=$MODELS_ROOT, GPUS=$GPUS, JOBS_PER_GPU=$JOBS_PER_GPU) =="
 for key in "${KEYS[@]}"; do
   printf '  %-9s %s\n' "[${K_TRAIN_ACTION[$key]}]" "$key"
 done

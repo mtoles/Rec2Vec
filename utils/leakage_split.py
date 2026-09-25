@@ -70,12 +70,19 @@ def assign_side(group, seed, val_frac, test_frac):
     return "train"
 
 
-def build(raw_path, val_frac, test_frac, seed):
+def build(raw_path, val_frac, test_frac, seed, humans=None):
     rows = filter_raw_pairs([json.loads(line) for line in open(raw_path)])
     groups = item_groups(rows)
     side_of = {g: assign_side(g, seed, val_frac, test_frac) for g in set(groups.values())}
     for r in rows:
         r["_split"] = side_of[groups[r["item"]]]
+
+    if humans is not None:
+        from utils.text_holdout import human_targets
+        ids, documents = human_targets(humans)
+        rows = filter_raw_pairs([r for r in rows if r['_split'] == 'test' or not any(
+            r[role]['product_id'] in ids or r[role]['product_text'] in documents
+            for role in ('positive_product', 'hard_neg_product'))])
 
     # Products that land on more than one side via a positive or hard-negative role.
     doc_sides = defaultdict(set)
@@ -174,9 +181,13 @@ def main():
     ap.add_argument("--val-frac", type=float, default=0.1)
     ap.add_argument("--test-frac", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=42)
+    from utils.text_holdout import HUMAN_SOURCE
+    ap.add_argument("--human-dataset", default=str(HUMAN_SOURCE))
     args = ap.parse_args()
 
-    kept, dropped, conflicts = build(args.raw, args.val_frac, args.test_frac, args.seed)
+    from datasets import load_from_disk
+    humans = load_from_disk(args.human_dataset)
+    kept, dropped, conflicts = build(args.raw, args.val_frac, args.test_frac, args.seed, humans)
     hf_rows = to_hf_rows(kept)
     stats = verify(hf_rows)
 
@@ -189,7 +200,10 @@ def main():
         q, d = stats[s]
         print(f"{s:11s} {counts[s]:7d} triples  {2 * counts[s]:7d} rows  {q:6d} queries  {d:7d} products")
 
-    HFDataset.from_list(hf_rows).save_to_disk(args.out)
+    from utils.text_holdout import verify_text_holdout
+    dataset = HFDataset.from_list(hf_rows)
+    verify_text_holdout(dataset, humans)
+    dataset.save_to_disk(args.out)
     print(f"saved to {args.out}")
 
 

@@ -18,6 +18,9 @@ import os
 import re
 
 import pandas as pd
+from pathlib import Path
+from utils.training_profile import ROOT, analysis_profiles, condition_source, training_profile
+from utils.training_plan import RETIRED_INFONCE_STYLES
 
 DEFAULT_KS = (1, 5, 50)
 
@@ -33,13 +36,34 @@ _CONDITIONS_BLOCK = re.compile(r'^CONDITIONS="\s*$(.*?)^"\s*$', re.M | re.S)
 
 def parse_conditions(paper_sh="paper.sh"):
     """The condition table paper.sh drives itself from: modality/style/query_kind/V/extra."""
-    text = open(paper_sh, encoding="utf-8").read()
+    if Path(paper_sh).resolve() == ROOT / 'paper.sh' and 'PAPER_CONDITIONS_FILE' not in os.environ:
+        profiles = analysis_profiles()
+        if profiles:
+            frames = [filter_profile_frame(_parse_condition_file(Path(p['conditions'])), p)
+                      for p in profiles]
+            return pd.concat(frames, ignore_index=True).drop_duplicates()
+    return _parse_condition_file(condition_source(paper_sh)).drop_duplicates()
+
+
+def filter_profile_frame(frame, profile):
+    if 'modalities' in profile:
+        frame = frame[frame['modality'].isin(profile['modalities'])]
+    if 'include_negs' in profile:
+        frame = frame[frame['negs'].isin(profile['include_negs'])]
+    if 'include_styles' in profile:
+        frame = frame[frame['style'].isin(profile['include_styles'])]
+    if 'exclude_styles' in profile:
+        frame = frame[~frame['style'].isin(profile['exclude_styles'])]
+    return frame.copy()
+
+
+def _parse_condition_file(source):
+    text = source.read_text()
     match = _CONDITIONS_BLOCK.search(text)
-    if not match:
-        raise ValueError(f"No CONDITIONS=\"...\" block found in {paper_sh}")
+    block = match.group(1) if match else text
 
     rows = []
-    for line in match.group(1).splitlines():
+    for line in block.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -47,6 +71,8 @@ def parse_conditions(paper_sh="paper.sh"):
         if len(fields) != 5:
             raise ValueError(f"Malformed condition line (want 5 fields): {line!r}")
         modality, style, query_kind, v, extra = fields
+        if style in RETIRED_INFONCE_STYLES:
+            raise ValueError(f"Retired InfoNCE style {style}; use infonce-ours-v3")
         tokens = [] if extra == "-" else extra.split(",")
         negs = [t[len("negs="):] for t in tokens if t.startswith("negs=")]
         mining = [t[len("mining="):] for t in tokens if t.startswith("mining=")]
@@ -80,6 +106,9 @@ def parse_conditions(paper_sh="paper.sh"):
 
 def active_dataset_bases(paper_sh="paper.sh"):
     """Default dataset identities used by the current paper, excluding old experiments."""
+    profile = training_profile() if Path(paper_sh).resolve() == ROOT / "paper.sh" else {}
+    if profile:
+        return {mod: Path(base).name for mod, base in profile["bases"].items()}
     source = open(paper_sh, encoding="utf-8").read()
     bases = {}
     for modality, variable in (("text", "TEXT_DATASET"), ("multimodal", "IMG_DATASET")):
@@ -134,6 +163,14 @@ def parse_run_name(name):
         out["mining"] = tag.split("_mixed-", 1)[1].partition("_")[2]
         return out
     # New metadata-matched Baseline has a distinct tag from the legacy random control.
+    if "_baseline-bm25-" in tag:
+        out["negs"] = "baseline-bm25"
+        out["mining"] = ""
+        return out
+    if "_baseline-v3-" in tag:
+        out["negs"] = "baseline-v3"
+        out["mining"] = ""
+        return out
     if "_baseline-" in tag:
         out["negs"] = "baseline"
         out["mining"] = ""
@@ -171,6 +208,19 @@ def discover_runs(models_root="models", note="paper"):
             parsed[column] = os.path.isfile(os.path.join(run_dir, subdir, "queries.jsonl"))
         rows.append(parsed)
     return pd.DataFrame(rows)
+
+
+def discover_profile_runs():
+    """Discover each configured run with its own model root and experiment tag."""
+    profiles = analysis_profiles()
+    if not profiles:
+        raise ValueError('No resolved analysis profiles')
+    frames = []
+    for profile in profiles:
+        frame = filter_profile_frame(discover_runs(profile['models_root'], profile['note']), profile)
+        frame['reference'] = 'reference' in profile and profile['reference']
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
 
 
 def match_conditions(conditions, runs):
@@ -408,3 +458,12 @@ def health_check(matched, min_queries=100, preds_subdir="preds"):
                      "n_queries": len(frame), "n_blank": blank,
                      "healthy": not problem, "problem": problem})
     return pd.DataFrame(rows)
+
+
+def human_conditions():
+    """Resolved main conditions for a new run; historical declaration otherwise."""
+    if training_profile():
+        frame = parse_conditions(ROOT / 'paper.sh')
+        return frame[~frame.extra.fillna('').str.contains('split=val')].drop_duplicates().copy()
+    return pd.read_csv(ROOT / 'analysis/migrations/in_context_20260920/human_conditions.csv',
+                       keep_default_na=False)
