@@ -269,7 +269,7 @@ This yields a (query, positive) pair.
 We note that conditioning query generation on random documents as described above makes these documents, by construction, hard negatives with respect to the query.
 Specifically, each document will violate exactly distance $d$ conditions in the query, where $1 \leq d \leq \min(k, 10)$.
 We term this strategy \textsc{Gold} mining.
-Thus, \textsc{Gold} mining produces (query, positive, negative, distance) tuples, where $d$ is consumed by the \textsc{Gold} mining objective described in Section \red{tbd}.
+Thus, \textsc{Gold} mining produces (query, positive, negative, distance) tuples, where $d$ is consumed by the \textsc{Gold} reweighting objective described in Section \red{tbd}.
 Although \textsc{Gold} mining here occurs in parallel with query generation, in principle this strategy is dataset-agnostic.
 The strategy could be performed in reverse by pairing existing conjunctive queries with negative documents and calculating $d$. 
 In contrast, we create a baseline non-mined dataset that selects hard negative examples identically, except that the queries are \emph{not} conditioned on baseline hard negatives.
@@ -308,7 +308,7 @@ We design our experiments such that each model sees each training triple once pe
 We train every model for one epoch with 32 rows per forward pass and 4 forward passes per optimizer step.
 Pairwise MSE emits two pairs per triple.
 % We train baseline models using hyperparameters listed in Section \ref{sec:model-details}, concluding that InfoNCE is the strongest.
-To study the NV-Retriever baseline, we perform a seach across NV-Retriever mining paramters described in Section \red{??}.
+To study the NV-Retriever baseline, we perform a search across NV-Retriever mining parameters described in Section \red{??}.
 
 % \red{To further strengthen our baseline, we adopt the positive-aware hard negative mining of NV-Retriever \citep{moreira2024nv}, which the survey of \citet{wischounig2026negative} classifies under false-negative filtering and which underlies the top retrieval model on the MTEB leaderboard in their Table 5 \textcolor{orange}{(cite NV-Embed-v2)}, and apply it to InfoNCE.}
 % We choose the best of $n=8$ hyperparameter combinations based on a grid search \red{(Appendix \ref{??})}.
@@ -373,7 +373,7 @@ Formally, we define attribute Hamming distance $d$ as
 We then modify each loss function, with the modification marked by an underbrace:
 
 \paragraph{Margin-MSE:}
-We set the margin term to $d/V$ and apply the loss across all query--document pairs in the batch:
+We set the margin term to $d/V$\footnote{Preliminary experiments with several nonlinear margin functions indicated that the $d/V$ formulation yielded the best performance.} and apply the loss across all query--document pairs in the batch:
 
 \begin{equation}
 \label{eq:hamming}
@@ -455,7 +455,8 @@ For Margin-MSE, this regresses towards the condition
 \end{figure}
 
 
-
+This section develops the intuition behind the connection between our objective and affine probing; formal statements and proofs are provided in Appendix~\ref{sec:theoretical-analysis}. 
+When attributes are affinely recoverable, their probe vectors can be combined to form query representations whose similarity with a document increases with the number of conditions it satisfies, as encouraged by our count-based margin and illustrated in Figure~\ref{fig:embedding}.
 
 % For a given $c_i$, 
 Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ consisting of queries or documents composed of text or images.
@@ -533,7 +534,7 @@ On the larger Main test set, applying both \textsc{Gold} mining and \textsc{Gold
 Overall recall is stratified by loss function, with InfoNCE ranking highest on both modalities, both for our proposed methods and baselines.
 % \darkgreen{NV-Retriever increases text recall for three of four losses, whereas \textsc{Gold} mining alone reduces text recall; image results are also loss dependent.}
 \textsc{Gold} mining alone slightly improves recall on images, but reduces recall on text.
-\textsc{Gold} mining + reweighting, however, generally performs better than NV-Retreiver across modalities, improving recall in the two strongest loss functions on text and all four on images.
+\textsc{Gold} mining + reweighting, however, generally performs better than NV-Retriever across modalities, improving recall in the two strongest loss functions on text and all four on images.
 Overall, the strongest strategy for text recall is InfoNCE with \textsc{Gold} mining + reweighting.
 The strongest strategy for image recall is InfoNCE with \textsc{Gold} mining only, though adding \textsc{Gold} reweighting achieves almost identical recall.
 % \darkgreen{\textsc{Gold} mining exceeds NV-Retriever recall for InfoNCE in both modalities and for all four losses on images.}
@@ -558,6 +559,7 @@ To validate the use of synthetic queries, we evaluate the same models, all train
 Both text and image models achieve Pearson's $r$ in the 0.7-0.9 range, considered strong linear correlation in the recall metric \citep{schober2018correlation}.
 Models achieve Spearman's $\rho$, measuring ordering correlation, in the same range on text and in the moderate range on images.
 % Both of these trends are strongly linear, with linear fit $r^2 > 0.5$ \citep{cohen2013statistical}.
+Figure~\ref{fig:human-synthetic-correlation} shows these relationships for both text and image retrieval.
 Thus, we conclude that the Main test set with its greater sample size, is a valid proxy for recall on human-generated queries.
 
 Surprisingly, despite the distribution shift from LLM-generated queries, average model recall on human-generated queries exceeds that on synthetic queries.
@@ -611,6 +613,7 @@ Theoretical analysis of \textsc{Gold} reweighting applied to Margin-MSE shows th
 \appendix
 
 \section{Theoretical Analysis}
+\label{sec:theoretical-analysis}
 
 
 We analyze the hard-negative Margin-MSE objective with measured violation counts, assuming the presence of no easy negatives.
