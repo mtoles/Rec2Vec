@@ -5,14 +5,14 @@
     & Text (Synthetic) & Text (Human) & Image (Synthetic) & Image (Human) \\
     \midrule
     % Domain & \multicolumn{2}{c}{Amazon product descriptions} & \multicolumn{2}{c}{Clothing images} \\
-    Corpus documents               & 46{,}773 & ${text_documents} & ${image_corpus_documents} & ${image_documents} \\
-    Training documents             & 40{,}489 & --- & ${image_training_documents} & --- \\
-    Validation documents           & 3{,}111  & --- & ${image_validation_documents}  & --- \\
-    Test documents                 & 3{,}173  & ${text_documents} & ${image_test_documents}  & ${image_documents} \\
-    Words per document             & 189.8     & ${text_words_per_document} & --- & --- \\
-    Words per query                & 28.8      & ${text_words_per_query} & ${image_synthetic_words}  & ${image_words_per_query} \\
-    Attributes stated per query          & 9.6 & ${text_attributes_per_query} & ${image_synthetic_attributes} & ${image_attributes_per_query} \\
-    Differentiating attributes per query & 5.0 & --- & ${image_synthetic_differentiating} & --- \\
+    Corpus triples                 & ${text_synthetic_corpus_triples} & ${text_documents} & ${image_synthetic_corpus_triples} & ${image_documents} \\
+    Training triples               & ${text_synthetic_training_triples} & --- & ${image_synthetic_training_triples} & --- \\
+    Validation triples             & ${text_synthetic_validation_triples} & --- & ${image_synthetic_validation_triples} & --- \\
+    Test triples                   & ${text_synthetic_test_triples} & ${text_documents} & ${image_synthetic_test_triples} & ${image_documents} \\
+    Words per document             & ${text_synthetic_words_per_document} & ${text_words_per_document} & --- & --- \\
+    Words per query                & ${text_synthetic_words_per_query} & ${text_words_per_query} & ${image_synthetic_words_per_query} & ${image_words_per_query} \\
+    Attributes stated per query          & ${text_synthetic_attributes} & ${text_attributes_per_query} & ${image_synthetic_attributes} & ${image_attributes_per_query} \\
+    Differentiating attributes per query & ${text_synthetic_differentiating} & --- & ${image_synthetic_differentiating} & --- \\
     \bottomrule
 \end{tabular}
 \endgroup

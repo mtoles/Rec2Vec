@@ -29,7 +29,7 @@ from combine_human_labels import STUDIES, combine
 from sample_human_labels import sample_all
 from attr_quota import written_counts
 from utils.human_freshness import evaluation_signature, prediction_problem
-from utils.paper_analysis import discover_profile_runs, human_conditions, active_dataset_bases
+from utils.paper_analysis import discover_profile_runs, human_conditions, active_dataset_bases, count_query_attributes
 from utils.text_holdout import HUMAN_SOURCE, verify_text_holdout
 from utils.training_profile import training_profile
 from utils.image_split import active_image_base, garment_id, query_key
@@ -193,6 +193,33 @@ def refresh_predictions(directory, devices=None):
     return {'expected': len(jobs), 'evaluated': len(pending), 'reused': len(jobs)-len(pending)}
 
 
+SYNTHETIC_ATTRIBUTES = {
+    'text': lambda row: count_query_attributes(row['nl_query']),
+    'image': lambda row: sum(len(row[c]) for c in ['selected_pos_features', 'selected_neg_features',
+                                                   'selected_common_features', 'selected_neither_features']),
+}
+
+
+def synthetic_fields(name, rows):
+    def mean(values):
+        return f'{sum(values) / len(values):.1f}'
+
+    def count(n):
+        return format(n, ',').replace(',', '{,}')
+
+    fields = {'corpus_triples': count(len(rows))}
+    for side, label in [('train', 'training'), ('validation', 'validation'), ('test', 'test')]:
+        fields[label + '_triples'] = count(sum(r['split'] == side for r in rows))
+    if name == 'text':
+        documents = {r[c] for r in rows for c in ['positive_example', 'negative_example']}
+        fields['words_per_document'] = mean([len(d.split()) for d in documents])
+    fields['words_per_query'] = mean([len(q.split()) for q in {r['rephrased_query'] for r in rows}])
+    hard = [r for r in rows if r['negative_example_source'] != 'random']
+    fields['attributes'] = mean([SYNTHETIC_ATTRIBUTES[name](r) for r in hard])
+    fields['differentiating'] = mean([r['query_distance'] for r in hard])
+    return fields
+
+
 def write_table(stamp):
     summary, replacements = {}, {}
     for name, config in STUDIES.items():
@@ -211,22 +238,11 @@ def write_table(stamp):
         for field in ['words_per_document', 'words_per_query', 'attributes_per_query']:
             value = summary[name][field]
             replacements[name + '_' + field] = '---' if value is None else f'{value:.1f}'
-    synthetic = load_from_disk(str(active_image_base()) + '_rephrased-in-context')
-    rows = list(synthetic.select_columns(['split', 'nl_query', 'rephrased_query', 'positive_example', 'negative_example',
-                                         'negative_example_source', 'query_distance',
-                                         'selected_pos_features', 'selected_neg_features',
-                                         'selected_common_features', 'selected_neither_features']))
-    corpus = {r[c] for r in rows for c in ['positive_example', 'negative_example']}
-    replacements['image_corpus_documents'] = format(len(corpus), ',').replace(',', '{,}')
-    for side, label in [('train', 'training'), ('validation', 'validation'), ('test', 'test')]:
-        docs = {r[c] for r in rows if r['split'] == side for c in ['positive_example', 'negative_example']}
-        replacements['image_' + label + '_documents'] = format(len(docs), ',').replace(',', '{,}')
-    queries = {r['rephrased_query'] for r in rows}
-    replacements['image_synthetic_words'] = f"{sum(len(q.split()) for q in queries)/len(queries):.1f}"
-    hard = [r for r in rows if r['negative_example_source'] != 'random']
-    attributes = ['selected_pos_features', 'selected_neg_features', 'selected_common_features', 'selected_neither_features']
-    replacements['image_synthetic_attributes'] = f"{sum(sum(len(r[c]) for c in attributes) for r in hard)/len(hard):.1f}"
-    replacements['image_synthetic_differentiating'] = f"{sum(r['query_distance'] for r in hard)/len(hard):.1f}"
+    synthetic = {'text': ROOT / 'dataset/processed' / (active_dataset_bases()['text'] + '_rephrased-in-context'),
+                 'image': Path(str(active_image_base()) + '_rephrased-in-context')}
+    for name, path in synthetic.items():
+        for field, value in synthetic_fields(name, list(load_from_disk(str(path)))).items():
+            replacements[name + '_synthetic_' + field] = value
     content = Template((ROOT / 'paper/dataset_summary_template.tex').read_text()).substitute(replacements)
     target = ROOT / 'paper/figs/dataset_summary_table.tex'
     if not target.exists() or target.read_text() != content:
