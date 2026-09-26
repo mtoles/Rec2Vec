@@ -170,7 +170,7 @@ Dense bi-encoders enable efficient first-stage retrieval by mapping queries and 
 % Their effectiveness, however, depends strongly on the selection and supervision of negative examples.
 Methods such as ANCE and RocketQA improve training by retrieving challenging negatives, sharing negatives across batches, or denoising mined candidates~\citep{xiong2020approximate,qu-etal-2021-rocketqa}.
 Other approaches move beyond uniform positive--negative separation by distilling continuous teacher-score differences, as in Margin-MSE and TAS-Balanced~\citep{hofstatter2020improving,hofstatter2021tas}, or by using relevance- and attribute-dependent margins in metric-learning objectives~\citep{zhou2020ladder,Jeong_2021_ICCV,Zhao2019}.
-Our work combines these ideas by using hard negatives with known attribute violations to provide graded supervision for standard dense-retrieval losses.
+Our work builds on these by using hard negatives with known attribute violations to provide graded supervision for standard dense-retrieval losses.
 % \red{todo: discuss ColBERTv2 KL distillation over mined candidates (https://arxiv.org/abs/2112.01488), BGE/C-Pack rank-window ANN mining (https://arxiv.org/abs/2309.07597), NV-Retriever positive-aware negative filtering (https://arxiv.org/abs/2407.15831)}
 % These methods demonstrate the value of informative negatives and graded training signals, but generally derive the degree of separation from teacher scores, relevance labels, or broad semantic relationships.
 % In contrast, we derive supervision from the discrete structure of the query: candidates are graded by the number of query-relevant feature edits required to make them satisfy its constraints.
@@ -255,7 +255,7 @@ To generate a contrasting text document, we sample a document uniformly at rando
 For the image dataset, we select a random example from the same category as the positive, such as ``blouses'' or ``graphic tees'', excluding all views and colorways of the positive garment.
 For images, the prompt contains both garments' photographs and metadata, and instructs the model to generate only attributes visible in the photographs.
 
-To generate conjunctive queries, we prompt Gemini 2.5 Flash\footnote{We manually reviewed and verified the generated annotations and iteratively refined the prompts. We selected Gemini 2.5 Flash as a cost-effective model for this annotation process.} with a matched positive and negative document pair, using the prompts of Appendix~\ref{prompt:attribute-extraction}, one variant for products and one for images.
+To generate conjunctive queries, we prompt Gemini 2.5 Flash with a matched positive and negative document pair, using the prompts of Appendix~\ref{prompt:attribute-extraction}, one variant for products and one for images.
 We instruct it to generate up to 5 attributes that apply to only the first example, only the second example, to both examples, or to neither example, a pool of up to 20 attributes.
 We then select a random subset of these attributes to compose the query, negating attributes that do not apply to the positive example, ensuring that at least one attribute is not satisfied by the hard negative example.
 Oversampling here is useful to ensure that selected attributes are not merely the most salient.
@@ -389,7 +389,7 @@ Losses written for one query or triple are averaged over the batch.
 We then modify each loss function, with the modification marked by an underbrace:
 
 \paragraph{Margin-MSE:}
-We set the margin term to $d/V$\footnote{Preliminary experiments with several nonlinear margin functions indicated that the $d/V$ formulation yielded the best performance.} and apply the loss across all query--document pairs in the batch:
+We set the margin term to $d/V$ and apply the loss across all query--document pairs in the batch:
 
 \begin{equation}
 \label{eq:hamming}
@@ -468,7 +468,7 @@ For Margin-MSE, this regresses towards the condition
 
 
 This section develops the intuition behind the connection between our objective and affine probing; formal statements and proofs are provided in Appendix~\ref{sec:theoretical-analysis}. 
-When attributes are affinely recoverable, their probe vectors can be combined to form query representations whose similarity with a document increases with the number of conditions it satisfies, as encouraged by our count-based margin and illustrated in Figure~\ref{fig:embedding}.
+% When attributes are affinely recoverable, their probe vectors can be combined to form query representations whose similarity with a document increases with the number of conditions it satisfies, as encouraged by our count-based margin and illustrated in Figure~\ref{fig:embedding}.
 
 % For a given $c_i$, 
 Following \citet{garg2026many}, we will assume that inputs come from some set $L = Q \cup D$ consisting of queries or documents composed of text or images.
@@ -559,7 +559,7 @@ To validate the use of synthetic queries, we evaluate the same models, all train
 Both text and image models achieve Pearson's $r$ in the 0.7-0.9 range, considered strong linear correlation in the recall metric \citep{schober2018correlation}.
 Models achieve Spearman's $\rho$, measuring ordering correlation, in the same range on text and in the moderate range on images.
 % Both of these trends are strongly linear, with linear fit $r^2 > 0.5$ \citep{cohen2013statistical}.
-Figure~\ref{fig:human-synthetic-correlation} shows these relationships for both text and image retrieval.
+% Figure~\ref{fig:human-synthetic-correlation} shows these relationships for both text and image retrieval.
 Thus, we conclude that the Main test set with its greater sample size, is a valid proxy for recall on human-generated queries.
 
 Surprisingly, despite the distribution shift from LLM-generated queries, average model recall on human-generated queries exceeds that on synthetic queries.
